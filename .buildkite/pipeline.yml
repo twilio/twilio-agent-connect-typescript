@@ -1,0 +1,48 @@
+steps:
+  - label: ":typescript: linting"
+    key: lint
+    commands: |
+      npm ci
+      npm run lint
+      npm run format:check
+    plugins:
+      - docker#v3.7.0:
+          image: 'node:20'
+          environment:
+            - CI
+
+  - label: ":typescript: type-check"
+    key: type-check
+    commands: |
+      npm ci
+      npm run build
+      npm run typecheck
+    plugins:
+      - docker#v3.7.0:
+          image: 'node:20'
+          environment:
+            - CI
+
+  - label: ":typescript: test-node-20"
+    key: test-20
+    commands: |
+      npm ci
+      npm run build
+      npm test
+    plugins:
+      - docker#v3.7.0:
+          image: 'node:20'
+          environment:
+            - CI
+
+  - label: ":typescript: test-node-22"
+    key: test-22
+    commands: |
+      npm ci
+      npm run build
+      npm test
+    plugins:
+      - docker#v3.7.0:
+          image: 'node:22'
+          environment:
+            - CI

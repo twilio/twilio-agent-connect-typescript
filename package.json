@@ -1,0 +1,52 @@
+{
+  "name": "twilio-agent-connect",
+  "version": "1.0.0",
+  "description": "Twilio Agent Connect - A TypeScript framework for building intelligent agents",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @twilio/tac-core -w @twilio/tac-tools -w @twilio/tac-server -w simple-sms-bot -w multi-channel-demo -w basic-twilio-webhook -w tac-channel-examples -w exec-connect-demo",
+    "clean": "npm run clean --workspaces --if-present",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint packages/*/src/**/*.ts examples/*/src/**/*.ts",
+    "lint:fix": "eslint packages/*/src/**/*.ts examples/*/src/**/*.ts --fix",
+    "format": "prettier --write packages/*/src/**/*.ts examples/*/src/**/*.ts",
+    "format:check": "prettier --check packages/*/src/**/*.ts examples/*/src/**/*.ts",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "prepare": "npm run build",
+    "example:sms": "npm run dev --workspace=simple-sms-bot",
+    "example:multi": "npm run dev --workspace=multi-channel-demo",
+    "example:exec": "npm run dev --workspace=exec-connect-demo"
+  },
+  "keywords": [
+    "twilio",
+    "ai",
+    "agents",
+    "framework",
+    "typescript"
+  ],
+  "author": "Twilio",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "eslint": "^8.0.0",
+    "prettier": "^3.0.0",
+    "rimraf": "^5.0.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "tac-channel-examples",
+  "version": "1.0.0",
+  "description": "Channel implementation examples for Twilio Agent Connect",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "sms": "tsx sms.ts",
+    "voice": "tsx voice.ts",
+    "dev:sms": "tsup && node dist/sms.js",
+    "dev:voice": "tsup && node dist/voice.js",
+    "start:sms": "node dist/sms.js",
+    "start:voice": "node dist/voice.js"
+  },
+  "dependencies": {
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/websocket": "^11.2.0",
+    "@twilio/tac-core": "*",
+    "dotenv": "^16.3.0",
+    "fastify": "^5.6.0",
+    "openai": "^4.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

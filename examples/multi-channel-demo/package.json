@@ -1,0 +1,25 @@
+{
+  "name": "multi-channel-demo",
+  "version": "1.0.0",
+  "description": "Multi-channel customer service demo using Twilio Agent Connect",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@twilio/tac-core": "*",
+    "@twilio/tac-server": "*",
+    "@twilio/tac-tools": "*",
+    "dotenv": "^16.3.0",
+    "openai": "^4.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
