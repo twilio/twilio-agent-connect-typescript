@@ -2,11 +2,6 @@
   "name": "twilio-agent-connect",
   "version": "1.0.0",
   "description": "Twilio Agent Connect - A TypeScript framework for building intelligent agents",
-  "private": true,
-  "workspaces": [
-    "packages/*",
-    "examples/*"
-  ],
   "scripts": {
     "build": "npm run build -w @twilio/tac-core -w @twilio/tac-tools -w @twilio/tac-server -w simple-sms-bot -w multi-channel-demo -w basic-twilio-webhook -w tac-channel-examples -w exec-connect-demo",
     "clean": "npm run clean --workspaces --if-present",
@@ -18,10 +13,10 @@
     "format:check": "prettier --check packages/*/src/**/*.ts examples/*/src/**/*.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev": "npm run dev --workspaces --if-present",
-    "prepare": "npm run build",
     "example:sms": "npm run dev --workspace=simple-sms-bot",
     "example:multi": "npm run dev --workspace=multi-channel-demo",
-    "example:exec": "npm run dev --workspace=exec-connect-demo"
+    "example:exec": "npm run dev --workspace=exec-connect-demo",
+    "postinstall": "node scripts/postinstall.js"
   },
   "keywords": [
     "twilio",
@@ -32,6 +27,10 @@
   ],
   "author": "Twilio",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/twilio/twilio-agent-connect-typescript.git"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/ws": "^8.18.1",
@@ -48,5 +47,26 @@
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=9.0.0"
+  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.js"
+    }
+  },
+  "dependencies": {
+    "dotenv": "^16.3.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^13.0.0",
+    "twilio": "^5.10.7",
+    "zod": "^3.22.0",
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/websocket": "^11.2.0",
+    "fastify": "^5.6.2",
+    "fastify-graceful-shutdown": "^5.0.0",
+    "ws": "^8.19.0"
   }
 }

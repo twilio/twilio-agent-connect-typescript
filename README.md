@@ -7,11 +7,10 @@ A modern TypeScript framework for building intelligent conversational agents tha
 [![Build Status](https://img.shields.io/badge/build-passing-green.svg)](https://github.com/twilio/twilio-agent-connect-typescript)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![npm](https://img.shields.io/badge/npm-workspaces-red.svg)](https://docs.npmjs.com/cli/v7/using-npm/workspaces)
 
 </div>
 
-## 🚀 Features
+## Features
 
 - **Multi-Channel Support**: SMS and Voice channels with unified API
 - **Memory Integration**: Seamless integration with Twilio Memory Service for persistent user context
@@ -20,31 +19,31 @@ A modern TypeScript framework for building intelligent conversational agents tha
 - **Production Ready**: Built-in security, rate limiting, and error handling
 - **Framework Agnostic**: Works with OpenAI, Anthropic, LangChain, and more
 - **Real-time Voice**: WebSocket-based voice conversations with ConversationRelay
-- **Monorepo Architecture**: Modular design with scoped packages
 
-## 📦 Packages
+## Installation
 
-| Package | Description | Version |
-|---------|-------------|---------|
-| [`@twilio/tac-core`](./packages/core) | Core framework functionality | ![npm](https://img.shields.io/badge/v1.0.0-blue.svg) |
-| [`@twilio/tac-types`](./packages/types) | TypeScript types and Zod schemas | ![npm](https://img.shields.io/badge/v1.0.0-blue.svg) |
-| [`@twilio/tac-tools`](./packages/tools) | Tool system and built-in tools | ![npm](https://img.shields.io/badge/v1.0.0-blue.svg) |
-| [`@twilio/tac-server`](./packages/server) | Batteries-included Fastify server | ![npm](https://img.shields.io/badge/v1.0.0-blue.svg) |
+```bash
+npm install git+ssh://git@github.com/twilio/twilio-agent-connect-typescript.git
+```
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Installation
-
-Choose your preferred setup approach:
+### 1. Choose Your Setup
 
 #### Option A: Batteries-Included Server (Recommended)
-```bash
-npm install @twilio/tac-server
+
+Use `TACServer` for a pre-configured Fastify server with SMS and Voice webhook handlers:
+
+```typescript
+import { TAC, TACServer } from 'twilio-agent-connect';
 ```
 
 #### Option B: Core Only (Bring Your Own Server)
-```bash
-npm install @twilio/tac-core @twilio/tac-tools
+
+Use just the core framework and integrate with your existing server:
+
+```typescript
+import { TAC, SMSChannel, VoiceChannel } from 'twilio-agent-connect';
 ```
 
 ### 2. Environment Configuration
@@ -73,8 +72,7 @@ VOICE_PUBLIC_DOMAIN=https://your-ngrok-domain.ngrok.io
 #### Simple SMS Bot
 
 ```typescript
-import { TAC } from '@twilio/tac-core';
-import { TACServer } from '@twilio/tac-server';
+import { TAC, TACServer } from 'twilio-agent-connect';
 
 // Initialize framework
 const tac = new TAC();

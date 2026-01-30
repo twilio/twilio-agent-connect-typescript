@@ -23,7 +23,7 @@ twilio-agent-connect-typescript/
 
 ```bash
 # Clone and install
-git clone <repo-url>
+git clone https://github.com/twilio/twilio-agent-connect-typescript.git
 cd twilio-agent-connect-typescript
 npm install
 ```
