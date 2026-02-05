@@ -16,9 +16,9 @@ This directory contains examples demonstrating how to use the Twilio Agent Conne
    ENVIRONMENT=dev  # Required: 'dev', 'stage', or 'prod'
 
    # Memory Service Configuration (all three required if using Twilio Memory)
-   MEMORY_STORE_ID=MGxxxxx...  # Optional: only if using Twilio Memory
-   TWILIO_API_KEY=your_api_key  # Optional: only if using Twilio Memory
-   TWILIO_API_TOKEN=your_api_token  # Optional: only if using Twilio Memory
+   MEMORY_STORE_ID=mem_store_xxxxx...  # Optional: only if using Twilio Memory
+   MEMORY_API_KEY=your_api_key  # Optional: only if using Twilio Memory
+   MEMORY_API_TOKEN=your_api_token  # Optional: only if using Twilio Memory
 
    CONVERSATION_SERVICE_SID=ISxxxxx...
    TWILIO_ACCOUNT_SID=ACxxxxx...
@@ -174,10 +174,5 @@ These TypeScript examples provide 1:1 parity with the Python TAC implementation:
 
 ## Need Help?
 
-- See individual example READMs for detailed setup and usage instructions
-- Check the main [CLAUDE.md](../CLAUDE.md) for comprehensive project documentation
-- Review [DEVELOPMENT.md](../DEVELOPMENT.md) for contribution guidelines
-
-## Contributing
-
-Found an issue or want to add a new example? See our [contribution guidelines](../DEVELOPMENT.md) for details on submitting improvements.
+- See individual example READMEs for detailed setup and usage instructions
+- Review [DEVELOPMENT.md](../DEVELOPMENT.md) for development guidelines

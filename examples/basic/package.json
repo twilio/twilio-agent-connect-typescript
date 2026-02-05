@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsup",
     "start": "node dist/server.js",
-    "dev": "tsup && node dist/server.js"
+    "dev": "tsup && node dist/server.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/formbody": "^8.0.2",

@@ -38,8 +38,8 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 # Optional Memory Variables (for user context/profiles)
 MEMORY_STORE_ID=your_memory_store_id_here
-TWILIO_API_KEY=your_api_key_here
-TWILIO_API_TOKEN=your_api_token_here
+MEMORY_API_KEY=your_api_key_here
+MEMORY_API_TOKEN=your_api_token_here
 TRAIT_GROUPS=Contact,Preferences
 ```
 

@@ -28,12 +28,14 @@ export const ParticipantAddressSchema = z.object({
 export type ParticipantAddress = z.infer<typeof ParticipantAddressSchema>;
 
 /**
- * Communication participant for Conversations Service API
+ * Communication participant for Conversations Service API (Maestro).
+ *
+ * Note: participant_id is required for SDK validation when creating communications.
  */
 export const CommunicationParticipantSchema = z.object({
   address: z.string().max(254),
   channel: ParticipantAddressTypeSchema,
-  participant_id: z.string().optional(),
+  participant_id: z.string(),
   delivery_status: z
     .enum(['INITIATED', 'IN_PROGRESS', 'DELIVERED', 'COMPLETED', 'FAILED'])
     .optional(),
@@ -42,18 +44,45 @@ export const CommunicationParticipantSchema = z.object({
 export type CommunicationParticipant = z.infer<typeof CommunicationParticipantSchema>;
 
 /**
- * Communication content
+ * Word-level transcription data with timing information.
+ */
+export const TranscriptionWordSchema = z.object({
+  text: z.string(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+});
+
+export type TranscriptionWord = z.infer<typeof TranscriptionWordSchema>;
+
+/**
+ * Transcription metadata for communication content.
+ */
+export const TranscriptionSchema = z.object({
+  channel: z.number().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  engine: z.string().optional(),
+  words: z.array(TranscriptionWordSchema).optional(),
+});
+
+export type Transcription = z.infer<typeof TranscriptionSchema>;
+
+/**
+ * Communication content (ContentText or ContentTranscription).
+ *
+ * Note: In Maestro API, both `type` and `text` are required fields.
  */
 export const CommunicationContentSchema = z.object({
-  type: z.enum(['TEXT', 'TRANSCRIPTION']).default('TEXT'),
-  text: z.string().max(8388608).optional(),
-  transcription: z.record(z.unknown()).optional(),
+  type: z.enum(['TEXT', 'TRANSCRIPTION']),
+  text: z.string().max(8388608),
+  transcription: TranscriptionSchema.optional(),
 });
 
 export type CommunicationContent = z.infer<typeof CommunicationContentSchema>;
 
 /**
- * Communication from Conversations Service API
+ * Communication from Conversations Service API (Maestro).
+ *
+ * Note: `created_at` is optional per API spec.
  */
 export const CommunicationSchema = z.object({
   id: z.string(),
@@ -63,7 +92,7 @@ export const CommunicationSchema = z.object({
   content: CommunicationContentSchema,
   recipients: z.array(CommunicationParticipantSchema),
   channel_id: z.string().optional(),
-  created_at: z.string(),
+  created_at: z.string().optional(),
   updated_at: z.string().optional(),
 });
 

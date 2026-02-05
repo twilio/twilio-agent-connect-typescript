@@ -1,7 +1,7 @@
 {
-  "name": "simple-sms-bot",
+  "name": "knowledge-search",
   "version": "1.0.0",
-  "description": "Simple SMS bot example using Twilio Agent Connect",
+  "description": "Knowledge search example using Twilio Agent Connect",
   "private": true,
   "type": "module",
   "scripts": {

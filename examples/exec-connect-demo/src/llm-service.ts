@@ -7,7 +7,7 @@
  */
 
 import { Agent, run, setDefaultOpenAIKey, setTracingDisabled } from '@openai/agents';
-import type { TAC, ConversationSession, MemoryRetrievalResponse } from '@twilio/tac-core';
+import type { TAC, ConversationSession, TACMemoryResponse } from '@twilio/tac-core';
 import type { WebSocket } from 'ws';
 import {
   getAvailablePlans,
@@ -55,7 +55,7 @@ export class LLMService {
    */
   async processMessage(
     userMessage: string,
-    memoryResponse: MemoryRetrievalResponse | null,
+    memoryResponse: TACMemoryResponse | null,
     context: ConversationSession,
     websocket: WebSocket | null,
     conversationHistory: ChatCompletionMessageParam[] | null = null
@@ -112,7 +112,7 @@ export class LLMService {
    * Build enhanced agent instructions with TAC memory context.
    */
   private _buildEnhancedInstructions(
-    memoryResponse: MemoryRetrievalResponse | null,
+    memoryResponse: TACMemoryResponse | null,
     context: ConversationSession
   ): string {
     // Build instructions parts
@@ -248,7 +248,7 @@ export class LLMService {
    * Session memories contain previous conversation exchanges with structured messages.
    */
   private _buildConversationHistory(
-    memoryResponse: MemoryRetrievalResponse | null
+    memoryResponse: TACMemoryResponse | null
   ): ChatCompletionMessageParam[] {
     const messages: ChatCompletionMessageParam[] = [];
 
@@ -258,9 +258,20 @@ export class LLMService {
 
     // Extract messages from session memories
     for (const communication of memoryResponse.communications) {
-      // Map direction to role (based on author.channel which indicates sender)
-      // CUSTOMER channel means message from customer (user)
-      if (communication.author.channel === 'SMS' || communication.author.channel === 'VOICE') {
+      // Determine role using author.type if available (Memory API),
+      // otherwise fallback to address comparison (Maestro API)
+      let isCustomer = false;
+      if (communication.author.type) {
+        // Memory API provides author.type
+        isCustomer = communication.author.type === 'CUSTOMER';
+      } else {
+        // Maestro fallback: compare author address with TAC phone number
+        // If author address matches TAC phone number, it's from AI (assistant)
+        // Otherwise, it's from customer (user)
+        isCustomer = communication.author.address !== this.tac.getConfig().twilioPhoneNumber;
+      }
+
+      if (isCustomer) {
         messages.push({
           role: 'user',
           content: communication.content.text || '',

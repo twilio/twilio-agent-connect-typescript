@@ -10,7 +10,8 @@
     "dev:sms": "tsup && node dist/sms.js",
     "dev:voice": "tsup && node dist/voice.js",
     "start:sms": "node dist/sms.js",
-    "start:voice": "node dist/voice.js"
+    "start:voice": "node dist/voice.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/formbody": "^8.0.2",

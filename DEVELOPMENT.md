@@ -7,7 +7,6 @@ This document explains how to develop the Twilio Agent Connect and work with the
 ```
 twilio-agent-connect-typescript/
 ├── packages/                 # Framework packages
-│   ├── types/               # @twilio/tac-types
 │   ├── core/                # @twilio/tac-core
 │   ├── tools/               # @twilio/tac-tools
 │   └── server/              # @twilio/tac-server

@@ -46,8 +46,14 @@ This example simulates a **TechCorp Internet Services** customer support system 
 ```bash
 TWILIO_ACCOUNT_SID=your_account_sid_here
 TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_MEMORY_SID=your_memory_service_sid_here
+TWILIO_PHONE_NUMBER=+1234567890
+CONVERSATION_SERVICE_ID=comms_service_xxxx
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Optional: Memory Service
+MEMORY_STORE_ID=mem_store_xxxx
+MEMORY_API_KEY=your_api_key_here
+MEMORY_API_TOKEN=your_api_token_here
 ```
 
 ### Installation and Startup
@@ -61,9 +67,9 @@ npm run build
 npm run dev
 ```
 
-The server starts on `http://localhost:3000` with endpoints:
+The server starts on `http://localhost:8000` with endpoints:
 - `POST /sms` - SMS webhook endpoint
-- `GET /twiml` - Voice TwiML endpoint
+- `POST /twiml` - Voice TwiML endpoint
 - `WS /voice` - Voice WebSocket endpoint
 
 ### Twilio Configuration
@@ -80,7 +86,7 @@ The server starts on `http://localhost:3000` with endpoints:
 
 **For local development**: Use ngrok to expose your local server:
 ```bash
-ngrok http 3000
+ngrok http 8000
 # Use the https URL for webhook configuration
 ```
 

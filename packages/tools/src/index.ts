@@ -12,6 +12,11 @@ export { TACTool, defineTool } from './lib/builder';
 export { createMemoryRetrievalTool, createMemoryTools } from './built-in/memory';
 export { createSendMessageTool, createMessagingTools } from './built-in/messaging';
 export { createHandoffTool, createHandoffTools } from './built-in/handoff';
+export {
+  createKnowledgeSearchTool,
+  createKnowledgeSearchToolAsync,
+  createKnowledgeTools,
+} from './built-in/knowledge';
 
 // Re-export types from the core package (excluding TACTool which we define here)
 export type {

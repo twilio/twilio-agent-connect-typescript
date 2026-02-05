@@ -23,10 +23,9 @@ import type {
 } from 'openai/resources/chat/completions';
 import Fastify from 'fastify';
 import formbody from '@fastify/formbody';
-import { TAC, SMSChannel } from '@twilio/tac-core';
+import { TAC, SMSChannel, TACMemoryResponse } from '@twilio/tac-core';
 import type {
   ConversationSession,
-  MemoryRetrievalResponse,
   ConversationId,
   ProfileId,
   ChannelType
@@ -54,17 +53,17 @@ async function handleMessageReady(params: {
   profileId: ProfileId | undefined;
   message: string;
   author: string;
-  memory: MemoryRetrievalResponse | undefined;
+  memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<string> {
-  const { conversationId, message: userMessage, memory: memoryResponse, session } = params;
+}): Promise<void> {
+  const { conversationId, message: userMessage, memory: memoryResponse, channel } = params;
   console.log(`Processing message for conversation ${conversationId}`);
 
   if (memoryResponse) {
     console.log(
       `Retrieved memories: ${memoryResponse.observations.length} observations, ` +
-      `${memoryResponse.summaries.length} summaries, ${memoryResponse.sessions.length} sessions`
+      `${memoryResponse.summaries.length} summaries, ${memoryResponse.communications?.length ?? 0} communications`
     );
   }
 
@@ -83,7 +82,7 @@ async function handleMessageReady(params: {
 
       // Build context from memory observations
       const observationContext = "Previous conversation context:\n" +
-        memoryResponse.observations.slice(0, 3).map(obs => `- ${obs.observation}`).join('\n');
+        memoryResponse.observations.slice(0, 3).map(obs => `- ${obs.content}`).join('\n');
 
       const contextMsg: ChatCompletionSystemMessageParam = {
         role: 'system',
@@ -117,18 +116,18 @@ async function handleMessageReady(params: {
   const response = completion.choices[0]?.message?.content;
   console.log('Response generated:', response);
 
-  // Update conversation history and return response
-  if (response) {
-    const assistantMsg: ChatCompletionAssistantMessageParam = {
-      role: 'assistant',
-      content: response,
-    };
-    messages.push(assistantMsg);
+  // Update conversation history and send response via channel
+  const finalResponse = response ?? "I apologize, but I'm having trouble processing your request right now. Please try again.";
 
-    return response;
-  }
+  const assistantMsg: ChatCompletionAssistantMessageParam = {
+    role: 'assistant',
+    content: finalResponse,
+  };
+  messages.push(assistantMsg);
 
-  return "I apologize, but I'm having trouble processing your request right now. Please try again.";
+  // Send response through the channel
+  const activeChannel = tac.getChannel(channel);
+  await activeChannel?.sendResponse(conversationId, finalResponse);
 }
 
 async function main() {
@@ -136,8 +135,10 @@ async function main() {
 
   try {
     // Initialize TAC
-    // Memory service is optional - only include if memoryStoreId environment variable is set
+    // Memory service is optional - only include if all required environment variables are set
     const memoryStoreId = process.env.MEMORY_STORE_ID;
+    const memoryApiKey = process.env.MEMORY_API_KEY;
+    const memoryApiToken = process.env.MEMORY_API_TOKEN;
 
     tac = new TAC({
       config: {
@@ -146,7 +147,9 @@ async function main() {
         twilioAccountSid: process.env.TWILIO_ACCOUNT_SID!,
         twilioAuthToken: process.env.TWILIO_AUTH_TOKEN!,
         twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER!,
-        memoryStoreId: memoryStoreId || '',
+        memoryStoreId,
+        memoryApiKey,
+        memoryApiToken,
       },
     });
 

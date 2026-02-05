@@ -25,10 +25,9 @@ import type {
 import Fastify from 'fastify';
 import formbody from '@fastify/formbody';
 import websocket from '@fastify/websocket';
-import { TAC, VoiceChannel } from '@twilio/tac-core';
+import { TAC, VoiceChannel, TACMemoryResponse } from '@twilio/tac-core';
 import type {
   ConversationSession,
-  MemoryRetrievalResponse,
   ConversationId,
   ProfileId,
   ChannelType,
@@ -59,17 +58,17 @@ async function handleMessageReady(params: {
   profileId: ProfileId | undefined;
   message: string;
   author: string;
-  memory: MemoryRetrievalResponse | undefined;
+  memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<string> {
+}): Promise<void> {
   const { conversationId, message: userMessage, memory: memoryResponse, session } = params;
   console.log(`Processing message for conversation ${conversationId}`);
 
   if (memoryResponse) {
     console.log(
       `Retrieved memories: ${memoryResponse.observations.length} observations, ` +
-      `${memoryResponse.summaries.length} summaries, ${memoryResponse.sessions.length} sessions`
+      `${memoryResponse.summaries.length} summaries, ${memoryResponse.communications?.length ?? 0} communications`
     );
   } else {
     console.log('No memory response (voice channel)');
@@ -90,7 +89,7 @@ async function handleMessageReady(params: {
 
       // Build context from memory observations with voice-specific context
       const observationContext = "Caller's previous conversation context:\n" +
-        memoryResponse.observations.slice(0, 3).map(obs => `- ${obs.observation}`).join('\n');
+        memoryResponse.observations.slice(0, 3).map(obs => `- ${obs.content}`).join('\n');
 
       const contextMsg: ChatCompletionSystemMessageParam = {
         role: 'system',
@@ -121,21 +120,25 @@ async function handleMessageReady(params: {
     messages: messages as any,
   });
 
-  const response = completion.choices[0]?.message?.content;
+  const response = completion.choices[0]?.message?.content
+    || "I apologize, but I'm having trouble processing your request right now. Please try again.";
   console.log('Voice response generated:', response);
 
-  // Update conversation history and return response
-  if (response) {
-    const assistantMsg: ChatCompletionAssistantMessageParam = {
-      role: 'assistant',
-      content: response,
-    };
-    messages.push(assistantMsg);
+  // Update conversation history
+  const assistantMsg: ChatCompletionAssistantMessageParam = {
+    role: 'assistant',
+    content: response,
+  };
+  messages.push(assistantMsg);
 
-    return response;
+  // Send response via voice channel WebSocket
+  const voiceChannel = tac.getChannel<VoiceChannel>('voice');
+  if (voiceChannel) {
+    await voiceChannel.sendResponse(conversationId, response);
+    console.log('Voice response sent to WebSocket');
+  } else {
+    console.error('Voice channel not found');
   }
-
-  return "I apologize, but I'm having trouble processing your request right now. Please try again.";
 }
 
 async function main() {
@@ -144,9 +147,9 @@ async function main() {
   try {
     // Initialize TAC
     // Memory service is optional - only include if all required environment variables are set
-    const memoryStoreSid = process.env.MEMORY_STORE_ID;
-    const apiKey = process.env.TWILIO_API_KEY;
-    const apiToken = process.env.TWILIO_API_TOKEN;
+    const memoryStoreId = process.env.MEMORY_STORE_ID;
+    const memoryApiKey = process.env.MEMORY_API_KEY;
+    const memoryApiToken = process.env.MEMORY_API_TOKEN;
 
     // Trait groups are optional - specify which trait groups to retrieve
     // Example: TRAIT_GROUPS="Contact,Preferences" or leave unset for all groups
@@ -160,7 +163,10 @@ async function main() {
         twilioAccountSid: process.env.TWILIO_ACCOUNT_SID!,
         twilioAuthToken: process.env.TWILIO_AUTH_TOKEN!,
         twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER!,
-        memoryStoreId: memoryStoreSid || '',
+        memoryStoreId,
+        memoryApiKey,
+        memoryApiToken,
+        traitGroups,
         voicePublicDomain: process.env.VOICE_PUBLIC_DOMAIN,
       },
     });
@@ -181,8 +187,8 @@ async function main() {
     await app.register(formbody);
     await app.register(websocket);
 
-    // Voice TwiML endpoint
-    app.get('/twiml', async (request, reply) => {
+    // Voice TwiML endpoint (POST - Twilio sends form data)
+    app.post('/twiml', async (request, reply) => {
       try {
         console.log('📞 Generating TwiML for voice call');
 
@@ -192,11 +198,11 @@ async function main() {
           throw new Error('Voice channel not available');
         }
 
-        // Extract custom parameters from query
-        const query = request.query as Record<string, string>;
+        // Extract Twilio call parameters from POST body
+        const body = request.body as Record<string, string>;
         const customParameters = {
-          conversation_id: query.conversation_id,
-          profile_id: query.profile_id,
+          conversation_id: body.conversation_id,
+          profile_id: body.profile_id,
         };
 
         // Generate WebSocket URL
@@ -204,9 +210,10 @@ async function main() {
         const host = request.headers.host;
         const websocketUrl = `${protocol === 'https' ? 'wss' : 'ws'}://${host}/voice`;
 
-        const twiMLOptions = {
+        const twiMLOptions: TwiMLOptions = {
           websocketUrl,
           customParameters,
+          welcomeGreeting: 'Hello! How can I help you today?',
         };
 
         const twiml = voiceChannel.generateTwiML(twiMLOptions);
@@ -223,18 +230,18 @@ async function main() {
 
     // Voice WebSocket endpoint
     app.register(async (fastify) => {
-      fastify.get('/voice', { websocket: true }, (connection: any, _request) => {
+      fastify.get('/voice', { websocket: true }, (socket: any, _request) => {
         const voiceChannel = tac.getChannel<VoiceChannel>('voice');
 
         if (!voiceChannel) {
-          connection.socket.terminate();
+          socket.terminate();
           return;
         }
 
         console.log('🔊 WebSocket connection established for voice channel');
 
         // Handle WebSocket connection
-        voiceChannel.handleWebSocketConnection(connection.socket as any);
+        voiceChannel.handleWebSocketConnection(socket);
       });
     });
 

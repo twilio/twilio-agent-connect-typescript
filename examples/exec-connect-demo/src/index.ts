@@ -285,7 +285,7 @@ async function main(): Promise<void> {
     const server = new TACServer(tac, {
       development: true,
       voice: {
-        port: 3000,
+        port: Number(process.env.PORT) || 8000,
       },
       welcomeGreeting: 'Hello! Thank you for calling Owl Internet. How can I help you today?',
       handoffHandler,

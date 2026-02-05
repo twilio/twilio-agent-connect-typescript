@@ -66,19 +66,23 @@ export const EnvironmentVariables = {
 export function computeServiceUrls(environment: Environment): {
   memoryApiUrl: string;
   conversationsApiUrl: string;
+  knowledgeApiUrl: string;
 } {
   const baseUrls = {
     dev: {
       memoryApiUrl: 'https://memory.dev-us1.twilio.com',
       conversationsApiUrl: 'https://conversations.dev-us1.twilio.com',
+      knowledgeApiUrl: 'https://knowledge.dev.twilio.com',
     },
     stage: {
       memoryApiUrl: 'https://memory.stage-us1.twilio.com',
       conversationsApiUrl: 'https://conversations.stage-us1.twilio.com',
+      knowledgeApiUrl: 'https://knowledge.stage.twilio.com',
     },
     prod: {
       memoryApiUrl: 'https://memory.twilio.com',
       conversationsApiUrl: 'https://conversations.twilio.com',
+      knowledgeApiUrl: 'https://knowledge.twilio.com',
     },
   };
 

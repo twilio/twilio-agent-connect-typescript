@@ -21,7 +21,6 @@ A modern TypeScript framework for building intelligent conversational agents tha
 - **Real-time Voice**: WebSocket-based voice conversations with ConversationRelay
 
 ## Installation
-
 ```bash
 npm install git+ssh://git@github.com/twilio/twilio-agent-connect-typescript.git
 ```
@@ -196,10 +195,6 @@ The `*` dependency pattern in examples means they always use your local workspac
 ## TAC E2E Tests
 [![Build status](https://badge.buildkite.com/7d2c17fcc93d8f8cff917730fb17ce8fa935c4e9009b6084ec.svg?branch=main)](https://buildkite.com/twilio/tac-e2e-tests-typescript)
 
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -210,6 +205,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Made with ❤️ by Twilio**
 
-[Website](https://twilio.com) • [Documentation](https://docs.twilio.com) • [Community](https://discord.gg/twilio) • [Twitter](https://twitter.com/twilio)
+[Website](https://twilio.com) • [Documentation](https://docs.twilio.com) • [Twitter](https://twitter.com/twilio)
 
 </div>
