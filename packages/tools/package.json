@@ -40,8 +40,5 @@
     "tsup": "^8.5.1",
     "typescript": "^5.0.0",
     "vitest": "^1.0.0"
-  },
-  "dependencies": {
-    "@twilio/tac-core": "^1.0.0"
   }
 }

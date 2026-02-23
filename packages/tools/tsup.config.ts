@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsup';
+import path from 'path';
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -11,8 +12,10 @@ export default defineConfig({
   outDir: 'dist',
   target: 'node20',
   platform: 'node',
-  external: [
-    // Keep @twilio/tac-core as external since it's a workspace dependency
-    '@twilio/tac-core',
-  ],
+  external: [],
+  esbuildOptions(options) {
+    options.alias = {
+      '@twilio/tac-core': path.resolve(__dirname, '../core/src/index.ts'),
+    };
+  },
 });

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Twilio Agent Connect - A TypeScript framework for building intelligent agents",
   "scripts": {
-    "build": "npm run build -w @twilio/tac-core -w @twilio/tac-tools -w @twilio/tac-server -w simple-sms-bot -w multi-channel-demo -w basic-twilio-webhook -w tac-channel-examples -w exec-connect-demo -w knowledge-search",
+    "build": "cd packages/core && npx tsup && cd ../tools && npx tsup && cd ../server && npx tsup",
     "clean": "npm run clean --workspaces --if-present",
     "test": "vitest --run",
     "test:watch": "vitest",
@@ -17,8 +17,7 @@
     "example:sms": "npm run dev --workspace=simple-sms-bot",
     "example:multi": "npm run dev --workspace=multi-channel-demo",
     "example:exec": "npm run dev --workspace=exec-connect-demo",
-    "example:knowledge": "npm run dev --workspace=knowledge-search",
-    "postinstall": "node scripts/postinstall.js"
+    "example:knowledge": "npm run dev --workspace=knowledge-search"
   },
   "keywords": [
     "twilio",

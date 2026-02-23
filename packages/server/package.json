@@ -45,8 +45,6 @@
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
     "@fastify/websocket": "^11.2.0",
-    "@twilio/tac-core": "^1.0.0",
-    "@twilio/tac-tools": "^1.0.0",
     "fastify": "^5.6.2",
     "fastify-graceful-shutdown": "^5.0.0",
     "ws": "^8.19.0"
