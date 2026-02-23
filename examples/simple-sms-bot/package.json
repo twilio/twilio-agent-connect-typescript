@@ -11,9 +11,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@twilio/tac-core": "*",
-    "@twilio/tac-server": "*",
-    "@twilio/tac-tools": "*",
     "dotenv": "^16.3.0"
   },
   "devDependencies": {
