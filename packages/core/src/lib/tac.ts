@@ -3,14 +3,15 @@ import {
   ConversationSession,
   ConversationId,
   ProfileId,
-  MemoryRetrievalResponse,
   ProfileResponse,
   ChannelType,
   OperatorProcessingResult,
 } from '../types/index';
+import { TACMemoryResponse } from './tac-memory-response';
 import { TACConfig } from './config';
 import { MemoryClient } from '../clients/memory';
 import { ConversationClient } from '../clients/conversation';
+import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
 import { Logger, createLogger } from './logger';
 import { OperatorResultProcessor } from './operator-result-processor';
@@ -28,7 +29,7 @@ export type MessageReadyCallback = (params: {
   profileId: ProfileId | undefined;
   message: string;
   author: string;
-  memory: MemoryRetrievalResponse | undefined;
+  memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
 }) => Promise<void> | void;
@@ -47,6 +48,10 @@ export type HandoffCallback = (params: {
   session: ConversationSession;
 }) => Promise<void> | void;
 
+export type ConversationEndedCallback = (params: {
+  session: ConversationSession;
+}) => Promise<void> | void;
+
 /**
  * Main Twilio Agent Connect class
  *
@@ -57,6 +62,7 @@ export class TAC {
   private readonly config: TACConfig;
   public readonly logger: Logger;
   private readonly memoryClient?: MemoryClient;
+  private readonly knowledgeClient?: KnowledgeClient;
   private readonly conversationClient: ConversationClient;
   private readonly channels: Map<ChannelType, BaseChannel>;
   private readonly cintelProcessor?: OperatorResultProcessor;
@@ -65,6 +71,7 @@ export class TAC {
   private messageReadyCallback?: MessageReadyCallback;
   private interruptCallback?: InterruptCallback;
   private handoffCallback?: HandoffCallback;
+  private conversationEndedCallback?: ConversationEndedCallback;
 
   constructor(options: TACOptions = {}) {
     // Handle config resolution:
@@ -87,8 +94,15 @@ export class TAC {
     if (this.config.memoryStoreId && this.config.memoryApiKey && this.config.memoryApiToken) {
       this.memoryClient = new MemoryClient(this.config, this.logger.child({ component: 'memory' }));
       this.logger.info('Memory client initialized');
+
+      // Initialize Knowledge client when memory credentials are available (shares same auth)
+      this.knowledgeClient = new KnowledgeClient(
+        this.config,
+        this.logger.child({ component: 'knowledge' })
+      );
+      this.logger.info('Knowledge client initialized');
     } else {
-      this.logger.info('Memory client not initialized (credentials not provided)');
+      this.logger.info('Memory and Knowledge clients not initialized (credentials not provided)');
     }
 
     // Initialize Conversation Intelligence processor if configured
@@ -153,7 +167,7 @@ export class TAC {
         profileId: ProfileId | undefined;
         message: string;
         author: string;
-        userMemory: MemoryRetrievalResponse | undefined;
+        userMemory: TACMemoryResponse | undefined;
       }): Promise<void> => {
         await this.handleMessageReady({ ...data, channelType: channel.channelType });
       }
@@ -215,6 +229,24 @@ export class TAC {
         }
       }
     );
+
+    // Handle conversation ended events
+    channel.on(
+      'conversationEnded',
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
+      async ({ session }: { session: ConversationSession }) => {
+        if (this.conversationEndedCallback) {
+          try {
+            await this.conversationEndedCallback({ session });
+          } catch (error) {
+            this.logger.error(
+              { err: error, conversation_id: session.conversation_id },
+              'Conversation ended callback error'
+            );
+          }
+        }
+      }
+    );
   }
 
   /**
@@ -225,7 +257,7 @@ export class TAC {
     profileId: ProfileId | undefined;
     message: string;
     author: string;
-    userMemory: MemoryRetrievalResponse | undefined;
+    userMemory: TACMemoryResponse | undefined;
     channelType: ChannelType;
   }): Promise<void> {
     this.logger.debug(
@@ -271,10 +303,11 @@ export class TAC {
           'Retrieving memory for profile'
         );
         try {
-          memory = await this.memoryClient.retrieveMemories(
+          const memoryResponse = await this.memoryClient.retrieveMemories(
             this.config.memoryStoreId,
             data.profileId
           );
+          memory = new TACMemoryResponse(memoryResponse);
           this.logger.debug({ profile_id: data.profileId }, 'Memory retrieved');
         } catch (error) {
           this.logger.warn({ err: error, profile_id: data.profileId }, 'Failed to retrieve memory');
@@ -335,6 +368,18 @@ export class TAC {
    */
   public onHandoff(callback: HandoffCallback): void {
     this.handoffCallback = callback;
+  }
+
+  /**
+   * Register callback for when a conversation ends.
+   *
+   * The callback is triggered by channels when a conversation is closed
+   * (e.g., SMS conversation status changed to CLOSED, or voice WebSocket
+   * disconnected). The callback receives the full ConversationSession before
+   * it is cleaned up.
+   */
+  public onConversationEnded(callback: ConversationEndedCallback): void {
+    this.conversationEndedCallback = callback;
   }
 
   /**
@@ -400,6 +445,14 @@ export class TAC {
   }
 
   /**
+   * Get knowledge client for knowledge base operations
+   * Returns undefined if memory credentials are not configured
+   */
+  public getKnowledgeClient(): KnowledgeClient | undefined {
+    return this.knowledgeClient;
+  }
+
+  /**
    * Get conversation client for advanced conversation operations
    */
   public getConversationClient(): ConversationClient {
@@ -413,6 +466,15 @@ export class TAC {
    */
   public isMemoryEnabled(): boolean {
     return this.memoryClient !== undefined;
+  }
+
+  /**
+   * Check if Knowledge functionality is enabled
+   *
+   * @returns true if knowledge client is initialized, false otherwise
+   */
+  public isKnowledgeEnabled(): boolean {
+    return this.knowledgeClient !== undefined;
   }
 
   /**
@@ -446,12 +508,20 @@ export class TAC {
    *
    * @param session - Conversation session context
    * @param query - Optional semantic search query
-   * @returns Promise containing memory retrieval response
+   * @returns Promise containing TACMemoryResponse wrapper providing unified access to memory data.
+   *
+   * When Memory is configured:
+   * - observations, summaries, and communications available
+   * - communications include author name and type
+   *
+   * When using Maestro fallback:
+   * - observations and summaries are empty arrays
+   * - communications have basic fields only (no author name/type)
    */
   public async retrieveMemory(
     session: ConversationSession,
     query?: string
-  ): Promise<MemoryRetrievalResponse> {
+  ): Promise<TACMemoryResponse> {
     // If Memory API is configured
     if (this.memoryClient && this.config.memoryStoreId) {
       // If profile_id is missing, try to lookup profile using phone number
@@ -498,12 +568,12 @@ export class TAC {
 
       try {
         // At this point, profile_id is guaranteed to be defined (either provided or looked up)
-        const memory = await this.memoryClient.retrieveMemories(
+        const memoryResponse = await this.memoryClient.retrieveMemories(
           this.config.memoryStoreId,
           session.profile_id!,
           { query }
         );
-        return memory;
+        return new TACMemoryResponse(memoryResponse);
       } catch (error) {
         this.logger.error({ err: error }, 'Failed to retrieve memory');
         throw error;
@@ -517,12 +587,8 @@ export class TAC {
           session.conversation_id
         );
 
-        // Return MemoryRetrievalResponse with only communications populated
-        return {
-          observations: [],
-          summaries: [],
-          communications,
-        };
+        // Return TACMemoryResponse wrapper with only communications populated
+        return new TACMemoryResponse(communications);
       } catch (error) {
         this.logger.error({ err: error }, 'Failed to retrieve communications');
         throw error;

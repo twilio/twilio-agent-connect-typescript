@@ -142,7 +142,7 @@ export class SMSChannel extends BaseChannel {
             { conversation_id: conversationId, status: webhookData.data?.status },
             'Handling CONVERSATION_UPDATED'
           );
-          this.handleConversationUpdated(webhookData);
+          await this.handleConversationUpdated(webhookData);
           break;
 
         default:
@@ -308,19 +308,30 @@ export class SMSChannel extends BaseChannel {
       }
     }
 
-    // Retrieve user memory if profile ID is available and memory client is initialized
+    // Get session and update with author info for profile lookup
+    const session = this.getConversationSession(conversationId);
+    if (session) {
+      session.author_info = {
+        address: author,
+        participant_id: payload.data?.author?.participantId,
+      };
+    }
+
+    // Retrieve user memory using tac.retrieveMemory which handles profile lookup by phone number
     let userMemory;
-    const memoryClient = this.tac.getMemoryClient();
-    if (profileId && memoryClient && this.config.memoryStoreId) {
-      this.logger.debug(
-        { profile_id: profileId, conversation_id: conversationId },
-        'Retrieving user memory'
-      );
+    if (session && this.tac.isMemoryEnabled()) {
+      this.logger.debug({ conversation_id: conversationId, author }, 'Retrieving user memory');
       try {
-        userMemory = await memoryClient.retrieveMemories(this.config.memoryStoreId, profileId);
-        this.logger.debug({ profile_id: profileId }, 'User memory retrieved');
+        userMemory = await this.tac.retrieveMemory(session, message);
+        this.logger.debug(
+          { conversation_id: conversationId, profile_id: session.profile_id },
+          'User memory retrieved'
+        );
       } catch (error) {
-        this.logger.warn({ err: error, profile_id: profileId }, 'Failed to retrieve user memory');
+        this.logger.warn(
+          { err: error, conversation_id: conversationId },
+          'Failed to retrieve user memory'
+        );
       }
     }
 
@@ -340,7 +351,7 @@ export class SMSChannel extends BaseChannel {
   /**
    * Handle conversation updated event
    */
-  private handleConversationUpdated(payload: SMSWebhookPayload): void {
+  private async handleConversationUpdated(payload: SMSWebhookPayload): Promise<void> {
     const conversationId = this.extractConversationId(payload);
 
     if (!conversationId) {
@@ -353,7 +364,7 @@ export class SMSChannel extends BaseChannel {
         { conversation_id: conversationId, status: payload.data.status },
         'Conversation closed, cleaning up'
       );
-      this.endConversation(conversationId);
+      await this.endConversation(conversationId);
     }
   }
 

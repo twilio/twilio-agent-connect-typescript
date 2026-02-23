@@ -238,22 +238,31 @@ function appendToActivityLog(event) {
         activityLog.innerHTML = '';
     }
 
-    const timestamp = formatTimestamp(event.timestamp);
-    const channel = event.channel || 'system';
+    let logEntry;
 
-    const logEntry = document.createElement('div');
-    logEntry.className = `card mb-2 border-start border-start-${channel}`;
-    logEntry.innerHTML = `
-        <div class="card-body py-2 px-3">
-            <div class="d-flex align-items-center gap-2">
-                <span class="font-monospace small text-muted">${timestamp}</span>
-                <span class="badge bg-${channel === 'sms' ? 'primary' : channel === 'voice' ? 'success' : 'secondary'} text-uppercase" style="font-size: 0.65rem;">
-                    ${channel}
-                </span>
-                <span class="small">${escapeHtml(event.message)}</span>
+    // Use custom renderer for memory events
+    if (event.event_type === 'memory') {
+        logEntry = document.createElement('div');
+        logEntry.innerHTML = renderMemoryEvent(event);
+    } else {
+        // Default rendering for other event types
+        const timestamp = formatTimestamp(event.timestamp);
+        const channel = event.channel || 'system';
+
+        logEntry = document.createElement('div');
+        logEntry.className = `card mb-2 border-start border-start-${channel}`;
+        logEntry.innerHTML = `
+            <div class="card-body py-2 px-3">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="font-monospace small text-muted">${timestamp}</span>
+                    <span class="badge bg-${channel === 'sms' ? 'primary' : channel === 'voice' ? 'success' : 'secondary'} text-uppercase" style="font-size: 0.65rem;">
+                        ${channel}
+                    </span>
+                    <span class="small">${escapeHtml(event.message)}</span>
+                </div>
             </div>
-        </div>
-    `;
+        `;
+    }
 
     activityLog.appendChild(logEntry);
 
@@ -335,6 +344,142 @@ function getEventBadgeClass(eventType) {
 
 function updateConversationCount() {
     conversationCount.textContent = conversations.size;
+}
+
+// =============================================================================
+// Memory Event Rendering (Expandable)
+// =============================================================================
+
+/**
+ * Renders an expandable memory event with detailed content
+ */
+function renderMemoryEvent(event) {
+    const metadata = event.metadata || {};
+    const obsCount = metadata.observation_count || 0;
+    const sumCount = metadata.summary_count || 0;
+    const commCount = metadata.communication_count || 0;
+
+    const eventId = `memory-${event.timestamp.replace(/[^0-9]/g, '')}`;
+    const channel = event.channel || 'system';
+
+    return `
+        <div class="card mb-2 border-start border-start-${channel}"
+             style="cursor: pointer;"
+             onclick="toggleMemoryDetails('${eventId}')">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="font-monospace small text-muted">${formatTimestamp(event.timestamp)}</span>
+                        <span class="badge bg-${channel === 'sms' ? 'primary' : channel === 'voice' ? 'success' : 'secondary'} text-uppercase" style="font-size: 0.65rem;">
+                            ${channel}
+                        </span>
+                        <span class="badge bg-warning text-dark text-uppercase" style="font-size: 0.65rem;">Memory</span>
+                        <span class="small">${escapeHtml(event.message)}</span>
+                    </div>
+                    <i class="bi bi-chevron-down" id="${eventId}-icon"></i>
+                </div>
+
+                <!-- Collapsible details -->
+                <div id="${eventId}" class="mt-3" style="display: none;">
+                    ${renderMemoryDetails(metadata, obsCount, sumCount, commCount)}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Renders the detailed memory content (observations, summaries, communications)
+ */
+function renderMemoryDetails(metadata, obsCount, sumCount, commCount) {
+    let html = '';
+
+    // Observations section
+    if (obsCount > 0) {
+        html += `
+            <div class="mb-3">
+                <h6 class="text-muted mb-2">📝 Observations (${obsCount})</h6>
+                ${metadata.observations.map((obs, idx) => `
+                    <div class="card mb-2">
+                        <div class="card-body p-2">
+                            <small class="d-block mb-1 text-muted">
+                                <strong>Observation ${idx + 1}</strong>
+                                ${obs.occurred_at ? ` • ${formatTimestamp(obs.occurred_at)}` : ''}
+                            </small>
+                            <small class="d-block" style="white-space: pre-wrap;">${escapeHtml(obs.content)}</small>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    // Summaries section
+    if (sumCount > 0) {
+        html += `
+            <div class="mb-3">
+                <h6 class="text-muted mb-2">📋 Conversation Summaries (${sumCount})</h6>
+                ${metadata.summaries.map((sum, idx) => `
+                    <div class="card mb-2">
+                        <div class="card-body p-2">
+                            <small class="d-block mb-1 text-muted">
+                                <strong>Summary ${idx + 1}</strong>
+                                ${sum.created_at ? ` • ${formatTimestamp(sum.created_at)}` : ''}
+                            </small>
+                            <small class="d-block" style="white-space: pre-wrap;">${escapeHtml(sum.content)}</small>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    // Communications section
+    if (commCount > 0) {
+        html += `
+            <div class="mb-3">
+                <h6 class="text-muted mb-2">💬 Historical Messages (${commCount})</h6>
+                ${metadata.communications.map(comm => `
+                    <div class="card mb-2">
+                        <div class="card-body p-2">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <small class="text-muted">
+                                    <strong>${escapeHtml(comm.author_name || comm.author_address)}</strong>
+                                    ${comm.author_type ? `<span class="badge bg-secondary badge-sm ms-1">${comm.author_type}</span>` : ''}
+                                </small>
+                                <small class="text-muted">${formatTimestamp(comm.created_at)}</small>
+                            </div>
+                            <small class="d-block" style="white-space: pre-wrap;">${escapeHtml(comm.content)}</small>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    if (!html) {
+        html = '<small class="text-muted">No memory details available</small>';
+    }
+
+    return html;
+}
+
+/**
+ * Toggles the visibility of memory details
+ */
+function toggleMemoryDetails(eventId) {
+    const detailsDiv = document.getElementById(eventId);
+    const iconElement = document.getElementById(`${eventId}-icon`);
+
+    if (detailsDiv && iconElement) {
+        if (detailsDiv.style.display === 'none') {
+            detailsDiv.style.display = 'block';
+            iconElement.className = 'bi bi-chevron-up';
+        } else {
+            detailsDiv.style.display = 'none';
+            iconElement.className = 'bi bi-chevron-down';
+        }
+    }
 }
 
 // =============================================================================

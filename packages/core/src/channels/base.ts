@@ -9,7 +9,7 @@ import type { TAC } from '../lib/tac';
  */
 export interface BaseChannelEvents {
   onConversationStarted?: (data: { session: ConversationSession }) => void;
-  onConversationEnded?: (data: { conversationId: ConversationId }) => void;
+  onConversationEnded?: (data: { session: ConversationSession }) => Promise<void> | void;
   onError?: (data: { error: Error; context?: Record<string, unknown> }) => void;
 }
 
@@ -122,12 +122,28 @@ export abstract class BaseChannel {
   }
 
   /**
-   * End a conversation session
+   * End a conversation session.
+   *
+   * Triggers the onConversationEnded callback BEFORE removing the session,
+   * so the callback receives the full ConversationSession data.
+   * Errors in the callback do not prevent session cleanup.
    */
-  protected endConversation(conversationId: ConversationId): void {
+  protected async endConversation(conversationId: ConversationId): Promise<void> {
     const session = this.activeConversations.get(conversationId);
 
     if (session) {
+      // Trigger callback BEFORE deleting the session
+      if (this.callbacks.onConversationEnded) {
+        try {
+          await this.callbacks.onConversationEnded({ session });
+        } catch (error) {
+          this.logger.error(
+            { err: error, conversation_id: conversationId },
+            'Error in conversation ended callback'
+          );
+        }
+      }
+
       this.activeConversations.delete(conversationId);
       this.logger.debug(
         {
@@ -137,9 +153,6 @@ export abstract class BaseChannel {
         },
         'Conversation ended'
       );
-      if (this.callbacks.onConversationEnded) {
-        this.callbacks.onConversationEnded({ conversationId });
-      }
     } else {
       this.logger.debug(
         { conversation_id: conversationId, channel: this.channelType },

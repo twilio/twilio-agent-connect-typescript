@@ -76,8 +76,10 @@ async function main(): Promise<void> {
     tac.registerChannel(smsChannel);
     tac.registerChannel(voiceChannel);
 
-    // Add memory tools
-    const memoryTools = createMemoryTools(tac.getMemoryClient(), tac.getConfig().memoryStoreId);
+    // Add memory tools (only if memory client and store ID are available)
+    const memoryClient = tac.getMemoryClient();
+    const memoryStoreId = tac.getConfig().memoryStoreId;
+    const memoryTools = memoryClient && memoryStoreId ? createMemoryTools(memoryClient, memoryStoreId) : null;
 
     // Create custom customer service tools
     const customerLookupTool = defineTool(
@@ -242,7 +244,7 @@ ${
 
           const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-10), // Keep last 10 messages for context
+            ...(history.slice(-10) as OpenAI.Chat.Completions.ChatCompletionMessageParam[]), // Keep last 10 messages for context
           ];
 
           // Get available tools for this conversation
@@ -255,7 +257,7 @@ ${
             handoffTools.forConversation(tac, conversationId),
           ];
 
-          if (profileId) {
+          if (profileId && memoryTools) {
             contextualTools.push(memoryTools.forSession(profileId));
           }
 
@@ -318,12 +320,12 @@ ${
               tool_calls: response.tool_calls,
             });
 
-            history.push(...toolResults);
+            history.push(...(toolResults as ConversationMessage[]));
 
             // Get final response with tool results
             const finalMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
               { role: 'system', content: systemPrompt },
-              ...history.slice(-15),
+              ...(history.slice(-15) as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
             ];
 
             const finalCompletion = await openai.chat.completions.create({
@@ -406,7 +408,7 @@ ${
     const server = new TACServer(tac, {
       development: true,
       voice: {
-        port: 3000,
+        port: Number(process.env.PORT) || 8000,
       },
     });
 

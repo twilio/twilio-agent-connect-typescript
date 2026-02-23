@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { VoiceChannel, TAC, TACConfig } from '@twilio/tac-core';
+import { VoiceChannel, TAC, TACConfig, ConversationSession } from '@twilio/tac-core';
 
 describe('VoiceChannel', () => {
   const getTestConfig = () => ({
@@ -208,6 +208,142 @@ describe('VoiceChannel', () => {
       voiceChannel.shutdown();
       expect(voiceChannel.getWebsocket('CH_test' as any)).toBeNull();
     });
+  });
+
+  describe('conversation ended callback', () => {
+    const createMockWebSocket = () => {
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      return {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          if (!handlers[event]) handlers[event] = [];
+          handlers[event].push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1, // WebSocket.OPEN
+        _handlers: handlers,
+        _emit(event: string, ...args: any[]) {
+          for (const h of handlers[event] || []) {
+            h(...args);
+          }
+        },
+      };
+    };
+
+    const setupMessage = JSON.stringify({
+      type: 'setup',
+      sessionId: 'sess_cb_test',
+      callSid: 'CA_cb_test',
+      from: '+15551234567',
+      to: '+15559876543',
+      direction: 'inbound',
+      callType: 'PSTN',
+      callStatus: 'ringing',
+      accountSid: 'ACtest123',
+      customParameters: {
+        conversation_id: 'CHcb_test12345',
+        profile_id: 'mem_profile_cb_test',
+      },
+    });
+
+    it('should fire onConversationEnded on WebSocket disconnect', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+
+      const ended = new Promise<void>(resolve => {
+        tac.onConversationEnded(({ session }) => {
+          captured.push(session);
+          resolve();
+        });
+      });
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup
+      mockWs._emit('message', Buffer.from(setupMessage));
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+
+      // Trigger close and wait for callback
+      mockWs._emit('close');
+      await ended;
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversation_id).toBe('CHcb_test12345');
+      expect(captured[0].channel).toBe('voice');
+    });
+
+    it('should still clean up session if callback throws', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+
+      const ended = new Promise<void>(resolve => {
+        tac.onConversationEnded(() => {
+          resolve();
+          throw new Error('boom');
+        });
+      });
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+
+      mockWs._emit('close');
+      await ended;
+      // Allow microtasks to finish cleanup after the thrown error
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+    });
+
+    it('should support async callback', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+
+      const ended = new Promise<void>(resolve => {
+        tac.onConversationEnded(async ({ session }) => {
+          captured.push(session);
+          resolve();
+        });
+      });
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+
+      mockWs._emit('close');
+      await ended;
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversation_id).toBe('CHcb_test12345');
+    });
+
+    it('should clean up silently when no callback is registered', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+
+      mockWs._emit('close');
+      // Flush microtask-based async chain (no callback to hook into)
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+    });
+
   });
 
   describe('handleConversationRelayCallback()', () => {

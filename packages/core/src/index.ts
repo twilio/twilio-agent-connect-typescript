@@ -12,6 +12,7 @@ export type {
   MessageReadyCallback,
   InterruptCallback,
   HandoffCallback,
+  ConversationEndedCallback,
   TACOptions,
 } from './lib/tac';
 
@@ -25,6 +26,7 @@ export type { Logger } from './lib/logger';
 // API clients
 export { MemoryClient } from './clients/memory';
 export { ConversationClient } from './clients/conversation';
+export { KnowledgeClient } from './clients/knowledge';
 
 // Channel implementations
 export { BaseChannel } from './channels/base';
@@ -42,6 +44,9 @@ export type { FlexHandoffResult } from './util/flex';
 
 // Conversation Intelligence processor
 export { OperatorResultProcessor } from './lib/operator-result-processor';
+
+// TAC Memory Response wrapper
+export { TACMemoryResponse } from './lib/tac-memory-response';
 
 // Re-export types for convenience
 export * from './types/index';

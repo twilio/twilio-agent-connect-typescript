@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SMSChannel, TAC } from '@twilio/tac-core';
+import { SMSChannel, TAC, ConversationSession } from '@twilio/tac-core';
 
 vi.mock('twilio', () => {
   const createClient = vi.fn(() => ({
@@ -219,6 +219,88 @@ describe('SMS Channel', () => {
 
       expect(channel.isConversationActive('CHtest123456789')).toBe(true);
       expect(channel.isConversationActive('CHtest987654321')).toBe(true);
+    });
+  });
+
+  describe('conversation ended callback', () => {
+    it('should fire onConversationEnded callback with full session on close', async () => {
+      const captured: ConversationSession[] = [];
+
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(channel);
+
+      // Start conversation
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789', profileId: 'test_profile_123' },
+      });
+
+      // Close conversation
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
+      });
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversation_id).toBe('CHtest123456789');
+      expect(captured[0].channel).toBe('sms');
+    });
+
+    it('should still clean up session if callback throws', async () => {
+      tac.onConversationEnded(() => {
+        throw new Error('boom');
+      });
+      tac.registerChannel(channel);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
+      });
+
+      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+    });
+
+    it('should support async callback', async () => {
+      const captured: ConversationSession[] = [];
+
+      tac.onConversationEnded(async ({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(channel);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
+      });
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversation_id).toBe('CHtest123456789');
+    });
+
+    it('should clean up silently when no callback is registered', async () => {
+      // No callback registered — should not throw
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
+      });
+
+      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
     });
   });
 

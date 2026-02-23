@@ -83,7 +83,7 @@ npm run dev:voice
 - Bi-directional voice communication
 
 **Webhook Configuration:**
-- Voice webhook: `GET https://your-domain.com/twiml`
+- Voice webhook: `POST https://your-domain.com/twiml`
 - WebSocket endpoint: `WS https://your-domain.com/voice`
 
 ## Environment Configuration
@@ -109,8 +109,8 @@ OPENAI_API_KEY=your_openai_api_key
 ```bash
 # Twilio Memory Service (for user profiles and conversation history)
 MEMORY_STORE_ID=your_memory_store_id
-TWILIO_API_KEY=your_twilio_api_key
-TWILIO_API_TOKEN=your_twilio_api_token
+MEMORY_API_KEY=your_memory_api_key
+MEMORY_API_TOKEN=your_memory_api_token
 TRAIT_GROUPS=Contact,Preferences          # Comma-separated trait groups
 ```
 

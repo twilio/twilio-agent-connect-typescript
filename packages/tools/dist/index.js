@@ -239,6 +239,63 @@ function createHandoffTools() {
   };
 }
 
-export { TACTool, createHandoffTool, createHandoffTools, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool };
+// src/built-in/knowledge.ts
+function createKnowledgeSearchTool(knowledgeClient, knowledgeBaseId, config) {
+  const topK = config.topK ?? 5;
+  return defineTool(
+    config.name,
+    config.description,
+    {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "The search query to find relevant knowledge"
+        }
+      },
+      required: ["query"],
+      description: config.description
+    },
+    async (params) => {
+      return knowledgeClient.searchKnowledgeBase(knowledgeBaseId, params.query, topK);
+    }
+  );
+}
+async function createKnowledgeSearchToolAsync(knowledgeClient, knowledgeBaseId, config) {
+  let name = config?.name;
+  let description = config?.description;
+  if (!name || !description) {
+    const kb = await knowledgeClient.getKnowledgeBase(knowledgeBaseId);
+    if (!name) {
+      const normalized = kb.displayName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+      name = normalized ? `search_${normalized}` : "search_knowledge_base";
+    }
+    if (!description) {
+      description = kb.description || `Search the ${kb.displayName} knowledge base`;
+    }
+  }
+  const toolConfig = {
+    name,
+    description
+  };
+  if (config?.topK !== void 0) {
+    toolConfig.topK = config.topK;
+  }
+  return createKnowledgeSearchTool(knowledgeClient, knowledgeBaseId, toolConfig);
+}
+function createKnowledgeTools(knowledgeClient) {
+  return {
+    /**
+     * Create knowledge search tool with explicit config
+     */
+    forKnowledgeBase: (knowledgeBaseId, config) => createKnowledgeSearchTool(knowledgeClient, knowledgeBaseId, config),
+    /**
+     * Create knowledge search tool with auto-fetched metadata
+     */
+    forKnowledgeBaseAsync: (knowledgeBaseId, config) => createKnowledgeSearchToolAsync(knowledgeClient, knowledgeBaseId, config)
+  };
+}
+
+export { TACTool, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

@@ -89,7 +89,7 @@ Just send me a message and I'll do my best to help!`;
     const server = new TACServer(tac, {
       development: true,
       voice: {
-        port: 3000,
+        port: Number(process.env.PORT) || 8000,
       },
     });
 

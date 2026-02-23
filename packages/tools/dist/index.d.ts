@@ -1,4 +1,4 @@
-import { JSONSchema, ToolFunction, MemoryClient, MemoryRetrievalResponse, BaseChannel, ConversationId, TAC } from '@twilio/tac-core';
+import { JSONSchema, ToolFunction, MemoryClient, MemoryRetrievalResponse, BaseChannel, ConversationId, TAC, KnowledgeClient, KnowledgeChunkResult } from '@twilio/tac-core';
 export { JSONSchema, OpenAITool, ToolContext, ToolExecutionResult, ToolFunction } from '@twilio/tac-core';
 
 /**
@@ -117,4 +117,58 @@ declare function createHandoffTools(): {
     forConversation: (tac: TAC, conversationId: ConversationId) => TACTool<HandoffParams, HandoffResult>;
 };
 
-export { TACTool, createHandoffTool, createHandoffTools, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool };
+/**
+ * Parameters for knowledge search tool (visible to LLM)
+ */
+interface KnowledgeSearchParams {
+    query: string;
+}
+/**
+ * Configuration for knowledge search tool
+ */
+interface KnowledgeToolConfig {
+    name?: string;
+    description?: string;
+    topK?: number;
+}
+/**
+ * Create knowledge search tool with explicit name and description
+ *
+ * @param knowledgeClient - The Knowledge client instance
+ * @param knowledgeBaseId - The knowledge base ID to search
+ * @param config - Configuration with required name and description
+ * @returns TACTool configured for knowledge search
+ */
+declare function createKnowledgeSearchTool(knowledgeClient: KnowledgeClient, knowledgeBaseId: string, config: {
+    name: string;
+    description: string;
+    topK?: number;
+}): TACTool<KnowledgeSearchParams, KnowledgeChunkResult[]>;
+/**
+ * Create knowledge search tool with auto-fetched metadata from knowledge base
+ *
+ * This async version fetches the knowledge base metadata to auto-generate
+ * the tool name and description if not provided.
+ *
+ * @param knowledgeClient - The Knowledge client instance
+ * @param knowledgeBaseId - The knowledge base ID to search
+ * @param config - Optional configuration (name/description auto-generated if not provided)
+ * @returns Promise containing TACTool configured for knowledge search
+ */
+declare function createKnowledgeSearchToolAsync(knowledgeClient: KnowledgeClient, knowledgeBaseId: string, config?: KnowledgeToolConfig): Promise<TACTool<KnowledgeSearchParams, KnowledgeChunkResult[]>>;
+/**
+ * Create factory for knowledge tools
+ *
+ * @param knowledgeClient - The Knowledge client instance
+ * @returns Factory object with methods to create knowledge tools
+ */
+declare function createKnowledgeTools(knowledgeClient: KnowledgeClient): {
+    forKnowledgeBase: (knowledgeBaseId: string, config: {
+        name: string;
+        description: string;
+        topK?: number;
+    }) => TACTool<KnowledgeSearchParams, KnowledgeChunkResult[]>;
+    forKnowledgeBaseAsync: (knowledgeBaseId: string, config?: KnowledgeToolConfig) => Promise<TACTool<KnowledgeSearchParams, KnowledgeChunkResult[]>>;
+};
+
+export { TACTool, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool };

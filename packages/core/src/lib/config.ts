@@ -39,6 +39,7 @@ export class TACConfig {
   public readonly cintelSummaryOperatorSid?: string;
   public readonly memoryApiUrl: string;
   public readonly conversationsApiUrl: string;
+  public readonly knowledgeApiUrl: string;
 
   constructor(data: TACConfigData) {
     // Validate the configuration data
@@ -79,6 +80,7 @@ export class TACConfig {
     }
     this.memoryApiUrl = serviceUrls.memoryApiUrl;
     this.conversationsApiUrl = serviceUrls.conversationsApiUrl;
+    this.knowledgeApiUrl = serviceUrls.knowledgeApiUrl;
   }
 
   /**

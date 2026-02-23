@@ -143,12 +143,38 @@ async function main(): Promise<void> {
             const memorySummary = memoryItems.length > 0 ? memoryItems.join(', ') : 'context';
             console.log(`MEMORY | Retrieved ${memorySummary}`);
 
-            // Dashboard: memory event
+            // Dashboard: memory event with detailed metadata
             dashboardHandler.pushEvent({
               event_type: 'memory',
               conversation_id: convId,
               channel: context.channel,
+              ...(context.profile_id && { profile_id: context.profile_id }),
               message: `Retrieved ${memorySummary}`,
+              metadata: {
+                observations: finalMemoryResponse.observations.map((obs) => ({
+                  id: obs.id,
+                  content: obs.content,
+                  created_at: obs.createdAt,
+                  occurred_at: obs.occurredAt,
+                  source: obs.source,
+                })),
+                summaries: finalMemoryResponse.summaries.map((sum) => ({
+                  id: sum.id,
+                  content: sum.content,
+                  created_at: sum.createdAt,
+                })),
+                communications: finalMemoryResponse.communications?.map((comm) => ({
+                  id: comm.id,
+                  author_address: comm.author.address,
+                  author_name: comm.author.name,
+                  author_type: comm.author.type,
+                  content: comm.content.text || '',
+                  created_at: comm.created_at,
+                })) || [],
+                observation_count: finalMemoryResponse.observations.length,
+                summary_count: finalMemoryResponse.summaries.length,
+                communication_count: finalMemoryResponse.communications?.length || 0,
+              },
             });
           }
 
@@ -285,7 +311,7 @@ async function main(): Promise<void> {
     const server = new TACServer(tac, {
       development: true,
       voice: {
-        port: 3000,
+        port: Number(process.env.PORT) || 8000,
       },
       welcomeGreeting: 'Hello! Thank you for calling Owl Internet. How can I help you today?',
       handoffHandler,

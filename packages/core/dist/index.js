@@ -1,12 +1,12 @@
-import { config } from 'dotenv';
 import { z } from 'zod';
 export { z } from 'zod';
+import { config } from 'dotenv';
 import pino from 'pino';
 import Twilio from 'twilio';
 import { WebSocket } from 'ws';
 import VoiceResponse2 from 'twilio/lib/twiml/VoiceResponse.js';
 
-// src/lib/config.ts
+// src/types/tac.ts
 var EnvironmentSchema = z.enum(["dev", "stage", "prod"]).default("prod");
 var ChannelTypeSchema = z.enum(["sms", "voice"]);
 var TACConfigSchema = z.object({
@@ -46,19 +46,24 @@ function computeServiceUrls(environment) {
   const baseUrls = {
     dev: {
       memoryApiUrl: "https://memory.dev-us1.twilio.com",
-      conversationsApiUrl: "https://conversations.dev-us1.twilio.com"
+      conversationsApiUrl: "https://conversations.dev-us1.twilio.com",
+      knowledgeApiUrl: "https://knowledge.dev.twilio.com"
     },
     stage: {
       memoryApiUrl: "https://memory.stage-us1.twilio.com",
-      conversationsApiUrl: "https://conversations.stage-us1.twilio.com"
+      conversationsApiUrl: "https://conversations.stage-us1.twilio.com",
+      knowledgeApiUrl: "https://knowledge.stage.twilio.com"
     },
     prod: {
       memoryApiUrl: "https://memory.twilio.com",
-      conversationsApiUrl: "https://conversations.twilio.com"
+      conversationsApiUrl: "https://conversations.twilio.com",
+      knowledgeApiUrl: "https://knowledge.twilio.com"
     }
   };
   return baseUrls[environment];
 }
+
+// src/types/conversation.ts
 var ParticipantAddressTypeSchema = z.enum([
   "VOICE",
   "SMS",
@@ -77,13 +82,24 @@ var ParticipantAddressSchema = z.object({
 var CommunicationParticipantSchema = z.object({
   address: z.string().max(254),
   channel: ParticipantAddressTypeSchema,
-  participant_id: z.string().optional(),
+  participant_id: z.string(),
   delivery_status: z.enum(["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]).optional()
 });
+var TranscriptionWordSchema = z.object({
+  text: z.string(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional()
+});
+var TranscriptionSchema = z.object({
+  channel: z.number().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  engine: z.string().optional(),
+  words: z.array(TranscriptionWordSchema).optional()
+});
 var CommunicationContentSchema = z.object({
-  type: z.enum(["TEXT", "TRANSCRIPTION"]).default("TEXT"),
-  text: z.string().max(8388608).optional(),
-  transcription: z.record(z.unknown()).optional()
+  type: z.enum(["TEXT", "TRANSCRIPTION"]),
+  text: z.string().max(8388608),
+  transcription: TranscriptionSchema.optional()
 });
 var CommunicationSchema = z.object({
   id: z.string(),
@@ -93,7 +109,7 @@ var CommunicationSchema = z.object({
   content: CommunicationContentSchema,
   recipients: z.array(CommunicationParticipantSchema),
   channel_id: z.string().optional(),
-  created_at: z.string(),
+  created_at: z.string().optional(),
   updated_at: z.string().optional()
 });
 var AuthorInfoSchema = z.object({
@@ -147,8 +163,177 @@ var ConversationParticipantSchema = z.object({
   updatedAt: z.string().optional()
 });
 
-// src/types/memory.ts
+// src/types/tac.ts
+var TACChannelTypeSchema = z.enum([
+  "VOICE",
+  "SMS",
+  "RCS",
+  "EMAIL",
+  "WHATSAPP",
+  "CHAT",
+  "API",
+  "SYSTEM"
+]);
+var TACDeliveryStatusSchema = z.enum([
+  "INITIATED",
+  "IN_PROGRESS",
+  "DELIVERED",
+  "COMPLETED",
+  "FAILED"
+]);
+var TACParticipantTypeSchema = z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]);
+var TACCommunicationAuthorSchema = z.object({
+  // Common fields (both APIs)
+  address: z.string(),
+  channel: TACChannelTypeSchema,
+  // Maestro-only fields
+  participant_id: z.string().optional(),
+  delivery_status: TACDeliveryStatusSchema.optional(),
+  // Memory-only fields
+  id: z.string().optional(),
+  name: z.string().optional(),
+  type: TACParticipantTypeSchema.optional(),
+  profile_id: z.string().optional()
+});
+var TACCommunicationContentSchema = z.object({
+  // Maestro-only: content type discriminator
+  type: z.enum(["TEXT", "TRANSCRIPTION"]).optional(),
+  // Both APIs: message text (optional in unified model to handle both)
+  text: z.string().optional(),
+  // Maestro-only: transcription metadata
+  transcription: TranscriptionSchema.optional()
+});
+var TACCommunicationSchema = z.object({
+  // Common fields (both APIs)
+  id: z.string(),
+  author: TACCommunicationAuthorSchema,
+  content: TACCommunicationContentSchema,
+  recipients: z.array(TACCommunicationAuthorSchema).default([]),
+  channel_id: z.string().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  // Maestro-only fields
+  conversation_id: z.string().optional(),
+  account_id: z.string().optional()
+});
+
+// src/lib/tac-memory-response.ts
+function isMemoryRetrievalResponse(data) {
+  return !Array.isArray(data);
+}
+var TACMemoryResponse = class {
+  _data;
+  _communications;
+  /**
+   * Initialize wrapper with either Memory or Maestro data.
+   *
+   * @param data - Either MemoryRetrievalResponse (Memory) or Communication[] (Maestro)
+   */
+  constructor(data) {
+    this._data = data;
+    if (isMemoryRetrievalResponse(data)) {
+      this._communications = (data.communications ?? []).map(
+        (comm) => TACCommunicationSchema.parse(comm)
+      );
+    } else {
+      this._communications = data.map((comm) => TACCommunicationSchema.parse(comm));
+    }
+  }
+  /**
+   * Get observation memories.
+   *
+   * @returns List of observations if Memory is configured, empty array for Maestro fallback
+   */
+  get observations() {
+    if (isMemoryRetrievalResponse(this._data)) {
+      return this._data.observations;
+    }
+    return [];
+  }
+  /**
+   * Get summary memories.
+   *
+   * @returns List of summaries if Memory is configured, empty array for Maestro fallback
+   */
+  get summaries() {
+    if (isMemoryRetrievalResponse(this._data)) {
+      return this._data.summaries;
+    }
+    return [];
+  }
+  /**
+   * Get communications in unified format with all available fields.
+   *
+   * Communications are converted to a common format during initialization that includes
+   * all fields from both Memory and Maestro APIs. Fields not available from a particular
+   * API will be undefined.
+   *
+   * @returns List of unified communications with all available fields
+   */
+  get communications() {
+    return this._communications;
+  }
+  /**
+   * Check if Memory API is configured and providing full features.
+   *
+   * @returns true if Memory is configured (observations/summaries available),
+   *          false if using Maestro fallback (only communications available)
+   */
+  get hasMemoryFeatures() {
+    return isMemoryRetrievalResponse(this._data);
+  }
+  /**
+   * Access raw underlying data for advanced use cases.
+   *
+   * Use this when you need access to all fields from the original API responses,
+   * not just the unified common fields.
+   *
+   * @returns Either MemoryRetrievalResponse or Communication[] depending on configuration
+   */
+  get rawData() {
+    return this._data;
+  }
+};
 var MessageDirectionSchema = z.enum(["inbound", "outbound"]);
+var MemoryChannelTypeSchema = z.enum([
+  "VOICE",
+  "SMS",
+  "RCS",
+  "EMAIL",
+  "WHATSAPP",
+  "CHAT",
+  "API",
+  "SYSTEM"
+]);
+var MemoryParticipantTypeSchema = z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]);
+var MemoryDeliveryStatusSchema = z.enum([
+  "INITIATED",
+  "IN_PROGRESS",
+  "DELIVERED",
+  "COMPLETED",
+  "FAILED"
+]);
+var MemoryParticipantSchema = z.object({
+  id: z.string(),
+  name: z.string().max(256),
+  address: z.string().max(254),
+  channel: MemoryChannelTypeSchema,
+  type: MemoryParticipantTypeSchema.optional(),
+  profile_id: z.string().optional(),
+  delivery_status: MemoryDeliveryStatusSchema.optional()
+});
+var MemoryCommunicationContentSchema = z.object({
+  text: z.string().max(8388608).optional()
+});
+var MemoryCommunicationSchema = z.object({
+  id: z.string(),
+  author: MemoryParticipantSchema,
+  content: MemoryCommunicationContentSchema,
+  recipients: z.array(MemoryParticipantSchema).max(100),
+  channel_id: z.string().max(256).optional(),
+  created_at: z.string(),
+  updated_at: z.string().optional()
+});
 var SessionMessageSchema = z.object({
   direction: MessageDirectionSchema,
   channel: z.string(),
@@ -191,7 +376,7 @@ var MemoryRetrievalRequestSchema = z.object({
 var MemoryRetrievalResponseSchema = z.object({
   observations: z.array(ObservationInfoSchema),
   summaries: z.array(SummaryInfoSchema),
-  communications: z.array(CommunicationSchema).optional().default([]),
+  communications: z.array(MemoryCommunicationSchema).optional().default([]),
   meta: z.object({
     queryTime: z.number().optional()
   }).optional()
@@ -366,6 +551,31 @@ var ConversationSummaryItemSchema = z.object({
   occurredAt: z.string(),
   source: z.string().optional()
 });
+var KnowledgeBaseStatusSchema = z.enum([
+  "QUEUED",
+  "PROVISIONING",
+  "ACTIVE",
+  "FAILED",
+  "DELETING"
+]);
+var KnowledgeBaseSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  description: z.string(),
+  status: KnowledgeBaseStatusSchema,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  version: z.number()
+});
+var KnowledgeChunkResultSchema = z.object({
+  content: z.string(),
+  knowledgeId: z.string(),
+  createdAt: z.string(),
+  score: z.number().optional()
+});
+var KnowledgeSearchResponseSchema = z.object({
+  chunks: z.array(KnowledgeChunkResultSchema)
+});
 
 // src/lib/config.ts
 var TACConfig = class _TACConfig {
@@ -384,6 +594,7 @@ var TACConfig = class _TACConfig {
   cintelSummaryOperatorSid;
   memoryApiUrl;
   conversationsApiUrl;
+  knowledgeApiUrl;
   constructor(data) {
     const validatedConfig = TACConfigSchema.parse(data);
     const serviceUrls = computeServiceUrls(validatedConfig.environment);
@@ -418,6 +629,7 @@ var TACConfig = class _TACConfig {
     }
     this.memoryApiUrl = serviceUrls.memoryApiUrl;
     this.conversationsApiUrl = serviceUrls.conversationsApiUrl;
+    this.knowledgeApiUrl = serviceUrls.knowledgeApiUrl;
   }
   /**
    * Create TACConfig from environment variables.
@@ -1036,6 +1248,128 @@ var ConversationClient = class {
   }
 };
 
+// src/clients/knowledge.ts
+var KnowledgeClient = class {
+  baseUrl;
+  credentials;
+  logger;
+  constructor(config2, logger2) {
+    this.baseUrl = config2.knowledgeApiUrl;
+    if (!config2.memoryApiKey || !config2.memoryApiToken) {
+      throw new Error(
+        "Memory API credentials are required for Knowledge client. Please set MEMORY_API_KEY and MEMORY_API_TOKEN environment variables."
+      );
+    }
+    this.credentials = {
+      username: config2.memoryApiKey,
+      password: config2.memoryApiToken
+    };
+    const baseLogger = logger2 || createLogger({ name: "tac-knowledge" });
+    this.logger = baseLogger.child({ client: "knowledge" });
+  }
+  /**
+   * Get knowledge base metadata
+   *
+   * @param knowledgeBaseId - The knowledge base ID (format: know_knowledgebase_*)
+   * @returns Promise containing knowledge base metadata
+   */
+  async getKnowledgeBase(knowledgeBaseId) {
+    const url = `${this.baseUrl}/v2/ControlPlane/KnowledgeBases/${knowledgeBaseId}`;
+    const options = {
+      method: "GET",
+      headers: {
+        Authorization: this.getBasicAuthHeader()
+      }
+    };
+    this.logRequest(options.method, url);
+    const response = await fetch(url, options);
+    await this.logResponse(response);
+    if (!response.ok) {
+      throw new Error(`Failed to get knowledge base: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return KnowledgeBaseSchema.parse(data);
+  }
+  /**
+   * Search knowledge base for relevant content
+   *
+   * @param knowledgeBaseId - The knowledge base ID (format: know_knowledgebase_*)
+   * @param query - Search query (max 2048 characters)
+   * @param topK - Maximum number of results to return (default: 5, max: 20)
+   * @param knowledgeIds - Optional list of knowledge IDs to filter results
+   * @returns Promise containing array of search result chunks
+   */
+  async searchKnowledgeBase(knowledgeBaseId, query, topK = 5, knowledgeIds) {
+    const url = `${this.baseUrl}/v2/KnowledgeBases/${knowledgeBaseId}/Search`;
+    const requestBody = {
+      query,
+      top: Math.min(Math.max(topK, 1), 20)
+      // Clamp to 1-20
+    };
+    if (knowledgeIds && knowledgeIds.length > 0) {
+      requestBody.knowledgeIds = knowledgeIds;
+    }
+    const options = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: this.getBasicAuthHeader()
+      },
+      body: JSON.stringify(requestBody)
+    };
+    this.logRequest(options.method, url, options.body);
+    const response = await fetch(url, options);
+    await this.logResponse(response);
+    if (!response.ok) {
+      throw new Error(`Failed to search knowledge base: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    const validated = KnowledgeSearchResponseSchema.parse(data);
+    return validated.chunks;
+  }
+  /**
+   * Get Basic Auth header for HTTP requests
+   */
+  getBasicAuthHeader() {
+    const credentials = `${this.credentials.username}:${this.credentials.password}`;
+    const encoded = Buffer.from(credentials).toString("base64");
+    return `Basic ${encoded}`;
+  }
+  /**
+   * Log HTTP request details
+   */
+  logRequest(method, url, body) {
+    this.logger.debug(
+      {
+        http_method: method,
+        http_url: url,
+        http_body: body ? JSON.parse(body) : void 0
+      },
+      "Knowledge HTTP request"
+    );
+  }
+  /**
+   * Log HTTP response details
+   */
+  async logResponse(response) {
+    const bodyText = await response.clone().text();
+    let bodyJson;
+    try {
+      bodyJson = bodyText ? JSON.parse(bodyText) : void 0;
+    } catch {
+      bodyJson = bodyText;
+    }
+    this.logger.debug(
+      {
+        http_status: response.status,
+        http_status_text: response.statusText,
+        http_body: bodyJson
+      },
+      "HTTP response"
+    );
+  }
+};
+
 // src/lib/operator-result-processor.ts
 function extractProfileIds(operatorResult) {
   const profileIds = [];
@@ -1383,6 +1717,7 @@ var TAC = class {
   config;
   logger;
   memoryClient;
+  knowledgeClient;
   conversationClient;
   channels;
   cintelProcessor;
@@ -1390,6 +1725,7 @@ var TAC = class {
   messageReadyCallback;
   interruptCallback;
   handoffCallback;
+  conversationEndedCallback;
   constructor(options = {}) {
     const finalConfig = options.config ? options.config instanceof TACConfig ? options.config : new TACConfig(options.config) : TACConfig.fromEnv();
     const finalLogger = options.logger ?? createLogger({ name: "tac" });
@@ -1399,8 +1735,13 @@ var TAC = class {
     if (this.config.memoryStoreId && this.config.memoryApiKey && this.config.memoryApiToken) {
       this.memoryClient = new MemoryClient(this.config, this.logger.child({ component: "memory" }));
       this.logger.info("Memory client initialized");
+      this.knowledgeClient = new KnowledgeClient(
+        this.config,
+        this.logger.child({ component: "knowledge" })
+      );
+      this.logger.info("Knowledge client initialized");
     } else {
-      this.logger.info("Memory client not initialized (credentials not provided)");
+      this.logger.info("Memory and Knowledge clients not initialized (credentials not provided)");
     }
     if (this.memoryClient && this.config.cintelConfigurationId) {
       this.cintelProcessor = new OperatorResultProcessor(
@@ -1497,6 +1838,22 @@ var TAC = class {
         }
       }
     );
+    channel.on(
+      "conversationEnded",
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
+      async ({ session }) => {
+        if (this.conversationEndedCallback) {
+          try {
+            await this.conversationEndedCallback({ session });
+          } catch (error) {
+            this.logger.error(
+              { err: error, conversation_id: session.conversation_id },
+              "Conversation ended callback error"
+            );
+          }
+        }
+      }
+    );
   }
   /**
    * Handle message ready event from channels
@@ -1537,10 +1894,11 @@ var TAC = class {
           "Retrieving memory for profile"
         );
         try {
-          memory = await this.memoryClient.retrieveMemories(
+          const memoryResponse = await this.memoryClient.retrieveMemories(
             this.config.memoryStoreId,
             data.profileId
           );
+          memory = new TACMemoryResponse(memoryResponse);
           this.logger.debug({ profile_id: data.profileId }, "Memory retrieved");
         } catch (error) {
           this.logger.warn({ err: error, profile_id: data.profileId }, "Failed to retrieve memory");
@@ -1597,6 +1955,17 @@ var TAC = class {
     this.handoffCallback = callback;
   }
   /**
+   * Register callback for when a conversation ends.
+   *
+   * The callback is triggered by channels when a conversation is closed
+   * (e.g., SMS conversation status changed to CLOSED, or voice WebSocket
+   * disconnected). The callback receives the full ConversationSession before
+   * it is cleaned up.
+   */
+  onConversationEnded(callback) {
+    this.conversationEndedCallback = callback;
+  }
+  /**
    * Trigger handoff callback
    */
   async triggerHandoff(conversationId, reason) {
@@ -1651,6 +2020,13 @@ var TAC = class {
     return this.memoryClient;
   }
   /**
+   * Get knowledge client for knowledge base operations
+   * Returns undefined if memory credentials are not configured
+   */
+  getKnowledgeClient() {
+    return this.knowledgeClient;
+  }
+  /**
    * Get conversation client for advanced conversation operations
    */
   getConversationClient() {
@@ -1663,6 +2039,14 @@ var TAC = class {
    */
   isMemoryEnabled() {
     return this.memoryClient !== void 0;
+  }
+  /**
+   * Check if Knowledge functionality is enabled
+   *
+   * @returns true if knowledge client is initialized, false otherwise
+   */
+  isKnowledgeEnabled() {
+    return this.knowledgeClient !== void 0;
   }
   /**
    * Check if Conversation Intelligence processing is enabled
@@ -1692,7 +2076,15 @@ var TAC = class {
    *
    * @param session - Conversation session context
    * @param query - Optional semantic search query
-   * @returns Promise containing memory retrieval response
+   * @returns Promise containing TACMemoryResponse wrapper providing unified access to memory data.
+   *
+   * When Memory is configured:
+   * - observations, summaries, and communications available
+   * - communications include author name and type
+   *
+   * When using Maestro fallback:
+   * - observations and summaries are empty arrays
+   * - communications have basic fields only (no author name/type)
    */
   async retrieveMemory(session, query) {
     if (this.memoryClient && this.config.memoryStoreId) {
@@ -1724,12 +2116,12 @@ var TAC = class {
         }
       }
       try {
-        const memory = await this.memoryClient.retrieveMemories(
+        const memoryResponse = await this.memoryClient.retrieveMemories(
           this.config.memoryStoreId,
           session.profile_id,
           { query }
         );
-        return memory;
+        return new TACMemoryResponse(memoryResponse);
       } catch (error) {
         this.logger.error({ err: error }, "Failed to retrieve memory");
         throw error;
@@ -1740,11 +2132,7 @@ var TAC = class {
         const communications = await this.conversationClient.listCommunications(
           session.conversation_id
         );
-        return {
-          observations: [],
-          summaries: [],
-          communications
-        };
+        return new TACMemoryResponse(communications);
       } catch (error) {
         this.logger.error({ err: error }, "Failed to retrieve communications");
         throw error;
@@ -1866,11 +2254,25 @@ var BaseChannel = class {
     return session;
   }
   /**
-   * End a conversation session
+   * End a conversation session.
+   *
+   * Triggers the onConversationEnded callback BEFORE removing the session,
+   * so the callback receives the full ConversationSession data.
+   * Errors in the callback do not prevent session cleanup.
    */
-  endConversation(conversationId) {
+  async endConversation(conversationId) {
     const session = this.activeConversations.get(conversationId);
     if (session) {
+      if (this.callbacks.onConversationEnded) {
+        try {
+          await this.callbacks.onConversationEnded({ session });
+        } catch (error) {
+          this.logger.error(
+            { err: error, conversation_id: conversationId },
+            "Error in conversation ended callback"
+          );
+        }
+      }
       this.activeConversations.delete(conversationId);
       this.logger.debug(
         {
@@ -1880,9 +2282,6 @@ var BaseChannel = class {
         },
         "Conversation ended"
       );
-      if (this.callbacks.onConversationEnded) {
-        this.callbacks.onConversationEnded({ conversationId });
-      }
     } else {
       this.logger.debug(
         { conversation_id: conversationId, channel: this.channelType },
@@ -1997,7 +2396,7 @@ var SMSChannel = class extends BaseChannel {
             { conversation_id: conversationId, status: webhookData.data?.status },
             "Handling CONVERSATION_UPDATED"
           );
-          this.handleConversationUpdated(webhookData);
+          await this.handleConversationUpdated(webhookData);
           break;
         default:
           this.logger.warn(
@@ -2128,31 +2527,40 @@ var SMSChannel = class extends BaseChannel {
       this.logger.debug({ conversation_id: conversationId }, "Starting new conversation");
       this.startConversation(conversationId, profileId ?? void 0, payload.data?.serviceId);
     } else if (payload.data?.serviceId) {
-      const session = this.getConversationSession(conversationId);
-      if (session && session.service_id !== payload.data.serviceId) {
+      const session2 = this.getConversationSession(conversationId);
+      if (session2 && session2.service_id !== payload.data.serviceId) {
         this.logger.debug(
           {
             conversation_id: conversationId,
-            old_service_id: session.service_id,
+            old_service_id: session2.service_id,
             new_service_id: payload.data.serviceId
           },
           "Updating conversation configuration ID from communication.created"
         );
-        session.service_id = payload.data.serviceId;
+        session2.service_id = payload.data.serviceId;
       }
     }
+    const session = this.getConversationSession(conversationId);
+    if (session) {
+      session.author_info = {
+        address: author,
+        participant_id: payload.data?.author?.participantId
+      };
+    }
     let userMemory;
-    const memoryClient = this.tac.getMemoryClient();
-    if (profileId && memoryClient && this.config.memoryStoreId) {
-      this.logger.debug(
-        { profile_id: profileId, conversation_id: conversationId },
-        "Retrieving user memory"
-      );
+    if (session && this.tac.isMemoryEnabled()) {
+      this.logger.debug({ conversation_id: conversationId, author }, "Retrieving user memory");
       try {
-        userMemory = await memoryClient.retrieveMemories(this.config.memoryStoreId, profileId);
-        this.logger.debug({ profile_id: profileId }, "User memory retrieved");
+        userMemory = await this.tac.retrieveMemory(session, message);
+        this.logger.debug(
+          { conversation_id: conversationId, profile_id: session.profile_id },
+          "User memory retrieved"
+        );
       } catch (error) {
-        this.logger.warn({ err: error, profile_id: profileId }, "Failed to retrieve user memory");
+        this.logger.warn(
+          { err: error, conversation_id: conversationId },
+          "Failed to retrieve user memory"
+        );
       }
     }
     if (this.smsCallbacks.onMessageReceived) {
@@ -2169,7 +2577,7 @@ var SMSChannel = class extends BaseChannel {
   /**
    * Handle conversation updated event
    */
-  handleConversationUpdated(payload) {
+  async handleConversationUpdated(payload) {
     const conversationId = this.extractConversationId(payload);
     if (!conversationId) {
       throw new Error("Missing conversation ID in conversation.updated event");
@@ -2179,7 +2587,7 @@ var SMSChannel = class extends BaseChannel {
         { conversation_id: conversationId, status: payload.data.status },
         "Conversation closed, cleaning up"
       );
-      this.endConversation(conversationId);
+      await this.endConversation(conversationId);
     }
   }
   /**
@@ -2417,7 +2825,12 @@ var VoiceChannel = class extends BaseChannel {
     });
     ws.on("close", () => {
       if (conversationId) {
-        this.handleWebSocketDisconnect(conversationId);
+        void this.handleWebSocketDisconnect(conversationId).catch((err) => {
+          this.logger.error(
+            { err, conversation_id: conversationId },
+            "WebSocket disconnect handler error"
+          );
+        });
       }
     });
     ws.on("error", (error) => {
@@ -2496,7 +2909,7 @@ var VoiceChannel = class extends BaseChannel {
   /**
    * Handle WebSocket disconnection
    */
-  handleWebSocketDisconnect(conversationId) {
+  async handleWebSocketDisconnect(conversationId) {
     this.webSocketConnections.delete(conversationId);
     for (const [callSid, cId] of this.callSidToConversationId.entries()) {
       if (cId === conversationId) {
@@ -2507,7 +2920,7 @@ var VoiceChannel = class extends BaseChannel {
     if (this.voiceCallbacks.onWebSocketDisconnected) {
       this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
-    this.endConversation(conversationId);
+    await this.endConversation(conversationId);
   }
   /**
    * Send voice response via WebSocket
@@ -2811,6 +3224,6 @@ function handleFlexHandoffLogic(formData, flexWorkflowSid) {
   }
 }
 
-export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayCallbackPayloadSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, MemoryClient, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACConfig, TACConfigSchema, ToolExecutionResultSchema, VoiceChannel, VoiceResponseSchema, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createLogger, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayCallbackPayloadSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceResponseSchema, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createLogger, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

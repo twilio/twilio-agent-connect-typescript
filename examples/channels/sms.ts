@@ -19,17 +19,16 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionSystemMessageParam,
   ChatCompletionUserMessageParam,
-  ChatCompletionAssistantMessageParam
+  ChatCompletionAssistantMessageParam,
 } from 'openai/resources/chat/completions';
 import Fastify from 'fastify';
 import formbody from '@fastify/formbody';
-import { TAC, SMSChannel } from '@twilio/tac-core';
+import { TAC, SMSChannel, TACMemoryResponse } from '@twilio/tac-core';
 import type {
   ConversationSession,
-  MemoryRetrievalResponse,
   ConversationId,
   ProfileId,
-  ChannelType
+  ChannelType,
 } from '@twilio/tac-core';
 
 // Load environment variables
@@ -54,17 +53,17 @@ async function handleMessageReady(params: {
   profileId: ProfileId | undefined;
   message: string;
   author: string;
-  memory: MemoryRetrievalResponse | undefined;
+  memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<string> {
+}): Promise<void> {
   const { conversationId, message: userMessage, memory: memoryResponse } = params;
   console.log(`Processing message for conversation ${conversationId}`);
 
   if (memoryResponse) {
     console.log(
       `Retrieved memories: ${memoryResponse.observations.length} observations, ` +
-      `${memoryResponse.summaries.length} summaries, ${memoryResponse.sessions.length} sessions`
+        `${memoryResponse.summaries.length} summaries, ${memoryResponse.communications?.length ?? 0} communications`
     );
   }
 
@@ -73,7 +72,7 @@ async function handleMessageReady(params: {
   if (!conversationMessages.has(convId)) {
     const systemMsg: ChatCompletionSystemMessageParam = {
       role: 'system',
-      content: systemPrompt
+      content: systemPrompt,
     };
     conversationMessages.set(convId, [systemMsg]);
 
@@ -82,8 +81,12 @@ async function handleMessageReady(params: {
       console.log(`Memory observations available: ${memoryResponse.observations.length}`);
 
       // Build context from memory observations
-      const observationContext = "Previous conversation context:\n" +
-        memoryResponse.observations.slice(0, 3).map(obs => `- ${obs.observation}`).join('\n');
+      const observationContext =
+        'Previous conversation context:\n' +
+        memoryResponse.observations
+          .slice(0, 3)
+          .map(obs => `- ${obs.content}`)
+          .join('\n');
 
       const contextMsg: ChatCompletionSystemMessageParam = {
         role: 'system',
@@ -99,7 +102,7 @@ async function handleMessageReady(params: {
   // Add user message to history
   const userMsg: ChatCompletionUserMessageParam = {
     role: 'user',
-    content: userMessage
+    content: userMessage,
   };
   const messages = conversationMessages.get(convId)!;
   messages.push(userMsg);
@@ -124,11 +127,7 @@ async function handleMessageReady(params: {
       content: response,
     };
     messages.push(assistantMsg);
-
-    return response;
   }
-
-  return "I apologize, but I'm having trouble processing your request right now. Please try again.";
 }
 
 async function main() {
@@ -136,8 +135,10 @@ async function main() {
 
   try {
     // Initialize TAC
-    // Memory service is optional - only include if memoryStoreSid environment variable is set
-    const memoryStoreSid = process.env.MEMORY_STORE_ID;
+    // Memory service is optional - only include if all required environment variables are set
+    const memoryStoreId = process.env.MEMORY_STORE_ID;
+    const memoryApiKey = process.env.MEMORY_API_KEY;
+    const memoryApiToken = process.env.MEMORY_API_TOKEN;
 
     tac = new TAC({
       config: {
@@ -146,7 +147,9 @@ async function main() {
         twilioAccountSid: process.env.TWILIO_ACCOUNT_SID!,
         twilioAuthToken: process.env.TWILIO_AUTH_TOKEN!,
         twilioPhoneNumber: process.env.TWILIO_PHONE_NUMBER!,
-        memoryStoreId: memoryStoreSid || '',
+        memoryStoreId,
+        memoryApiKey,
+        memoryApiToken,
       },
     });
 
@@ -187,7 +190,7 @@ async function main() {
         console.error('Error processing SMS webhook:', error);
         return reply.code(400).send({
           status: 'error',
-          message: error instanceof Error ? error.message : String(error)
+          message: error instanceof Error ? error.message : String(error),
         });
       }
     });
@@ -197,7 +200,6 @@ async function main() {
     await app.listen({ host: '0.0.0.0', port });
 
     console.log(`✅ TAC SMS Server running on http://0.0.0.0:${port}`);
-
   } catch (error) {
     console.error('❌ Failed to start Basic SMS Example:', error);
     process.exit(1);

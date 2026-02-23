@@ -76,9 +76,9 @@ TWILIO_PHONE_NUMBER=+1xxx
 TWILIO_CONVERSATION_SERVICE_SID=CHxxxx
 
 # Optional: Twilio Memory
-TWILIO_MEMORY_STORE_ID=MEMxxxx
-TWILIO_MEMORY_API_KEY=xxxx
-TWILIO_MEMORY_API_TOKEN=xxxx
+MEMORY_STORE_ID=mem_store_xxxx
+MEMORY_API_KEY=xxxx
+MEMORY_API_TOKEN=xxxx
 
 # Required: OpenAI
 OPENAI_API_KEY=sk-xxxx
@@ -110,7 +110,7 @@ cd examples/exec-connect-demo
 npm run dev
 ```
 
-The server will start on `http://0.0.0.0:3000` with:
+The server will start on `http://0.0.0.0:8000` with:
 - `/sms` - SMS webhook endpoint
 - `/twiml` - Voice TwiML generation endpoint
 - `/voice` - Voice WebSocket endpoint
@@ -121,15 +121,19 @@ The server will start on `http://0.0.0.0:3000` with:
 
 1. Start ngrok tunnel:
    ```bash
-   ngrok http 3000 --domain=your-ngrok-domain
+   ngrok http 8000 --domain=your-ngrok-domain
    ```
 
 2. Your ngrok URL will be `https://your-ngrok-domain`
 
-3. Configure Twilio Conversations API Webhook:
-   - Go to Twilio Console → Conversations → Configuration
-   - Set "Post-Event Webhook URL" to: `https://your-ngrok-domain/sms`
-   - Enable webhook events: `onMessageAdded`, `onConversationAdded`, `onConversationRemoved`
+3. Set up Conversation Configuration
+  1. In the [Twilio Console](https://1console.twilio.com/), navigate to **Conversations (new) > Conversation Configurations**.
+  2. Select your Conversation Service created during the setup wizard.
+  3. In the **Overview** tab, click the **Edit** button.
+  4. Set **Webhook > Callback method** to: `https://your-domain.ngrok.app/sms`.
+    - Replace `your-domain` with your actual ngrok domain from the previous section (either the random domain like `abc123xyz` or your static domain).
+  5. Select **`POST`** as the HTTP method.
+  6. Click **Save changes**.
 
 4. Send an SMS to your Twilio phone number to interact with the agent
 
@@ -137,7 +141,7 @@ The server will start on `http://0.0.0.0:3000` with:
 
 1. Start ngrok tunnel (if not already running):
    ```bash
-   ngrok http 3000 --domain=your-ngrok-domain
+   ngrok http 8000 --domain=your-ngrok-domain
    ```
 
 2. Update `.env` with ngrok domain:

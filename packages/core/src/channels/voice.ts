@@ -167,7 +167,12 @@ export class VoiceChannel extends BaseChannel {
 
     ws.on('close', () => {
       if (conversationId) {
-        this.handleWebSocketDisconnect(conversationId);
+        void this.handleWebSocketDisconnect(conversationId).catch((err: unknown) => {
+          this.logger.error(
+            { err, conversation_id: conversationId },
+            'WebSocket disconnect handler error'
+          );
+        });
       }
     });
 
@@ -280,7 +285,7 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Handle WebSocket disconnection
    */
-  private handleWebSocketDisconnect(conversationId: ConversationId): void {
+  private async handleWebSocketDisconnect(conversationId: ConversationId): Promise<void> {
     this.webSocketConnections.delete(conversationId);
 
     // Find and remove call SID mapping
@@ -296,7 +301,7 @@ export class VoiceChannel extends BaseChannel {
     }
 
     // End conversation
-    this.endConversation(conversationId);
+    await this.endConversation(conversationId);
   }
 
   /**
