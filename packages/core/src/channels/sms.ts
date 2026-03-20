@@ -208,27 +208,27 @@ export class SMSChannel extends BaseChannel {
           this.logger.debug(
             {
               conversation_id: conversationId,
-              old_profile_id: session.profile_id,
+              old_profile_id: session.profileId,
               new_profile_id: profileId,
             },
             'Updating conversation profile ID from participant.added'
           );
-          session.profile_id = profileId;
+          session.profileId = profileId;
         }
       }
 
       if (payload.data?.serviceId) {
         const session = this.getConversationSession(conversationId);
-        if (session && session.service_id !== payload.data.serviceId) {
+        if (session && session.serviceId !== payload.data.serviceId) {
           this.logger.debug(
             {
               conversation_id: conversationId,
-              old_service_id: session.service_id,
+              old_service_id: session.serviceId,
               new_service_id: payload.data.serviceId,
             },
             'Updating conversation configuration ID from participant.added'
           );
-          session.service_id = payload.data.serviceId;
+          session.serviceId = payload.data.serviceId;
         }
       }
     } else {
@@ -295,25 +295,25 @@ export class SMSChannel extends BaseChannel {
       this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
     } else if (payload.data?.serviceId) {
       const session = this.getConversationSession(conversationId);
-      if (session && session.service_id !== payload.data.serviceId) {
+      if (session && session.serviceId !== payload.data.serviceId) {
         this.logger.debug(
           {
             conversation_id: conversationId,
-            old_service_id: session.service_id,
+            old_service_id: session.serviceId,
             new_service_id: payload.data.serviceId,
           },
           'Updating conversation configuration ID from communication.created'
         );
-        session.service_id = payload.data.serviceId;
+        session.serviceId = payload.data.serviceId;
       }
     }
 
     // Get session and update with author info for profile lookup
     const session = this.getConversationSession(conversationId);
     if (session) {
-      session.author_info = {
+      session.authorInfo = {
         address: author,
-        participant_id: payload.data?.author?.participantId,
+        participantId: payload.data?.author?.participantId,
       };
     }
 
@@ -324,7 +324,7 @@ export class SMSChannel extends BaseChannel {
       try {
         userMemory = await this.tac.retrieveMemory(session, message);
         this.logger.debug(
-          { conversation_id: conversationId, profile_id: session.profile_id },
+          { conversation_id: conversationId, profile_id: session.profileId },
           'User memory retrieved'
         );
       } catch (error) {
@@ -407,7 +407,7 @@ export class SMSChannel extends BaseChannel {
           {
             conversation_id: conversationId,
             participant_count: participants.length,
-            service_id: session.service_id ?? this.config.conversationServiceId,
+            service_id: session.serviceId ?? this.config.conversationServiceId,
           },
           'Found participants'
         );

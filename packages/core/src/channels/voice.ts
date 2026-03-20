@@ -220,8 +220,8 @@ export class VoiceChannel extends BaseChannel {
     // Start conversation session
     const session = this.startConversation(conversationId, profileId);
 
-    // Populate author_info with caller's phone number for profile lookup
-    session.author_info = {
+    // Populate authorInfo with caller's phone number for profile lookup
+    session.authorInfo = {
       address: from,
     };
 

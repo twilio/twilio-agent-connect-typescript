@@ -1,4 +1,5 @@
 import { Communication } from '../types/conversation';
+import { MemoryCommunication } from '../types/memory';
 import { MemoryRetrievalResponse, ObservationInfo, SummaryInfo } from '../types/memory';
 import { TACCommunication, TACCommunicationSchema } from '../types/tac';
 
@@ -12,6 +13,29 @@ function isMemoryRetrievalResponse(
 }
 
 /**
+ * Normalize a Memory API communication (snake_case) to the unified camelCase format
+ * expected by TACCommunicationSchema.
+ */
+function normalizeMemoryCommunication(comm: MemoryCommunication): Record<string, unknown> {
+  return {
+    ...comm,
+    channelId: comm.channel_id,
+    createdAt: comm.created_at,
+    updatedAt: comm.updated_at,
+    author: {
+      ...comm.author,
+      profileId: comm.author.profile_id,
+      deliveryStatus: comm.author.delivery_status,
+    },
+    recipients: comm.recipients.map(r => ({
+      ...r,
+      profileId: r.profile_id,
+      deliveryStatus: r.delivery_status,
+    })),
+  };
+}
+
+/**
  * Unified response wrapper for TAC.retrieveMemory().
  *
  * Provides a consistent interface for accessing memory data regardless of whether
@@ -19,11 +43,11 @@ function isMemoryRetrievalResponse(
  *
  * Memory configured:
  * - observations, summaries, communications all populated
- * - communications include Memory-specific fields (author id, name, type, profile_id)
+ * - communications include Memory-specific fields (author id, name, type, profileId)
  *
  * Maestro fallback:
  * - observations and summaries are empty arrays
- * - communications include Maestro-specific fields (conversation_id, account_id, etc.)
+ * - communications include Maestro-specific fields (conversationId, accountId, etc.)
  */
 export class TACMemoryResponse {
   private readonly _data: MemoryRetrievalResponse | Communication[];
@@ -37,10 +61,11 @@ export class TACMemoryResponse {
   constructor(data: MemoryRetrievalResponse | Communication[]) {
     this._data = data;
 
-    // Parse communications through Zod schema to create proper TACCommunication objects
+    // Parse communications through Zod schema to create proper TACCommunication objects.
+    // Memory API returns snake_case fields; normalize to camelCase before parsing.
     if (isMemoryRetrievalResponse(data)) {
       this._communications = (data.communications ?? []).map(comm =>
-        TACCommunicationSchema.parse(comm)
+        TACCommunicationSchema.parse(normalizeMemoryCommunication(comm))
       );
     } else {
       this._communications = data.map(comm => TACCommunicationSchema.parse(comm));

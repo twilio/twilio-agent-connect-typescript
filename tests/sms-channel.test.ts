@@ -246,7 +246,7 @@ describe('SMS Channel', () => {
       });
 
       expect(captured).toHaveLength(1);
-      expect(captured[0].conversation_id).toBe('CHtest123456789');
+      expect(captured[0].conversationId).toBe('CHtest123456789');
       expect(captured[0].channel).toBe('sms');
     });
 
@@ -288,7 +288,7 @@ describe('SMS Channel', () => {
       });
 
       expect(captured).toHaveLength(1);
-      expect(captured[0].conversation_id).toBe('CHtest123456789');
+      expect(captured[0].conversationId).toBe('CHtest123456789');
     });
 
     it('should clean up silently when no callback is registered', async () => {

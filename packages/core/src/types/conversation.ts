@@ -17,12 +17,12 @@ export const ParticipantAddressTypeSchema = z.enum([
 export type ParticipantAddressType = z.infer<typeof ParticipantAddressTypeSchema>;
 
 /**
- * Participant address containing channel and address (snake_case format)
+ * Participant address containing channel and address
  */
 export const ParticipantAddressSchema = z.object({
   channel: ParticipantAddressTypeSchema,
   address: z.string().min(1, 'Address is required'),
-  channel_id: z.string().nullable().optional(),
+  channelId: z.string().nullable().optional(),
 });
 
 export type ParticipantAddress = z.infer<typeof ParticipantAddressSchema>;
@@ -30,13 +30,13 @@ export type ParticipantAddress = z.infer<typeof ParticipantAddressSchema>;
 /**
  * Communication participant for Conversations Service API (Maestro).
  *
- * Note: participant_id is required for SDK validation when creating communications.
+ * Note: participantId is required for SDK validation when creating communications.
  */
 export const CommunicationParticipantSchema = z.object({
   address: z.string().max(254),
   channel: ParticipantAddressTypeSchema,
-  participant_id: z.string(),
-  delivery_status: z
+  participantId: z.string(),
+  deliveryStatus: z
     .enum(['INITIATED', 'IN_PROGRESS', 'DELIVERED', 'COMPLETED', 'FAILED'])
     .optional(),
 });
@@ -82,18 +82,19 @@ export type CommunicationContent = z.infer<typeof CommunicationContentSchema>;
 /**
  * Communication from Conversations Service API (Maestro).
  *
- * Note: `created_at` is optional per API spec.
+ * Note: `createdAt` is optional per API spec.
  */
 export const CommunicationSchema = z.object({
   id: z.string(),
-  conversation_id: z.string(),
-  account_id: z.string(),
+  conversationId: z.string(),
+  accountId: z.string(),
   author: CommunicationParticipantSchema,
   content: CommunicationContentSchema,
   recipients: z.array(CommunicationParticipantSchema),
-  channel_id: z.string().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
+  channelId: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
+  occurredAt: z.string().nullable().optional(),
 });
 
 export type Communication = z.infer<typeof CommunicationSchema>;
@@ -103,7 +104,7 @@ export type Communication = z.infer<typeof CommunicationSchema>;
  */
 export const AuthorInfoSchema = z.object({
   address: z.string(),
-  participant_id: z.string().optional(),
+  participantId: z.string().optional(),
 });
 
 export type AuthorInfo = z.infer<typeof AuthorInfoSchema>;
@@ -112,7 +113,7 @@ export type AuthorInfo = z.infer<typeof AuthorInfoSchema>;
  * Profile information for a conversation participant
  */
 export interface Profile {
-  profile_id: string;
+  profileId: string;
   traits?: Record<string, unknown>;
 }
 
@@ -120,12 +121,12 @@ export interface Profile {
  * Conversation session context
  */
 export const ConversationSessionSchema = z.object({
-  conversation_id: z.string().min(1, 'Conversation ID is required'),
-  profile_id: z.string().optional(),
-  service_id: z.string().optional(),
+  conversationId: z.string().min(1, 'Conversation ID is required'),
+  profileId: z.string().optional(),
+  serviceId: z.string().optional(),
   channel: ChannelTypeSchema,
-  started_at: z.date(),
-  author_info: AuthorInfoSchema.optional(),
+  startedAt: z.date(),
+  authorInfo: AuthorInfoSchema.optional(),
   profile: z.custom<Profile>().optional(),
   metadata: z.record(z.unknown()).optional().default({}),
 });

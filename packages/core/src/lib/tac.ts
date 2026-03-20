@@ -189,7 +189,7 @@ export class TAC {
         if (session) {
           await this.handleMessageReady({
             conversationId,
-            profileId: session.profile_id ? (session.profile_id as ProfileId) : undefined,
+            profileId: session.profileId ? (session.profileId as ProfileId) : undefined,
             message: transcript,
             author: 'user', // Voice transcripts are always from user
             userMemory: undefined,
@@ -241,7 +241,7 @@ export class TAC {
             await this.conversationEndedCallback({ session });
           } catch (error) {
             this.logger.error(
-              { err: error, conversation_id: session.conversation_id },
+              { err: error, conversation_id: session.conversationId },
               'Conversation ended callback error'
             );
           }
@@ -402,7 +402,7 @@ export class TAC {
     try {
       await this.handoffCallback({
         conversationId,
-        profileId: session.profile_id ? (session.profile_id as ProfileId) : undefined,
+        profileId: session.profileId ? (session.profileId as ProfileId) : undefined,
         reason,
         session,
       });
@@ -525,16 +525,16 @@ export class TAC {
   ): Promise<TACMemoryResponse> {
     // If Memory API is configured
     if (this.memoryClient && this.config.memoryStoreId) {
-      // If profile_id is missing, try to lookup profile using phone number
-      if (!session.profile_id) {
-        this.logger.debug('profile_id not found, attempting to lookup profile using phone number');
+      // If profileId is missing, try to lookup profile using phone number
+      if (!session.profileId) {
+        this.logger.debug('profileId not found, attempting to lookup profile using phone number');
 
-        // Check if author_info and address are available
-        if (!session.author_info || !session.author_info.address) {
+        // Check if authorInfo and address are available
+        if (!session.authorInfo || !session.authorInfo.address) {
           throw new Error(
-            'profile_id is required for memory retrieval but was not found in ' +
-              'conversation context. Additionally, author_info.address is not available ' +
-              'for profile lookup. Ensure either profile_id or author_info.address is ' +
+            'profileId is required for memory retrieval but was not found in ' +
+              'conversation context. Additionally, authorInfo.address is not available ' +
+              'for profile lookup. Ensure either profileId or authorInfo.address is ' +
               'provided when creating the ConversationSession.'
           );
         }
@@ -544,34 +544,34 @@ export class TAC {
           const lookupResponse = await this.memoryClient.lookupProfile(
             this.config.memoryStoreId,
             'phone',
-            session.author_info.address
+            session.authorInfo.address
           );
 
           // Check if any profiles were found
           if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
             throw new Error(
-              `No profile found for phone number ${session.author_info.address}. ` +
+              `No profile found for phone number ${session.authorInfo.address}. ` +
                 'Profile lookup returned no results. Ensure the phone number ' +
                 'is registered in the identity resolution system.'
             );
           }
 
           // Use the first profile ID
-          session.profile_id = lookupResponse.profiles[0];
+          session.profileId = lookupResponse.profiles[0];
         } catch (error) {
           this.logger.error(
             { err: error },
-            `Failed to lookup profile for ${session.author_info.address}`
+            `Failed to lookup profile for ${session.authorInfo.address}`
           );
           throw error;
         }
       }
 
       try {
-        // At this point, profile_id is guaranteed to be defined (either provided or looked up)
+        // At this point, profileId is guaranteed to be defined (either provided or looked up)
         const memoryResponse = await this.memoryClient.retrieveMemories(
           this.config.memoryStoreId,
-          session.profile_id!,
+          session.profileId!,
           { query }
         );
         return new TACMemoryResponse(memoryResponse);
@@ -585,7 +585,7 @@ export class TAC {
 
       try {
         const communications = await this.conversationClient.listCommunications(
-          session.conversation_id
+          session.conversationId
         );
 
         // Return TACMemoryResponse wrapper with only communications populated

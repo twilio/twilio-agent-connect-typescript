@@ -45,14 +45,14 @@ export const TACCommunicationAuthorSchema = z.object({
   channel: TACChannelTypeSchema,
 
   // Maestro-only fields
-  participant_id: z.string().optional(),
-  delivery_status: TACDeliveryStatusSchema.optional(),
+  participantId: z.string().optional(),
+  deliveryStatus: TACDeliveryStatusSchema.optional(),
 
   // Memory-only fields
   id: z.string().optional(),
   name: z.string().optional(),
   type: TACParticipantTypeSchema.optional(),
-  profile_id: z.string().optional(),
+  profileId: z.string().optional(),
 });
 
 export type TACCommunicationAuthor = z.infer<typeof TACCommunicationAuthorSchema>;
@@ -83,13 +83,13 @@ export const TACCommunicationSchema = z.object({
   author: TACCommunicationAuthorSchema,
   content: TACCommunicationContentSchema,
   recipients: z.array(TACCommunicationAuthorSchema).default([]),
-  channel_id: z.string().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
+  channelId: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
 
   // Maestro-only fields
-  conversation_id: z.string().optional(),
-  account_id: z.string().optional(),
+  conversationId: z.string().optional(),
+  accountId: z.string().optional(),
 });
 
 export type TACCommunication = z.infer<typeof TACCommunicationSchema>;

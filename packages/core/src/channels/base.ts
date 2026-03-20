@@ -85,8 +85,8 @@ export abstract class BaseChannel {
       this.logger.debug(
         {
           conversation_id: conversationId,
-          profile_id: this.activeConversations.get(conversationId)?.profile_id,
-          service_id: this.activeConversations.get(conversationId)?.service_id,
+          profile_id: this.activeConversations.get(conversationId)?.profileId,
+          service_id: this.activeConversations.get(conversationId)?.serviceId,
         },
         'Conversation already active'
       );
@@ -94,11 +94,11 @@ export abstract class BaseChannel {
     }
 
     const session: ConversationSession = {
-      conversation_id: conversationId,
-      profile_id: profileId,
-      service_id: serviceId,
+      conversationId: conversationId,
+      profileId: profileId,
+      serviceId: serviceId,
       channel: this.channelType,
-      started_at: new Date(),
+      startedAt: new Date(),
       metadata: {},
     };
 
@@ -149,7 +149,7 @@ export abstract class BaseChannel {
         {
           conversation_id: conversationId,
           channel: this.channelType,
-          service_id: session.service_id,
+          service_id: session.serviceId,
         },
         'Conversation ended'
       );

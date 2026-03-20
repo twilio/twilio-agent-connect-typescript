@@ -49,12 +49,12 @@ describe('ConversationClient', () => {
       const mockCommunications: Communication[] = [
         {
           id: 'comm_123',
-          conversation_id: 'CH123',
-          account_id: 'AC123456',
+          conversationId: 'CH123',
+          accountId: 'AC123456',
           author: {
             address: '+12025551234',
             channel: 'SMS',
-            participant_id: 'part_123',
+            participantId: 'part_123',
           },
           content: {
             type: 'TEXT',
@@ -64,11 +64,11 @@ describe('ConversationClient', () => {
             {
               address: '+12025555678',
               channel: 'SMS',
-              participant_id: 'part_456',
+              participantId: 'part_456',
             },
           ],
-          created_at: '2019-08-24T14:15:22Z',
-          updated_at: '2019-08-24T14:15:22Z',
+          createdAt: '2019-08-24T14:15:22Z',
+          updatedAt: '2019-08-24T14:15:22Z',
         },
       ];
 

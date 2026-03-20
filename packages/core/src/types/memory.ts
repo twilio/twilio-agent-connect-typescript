@@ -181,7 +181,11 @@ export type MemoryRetrievalResponse = z.infer<typeof MemoryRetrievalResponseSche
  */
 export const ProfileLookupResponseSchema = z.object({
   normalizedValue: z.string().max(255),
-  profiles: z.array(z.string()).max(100),
+  profiles: z
+    .array(z.string())
+    .max(100)
+    .nullable()
+    .transform(v => v ?? []),
 });
 
 export type ProfileLookupResponse = z.infer<typeof ProfileLookupResponseSchema>;

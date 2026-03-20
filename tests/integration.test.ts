@@ -40,17 +40,13 @@ describe('Integration Tests', () => {
               {
                 channel: 'SMS',
                 address: '+15559876543',
-                channel_id: null,
+                channelId: null,
               },
             ],
-            conversation_id: 'CHtest123456789',
-            account_id: 'ACtest123456789',
-            service_id: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
             name: null,
-            profile_id: null,
-            attributes: null,
-            created_at: null,
-            updated_at: null,
+            profileId: null,
           },
         ],
       };
@@ -113,7 +109,7 @@ describe('Integration Tests', () => {
       expect(capturedContext.message).toBe('Hello TAC');
       expect(capturedContext.author).toBe('+15559876543');
       expect(capturedContext.session).toBeDefined();
-      expect(capturedContext.session.conversation_id).toBe('CHtest123456789');
+      expect(capturedContext.session.conversationId).toBe('CHtest123456789');
     });
 
     it('should handle multiple concurrent conversations', async () => {

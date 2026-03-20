@@ -497,7 +497,7 @@ describe('VoiceChannel', () => {
       await ended;
 
       expect(captured).toHaveLength(1);
-      expect(captured[0].conversation_id).toBe('CHcb_test12345');
+      expect(captured[0].conversationId).toBe('CHcb_test12345');
       expect(captured[0].channel).toBe('voice');
     });
 
@@ -549,7 +549,7 @@ describe('VoiceChannel', () => {
       await ended;
 
       expect(captured).toHaveLength(1);
-      expect(captured[0].conversation_id).toBe('CHcb_test12345');
+      expect(captured[0].conversationId).toBe('CHcb_test12345');
     });
 
     it('should clean up silently when no callback is registered', async () => {
