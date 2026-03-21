@@ -3,6 +3,7 @@ import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
 import {
   ChannelType,
   ConversationId,
+  ConversationSession,
   ProfileId,
   WebSocketMessageSchema,
   SetupMessage,
@@ -19,6 +20,7 @@ import {
 } from '../types/index';
 import { BaseChannel, BaseChannelEvents } from './base';
 import type { TAC } from '../lib/tac';
+import { TACMemoryResponse } from '../lib/tac-memory-response';
 
 /**
  * Voice channel event callbacks extending base callbacks
@@ -32,7 +34,12 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
     to: string;
     customParameters: CustomParameters | undefined;
   }) => void;
-  onPrompt?: (data: { conversationId: ConversationId; transcript: string }) => void;
+  onPrompt?: (data: {
+    conversationId: ConversationId;
+    transcript: string;
+    userMemory?: TACMemoryResponse;
+    session?: ConversationSession;
+  }) => void;
   onInterrupt?: (data: {
     conversationId: ConversationId;
     reason: string;
@@ -143,7 +150,12 @@ export class VoiceChannel extends BaseChannel {
 
           case 'prompt':
             if (conversationId) {
-              this.handlePromptMessage(conversationId, message);
+              void this.handlePromptMessage(conversationId, message).catch((err: unknown) => {
+                this.logger.error(
+                  { err, conversation_id: conversationId },
+                  'Failed to handle prompt message'
+                );
+              });
             }
             break;
 
@@ -247,16 +259,38 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Handle WebSocket prompt message (user speech)
    */
-  private handlePromptMessage(conversationId: ConversationId, message: PromptMessage): void {
+  private async handlePromptMessage(
+    conversationId: ConversationId,
+    message: PromptMessage
+  ): Promise<void> {
     const transcript = message.voicePrompt;
 
     // Cancel any existing stream task before processing new prompt
     this.cancelStreamTask(conversationId);
 
+    // Get session for memory retrieval
+    const session = this.getConversationSession(conversationId);
+
+    // Automatic memory retrieval (matching passive voice behavior)
+    let userMemory;
+    if (session && this.tac.isMemoryEnabled()) {
+      try {
+        userMemory = await this.tac.retrieveMemory(session, transcript);
+        this.logger.debug({ conversation_id: conversationId }, 'Retrieved memory for active voice');
+      } catch (error) {
+        this.logger.warn(
+          { err: error, conversation_id: conversationId },
+          'Failed to retrieve memory for active voice'
+        );
+      }
+    }
+
     if (this.voiceCallbacks.onPrompt) {
       this.voiceCallbacks.onPrompt({
         conversationId,
         transcript,
+        ...(userMemory !== undefined && { userMemory }),
+        ...(session !== undefined && { session }),
       });
     }
   }

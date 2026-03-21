@@ -728,13 +728,13 @@ type MemoryRetrievalResponse = z.infer<typeof MemoryRetrievalResponseSchema>;
  */
 declare const ProfileLookupResponseSchema: z.ZodObject<{
     normalizedValue: z.ZodString;
-    profiles: z.ZodArray<z.ZodString, "many">;
+    profiles: z.ZodEffects<z.ZodNullable<z.ZodArray<z.ZodString, "many">>, string[], string[] | null>;
 }, "strip", z.ZodTypeAny, {
     normalizedValue: string;
     profiles: string[];
 }, {
     normalizedValue: string;
-    profiles: string[];
+    profiles: string[] | null;
 }>;
 type ProfileLookupResponse = z.infer<typeof ProfileLookupResponseSchema>;
 /**
@@ -796,42 +796,42 @@ type CreateConversationSummariesResponse = z.infer<typeof CreateConversationSumm
 declare const ParticipantAddressTypeSchema: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
 type ParticipantAddressType = z.infer<typeof ParticipantAddressTypeSchema>;
 /**
- * Participant address containing channel and address (snake_case format)
+ * Participant address containing channel and address
  */
 declare const ParticipantAddressSchema: z.ZodObject<{
     channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
     address: z.ZodString;
-    channel_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    channelId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-    channel_id?: string | null | undefined;
+    channelId?: string | null | undefined;
 }, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-    channel_id?: string | null | undefined;
+    channelId?: string | null | undefined;
 }>;
 type ParticipantAddress = z.infer<typeof ParticipantAddressSchema>;
 /**
  * Communication participant for Conversations Service API (Maestro).
  *
- * Note: participant_id is required for SDK validation when creating communications.
+ * Note: participantId is required for SDK validation when creating communications.
  */
 declare const CommunicationParticipantSchema: z.ZodObject<{
     address: z.ZodString;
     channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
-    participant_id: z.ZodString;
-    delivery_status: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
+    participantId: z.ZodString;
+    deliveryStatus: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
 }, "strip", z.ZodTypeAny, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-    participant_id: string;
-    delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+    participantId: string;
+    deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
 }, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-    participant_id: string;
-    delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+    participantId: string;
+    deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
 }>;
 type CommunicationParticipant = z.infer<typeof CommunicationParticipantSchema>;
 /**
@@ -966,27 +966,27 @@ type CommunicationContent = z.infer<typeof CommunicationContentSchema>;
 /**
  * Communication from Conversations Service API (Maestro).
  *
- * Note: `created_at` is optional per API spec.
+ * Note: `createdAt` is optional per API spec.
  */
 declare const CommunicationSchema: z.ZodObject<{
     id: z.ZodString;
-    conversation_id: z.ZodString;
-    account_id: z.ZodString;
+    conversationId: z.ZodString;
+    accountId: z.ZodString;
     author: z.ZodObject<{
         address: z.ZodString;
         channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
-        participant_id: z.ZodString;
-        delivery_status: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
+        participantId: z.ZodString;
+        deliveryStatus: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
     }, "strip", z.ZodTypeAny, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     }, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     }>;
     content: z.ZodObject<{
         type: z.ZodEnum<["TEXT", "TRANSCRIPTION"]>;
@@ -1057,29 +1057,30 @@ declare const CommunicationSchema: z.ZodObject<{
     recipients: z.ZodArray<z.ZodObject<{
         address: z.ZodString;
         channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
-        participant_id: z.ZodString;
-        delivery_status: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
+        participantId: z.ZodString;
+        deliveryStatus: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
     }, "strip", z.ZodTypeAny, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     }, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     }>, "many">;
-    channel_id: z.ZodOptional<z.ZodString>;
-    created_at: z.ZodOptional<z.ZodString>;
-    updated_at: z.ZodOptional<z.ZodString>;
+    channelId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    createdAt: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    updatedAt: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    occurredAt: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, "strip", z.ZodTypeAny, {
     id: string;
     author: {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     };
     content: {
         type: "TEXT" | "TRANSCRIPTION";
@@ -1098,21 +1099,22 @@ declare const CommunicationSchema: z.ZodObject<{
     recipients: {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     }[];
-    conversation_id: string;
-    account_id: string;
-    channel_id?: string | undefined;
-    created_at?: string | undefined;
-    updated_at?: string | undefined;
+    conversationId: string;
+    accountId: string;
+    createdAt?: string | null | undefined;
+    occurredAt?: string | null | undefined;
+    updatedAt?: string | null | undefined;
+    channelId?: string | null | undefined;
 }, {
     id: string;
     author: {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     };
     content: {
         type: "TEXT" | "TRANSCRIPTION";
@@ -1131,14 +1133,15 @@ declare const CommunicationSchema: z.ZodObject<{
     recipients: {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
-        participant_id: string;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        participantId: string;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
     }[];
-    conversation_id: string;
-    account_id: string;
-    channel_id?: string | undefined;
-    created_at?: string | undefined;
-    updated_at?: string | undefined;
+    conversationId: string;
+    accountId: string;
+    createdAt?: string | null | undefined;
+    occurredAt?: string | null | undefined;
+    updatedAt?: string | null | undefined;
+    channelId?: string | null | undefined;
 }>;
 type Communication = z.infer<typeof CommunicationSchema>;
 /**
@@ -1146,64 +1149,64 @@ type Communication = z.infer<typeof CommunicationSchema>;
  */
 declare const AuthorInfoSchema: z.ZodObject<{
     address: z.ZodString;
-    participant_id: z.ZodOptional<z.ZodString>;
+    participantId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     address: string;
-    participant_id?: string | undefined;
+    participantId?: string | undefined;
 }, {
     address: string;
-    participant_id?: string | undefined;
+    participantId?: string | undefined;
 }>;
 type AuthorInfo = z.infer<typeof AuthorInfoSchema>;
 /**
  * Profile information for a conversation participant
  */
 interface Profile {
-    profile_id: string;
+    profileId: string;
     traits?: Record<string, unknown>;
 }
 /**
  * Conversation session context
  */
 declare const ConversationSessionSchema: z.ZodObject<{
-    conversation_id: z.ZodString;
-    profile_id: z.ZodOptional<z.ZodString>;
-    service_id: z.ZodOptional<z.ZodString>;
+    conversationId: z.ZodString;
+    profileId: z.ZodOptional<z.ZodString>;
+    serviceId: z.ZodOptional<z.ZodString>;
     channel: z.ZodEnum<["sms", "voice"]>;
-    started_at: z.ZodDate;
-    author_info: z.ZodOptional<z.ZodObject<{
+    startedAt: z.ZodDate;
+    authorInfo: z.ZodOptional<z.ZodObject<{
         address: z.ZodString;
-        participant_id: z.ZodOptional<z.ZodString>;
+        participantId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         address: string;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
     }, {
         address: string;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
     }>>;
     profile: z.ZodOptional<z.ZodType<Profile, z.ZodTypeDef, Profile>>;
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
 }, "strip", z.ZodTypeAny, {
     channel: "sms" | "voice";
-    started_at: Date;
-    conversation_id: string;
+    conversationId: string;
+    startedAt: Date;
     metadata: Record<string, unknown>;
-    profile_id?: string | undefined;
-    service_id?: string | undefined;
-    author_info?: {
+    profileId?: string | undefined;
+    serviceId?: string | undefined;
+    authorInfo?: {
         address: string;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
     } | undefined;
     profile?: Profile | undefined;
 }, {
     channel: "sms" | "voice";
-    started_at: Date;
-    conversation_id: string;
-    profile_id?: string | undefined;
-    service_id?: string | undefined;
-    author_info?: {
+    conversationId: string;
+    startedAt: Date;
+    profileId?: string | undefined;
+    serviceId?: string | undefined;
+    authorInfo?: {
         address: string;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
     } | undefined;
     profile?: Profile | undefined;
     metadata?: Record<string, unknown> | undefined;
@@ -1300,8 +1303,8 @@ declare const ConversationParticipantSchema: z.ZodObject<{
     updatedAt: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     id: string;
-    accountId: string;
     conversationId: string;
+    accountId: string;
     addresses: {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
@@ -1314,8 +1317,8 @@ declare const ConversationParticipantSchema: z.ZodObject<{
     profileId?: string | null | undefined;
 }, {
     id: string;
-    accountId: string;
     conversationId: string;
+    accountId: string;
     type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
     name?: string | undefined;
     createdAt?: string | undefined;
@@ -2190,8 +2193,8 @@ declare const OperatorResultEventSchema: z.ZodObject<{
         } | undefined;
     }>, "many">;
 }, "strip", z.ZodTypeAny, {
-    accountId: string;
     conversationId: string;
+    accountId: string;
     intelligenceConfiguration: {
         id: string;
         friendlyName?: string | undefined;
@@ -2216,8 +2219,8 @@ declare const OperatorResultEventSchema: z.ZodObject<{
     }[];
     memoryStoreId?: string | undefined;
 }, {
-    accountId: string;
     conversationId: string;
+    accountId: string;
     intelligenceConfiguration: {
         id: string;
         friendlyName?: string | undefined;
@@ -2330,30 +2333,30 @@ type TACParticipantType = z.infer<typeof TACParticipantTypeSchema>;
 declare const TACCommunicationAuthorSchema: z.ZodObject<{
     address: z.ZodString;
     channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
-    participant_id: z.ZodOptional<z.ZodString>;
-    delivery_status: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
+    participantId: z.ZodOptional<z.ZodString>;
+    deliveryStatus: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
     id: z.ZodOptional<z.ZodString>;
     name: z.ZodOptional<z.ZodString>;
     type: z.ZodOptional<z.ZodEnum<["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]>>;
-    profile_id: z.ZodOptional<z.ZodString>;
+    profileId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
     type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
     id?: string | undefined;
     name?: string | undefined;
-    profile_id?: string | undefined;
-    delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-    participant_id?: string | undefined;
+    participantId?: string | undefined;
+    deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+    profileId?: string | undefined;
 }, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
     type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
     id?: string | undefined;
     name?: string | undefined;
-    profile_id?: string | undefined;
-    delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-    participant_id?: string | undefined;
+    participantId?: string | undefined;
+    deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+    profileId?: string | undefined;
 }>;
 type TACCommunicationAuthor = z.infer<typeof TACCommunicationAuthorSchema>;
 /**
@@ -2437,30 +2440,30 @@ declare const TACCommunicationSchema: z.ZodObject<{
     author: z.ZodObject<{
         address: z.ZodString;
         channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
-        participant_id: z.ZodOptional<z.ZodString>;
-        delivery_status: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
+        participantId: z.ZodOptional<z.ZodString>;
+        deliveryStatus: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
         id: z.ZodOptional<z.ZodString>;
         name: z.ZodOptional<z.ZodString>;
         type: z.ZodOptional<z.ZodEnum<["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]>>;
-        profile_id: z.ZodOptional<z.ZodString>;
+        profileId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     }, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     }>;
     content: z.ZodObject<{
         type: z.ZodOptional<z.ZodEnum<["TEXT", "TRANSCRIPTION"]>>;
@@ -2531,36 +2534,36 @@ declare const TACCommunicationSchema: z.ZodObject<{
     recipients: z.ZodDefault<z.ZodArray<z.ZodObject<{
         address: z.ZodString;
         channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
-        participant_id: z.ZodOptional<z.ZodString>;
-        delivery_status: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
+        participantId: z.ZodOptional<z.ZodString>;
+        deliveryStatus: z.ZodOptional<z.ZodEnum<["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]>>;
         id: z.ZodOptional<z.ZodString>;
         name: z.ZodOptional<z.ZodString>;
         type: z.ZodOptional<z.ZodEnum<["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]>>;
-        profile_id: z.ZodOptional<z.ZodString>;
+        profileId: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     }, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     }>, "many">>;
-    channel_id: z.ZodOptional<z.ZodString>;
-    created_at: z.ZodOptional<z.ZodString>;
-    updated_at: z.ZodOptional<z.ZodString>;
-    conversation_id: z.ZodOptional<z.ZodString>;
-    account_id: z.ZodOptional<z.ZodString>;
+    channelId: z.ZodOptional<z.ZodString>;
+    createdAt: z.ZodOptional<z.ZodString>;
+    updatedAt: z.ZodOptional<z.ZodString>;
+    conversationId: z.ZodOptional<z.ZodString>;
+    accountId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     id: string;
     author: {
@@ -2569,9 +2572,9 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     };
     content: {
         type?: "TEXT" | "TRANSCRIPTION" | undefined;
@@ -2593,15 +2596,15 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     }[];
-    channel_id?: string | undefined;
-    created_at?: string | undefined;
-    updated_at?: string | undefined;
-    conversation_id?: string | undefined;
-    account_id?: string | undefined;
+    createdAt?: string | undefined;
+    updatedAt?: string | undefined;
+    channelId?: string | undefined;
+    conversationId?: string | undefined;
+    accountId?: string | undefined;
 }, {
     id: string;
     author: {
@@ -2610,9 +2613,9 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     };
     content: {
         type?: "TEXT" | "TRANSCRIPTION" | undefined;
@@ -2634,15 +2637,15 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
-        profile_id?: string | undefined;
-        delivery_status?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        participant_id?: string | undefined;
+        participantId?: string | undefined;
+        deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
+        profileId?: string | undefined;
     }[] | undefined;
-    channel_id?: string | undefined;
-    created_at?: string | undefined;
-    updated_at?: string | undefined;
-    conversation_id?: string | undefined;
-    account_id?: string | undefined;
+    createdAt?: string | undefined;
+    updatedAt?: string | undefined;
+    channelId?: string | undefined;
+    conversationId?: string | undefined;
+    accountId?: string | undefined;
 }>;
 type TACCommunication = z.infer<typeof TACCommunicationSchema>;
 
@@ -2745,11 +2748,11 @@ type KnowledgeSearchResponse = z.infer<typeof KnowledgeSearchResponseSchema>;
  *
  * Memory configured:
  * - observations, summaries, communications all populated
- * - communications include Memory-specific fields (author id, name, type, profile_id)
+ * - communications include Memory-specific fields (author id, name, type, profileId)
  *
  * Maestro fallback:
  * - observations and summaries are empty arrays
- * - communications include Maestro-specific fields (conversation_id, account_id, etc.)
+ * - communications include Maestro-specific fields (conversationId, accountId, etc.)
  */
 declare class TACMemoryResponse {
     private readonly _data;
@@ -3416,6 +3419,8 @@ interface VoiceChannelEvents extends BaseChannelEvents {
     onPrompt?: (data: {
         conversationId: ConversationId;
         transcript: string;
+        userMemory?: TACMemoryResponse;
+        session?: ConversationSession;
     }) => void;
     onInterrupt?: (data: {
         conversationId: ConversationId;

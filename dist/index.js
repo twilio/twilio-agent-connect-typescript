@@ -84,13 +84,13 @@ var ParticipantAddressTypeSchema = z.enum([
 var ParticipantAddressSchema = z.object({
   channel: ParticipantAddressTypeSchema,
   address: z.string().min(1, "Address is required"),
-  channel_id: z.string().nullable().optional()
+  channelId: z.string().nullable().optional()
 });
 var CommunicationParticipantSchema = z.object({
   address: z.string().max(254),
   channel: ParticipantAddressTypeSchema,
-  participant_id: z.string(),
-  delivery_status: z.enum(["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]).optional()
+  participantId: z.string(),
+  deliveryStatus: z.enum(["INITIATED", "IN_PROGRESS", "DELIVERED", "COMPLETED", "FAILED"]).optional()
 });
 var TranscriptionWordSchema = z.object({
   text: z.string(),
@@ -110,26 +110,27 @@ var CommunicationContentSchema = z.object({
 });
 var CommunicationSchema = z.object({
   id: z.string(),
-  conversation_id: z.string(),
-  account_id: z.string(),
+  conversationId: z.string(),
+  accountId: z.string(),
   author: CommunicationParticipantSchema,
   content: CommunicationContentSchema,
   recipients: z.array(CommunicationParticipantSchema),
-  channel_id: z.string().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional()
+  channelId: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
+  occurredAt: z.string().nullable().optional()
 });
 var AuthorInfoSchema = z.object({
   address: z.string(),
-  participant_id: z.string().optional()
+  participantId: z.string().optional()
 });
 var ConversationSessionSchema = z.object({
-  conversation_id: z.string().min(1, "Conversation ID is required"),
-  profile_id: z.string().optional(),
-  service_id: z.string().optional(),
+  conversationId: z.string().min(1, "Conversation ID is required"),
+  profileId: z.string().optional(),
+  serviceId: z.string().optional(),
   channel: ChannelTypeSchema,
-  started_at: z.date(),
-  author_info: AuthorInfoSchema.optional(),
+  startedAt: z.date(),
+  authorInfo: AuthorInfoSchema.optional(),
   profile: z.custom().optional(),
   metadata: z.record(z.unknown()).optional().default({})
 });
@@ -194,13 +195,13 @@ var TACCommunicationAuthorSchema = z.object({
   address: z.string(),
   channel: TACChannelTypeSchema,
   // Maestro-only fields
-  participant_id: z.string().optional(),
-  delivery_status: TACDeliveryStatusSchema.optional(),
+  participantId: z.string().optional(),
+  deliveryStatus: TACDeliveryStatusSchema.optional(),
   // Memory-only fields
   id: z.string().optional(),
   name: z.string().optional(),
   type: TACParticipantTypeSchema.optional(),
-  profile_id: z.string().optional()
+  profileId: z.string().optional()
 });
 var TACCommunicationContentSchema = z.object({
   // Maestro-only: content type discriminator
@@ -216,17 +217,35 @@ var TACCommunicationSchema = z.object({
   author: TACCommunicationAuthorSchema,
   content: TACCommunicationContentSchema,
   recipients: z.array(TACCommunicationAuthorSchema).default([]),
-  channel_id: z.string().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
+  channelId: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
   // Maestro-only fields
-  conversation_id: z.string().optional(),
-  account_id: z.string().optional()
+  conversationId: z.string().optional(),
+  accountId: z.string().optional()
 });
 
 // packages/core/src/lib/tac-memory-response.ts
 function isMemoryRetrievalResponse(data) {
   return !Array.isArray(data);
+}
+function normalizeMemoryCommunication(comm) {
+  return {
+    ...comm,
+    channelId: comm.channel_id,
+    createdAt: comm.created_at,
+    updatedAt: comm.updated_at,
+    author: {
+      ...comm.author,
+      profileId: comm.author.profile_id,
+      deliveryStatus: comm.author.delivery_status
+    },
+    recipients: comm.recipients.map((r) => ({
+      ...r,
+      profileId: r.profile_id,
+      deliveryStatus: r.delivery_status
+    }))
+  };
 }
 var TACMemoryResponse = class {
   _data;
@@ -240,7 +259,7 @@ var TACMemoryResponse = class {
     this._data = data;
     if (isMemoryRetrievalResponse(data)) {
       this._communications = (data.communications ?? []).map(
-        (comm) => TACCommunicationSchema.parse(comm)
+        (comm) => TACCommunicationSchema.parse(normalizeMemoryCommunication(comm))
       );
     } else {
       this._communications = data.map((comm) => TACCommunicationSchema.parse(comm));
@@ -390,7 +409,7 @@ var MemoryRetrievalResponseSchema = z.object({
 });
 var ProfileLookupResponseSchema = z.object({
   normalizedValue: z.string().max(255),
-  profiles: z.array(z.string()).max(100)
+  profiles: z.array(z.string()).max(100).nullable().transform((v) => v ?? [])
 });
 var ProfileResponseSchema = z.object({
   id: z.string(),
@@ -1874,17 +1893,18 @@ var TAC = class {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
       async ({
         conversationId,
-        transcript
+        transcript,
+        userMemory,
+        session
       }) => {
-        const session = channel.getConversationSession(conversationId);
-        if (session) {
+        const eventSession = session || channel.getConversationSession(conversationId);
+        if (eventSession) {
           await this.handleMessageReady({
             conversationId,
-            profileId: session.profile_id ? session.profile_id : void 0,
+            profileId: eventSession.profileId ? eventSession.profileId : void 0,
             message: transcript,
-            author: "user",
-            // Voice transcripts are always from user
-            userMemory: void 0,
+            author: eventSession.authorInfo?.address || "user",
+            userMemory,
             channelType: channel.channelType
           });
         }
@@ -1925,7 +1945,7 @@ var TAC = class {
             await this.conversationEndedCallback({ session });
           } catch (error) {
             this.logger.error(
-              { err: error, conversation_id: session.conversation_id },
+              { err: error, conversation_id: session.conversationId },
               "Conversation ended callback error"
             );
           }
@@ -2059,7 +2079,7 @@ var TAC = class {
     try {
       await this.handoffCallback({
         conversationId,
-        profileId: session.profile_id ? session.profile_id : void 0,
+        profileId: session.profileId ? session.profileId : void 0,
         reason,
         session
       });
@@ -2166,29 +2186,29 @@ var TAC = class {
    */
   async retrieveMemory(session, query) {
     if (this.memoryClient && this.config.memoryStoreId) {
-      if (!session.profile_id) {
-        this.logger.debug("profile_id not found, attempting to lookup profile using phone number");
-        if (!session.author_info || !session.author_info.address) {
+      if (!session.profileId) {
+        this.logger.debug("profileId not found, attempting to lookup profile using phone number");
+        if (!session.authorInfo || !session.authorInfo.address) {
           throw new Error(
-            "profile_id is required for memory retrieval but was not found in conversation context. Additionally, author_info.address is not available for profile lookup. Ensure either profile_id or author_info.address is provided when creating the ConversationSession."
+            "profileId is required for memory retrieval but was not found in conversation context. Additionally, authorInfo.address is not available for profile lookup. Ensure either profileId or authorInfo.address is provided when creating the ConversationSession."
           );
         }
         try {
           const lookupResponse = await this.memoryClient.lookupProfile(
             this.config.memoryStoreId,
             "phone",
-            session.author_info.address
+            session.authorInfo.address
           );
           if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
             throw new Error(
-              `No profile found for phone number ${session.author_info.address}. Profile lookup returned no results. Ensure the phone number is registered in the identity resolution system.`
+              `No profile found for phone number ${session.authorInfo.address}. Profile lookup returned no results. Ensure the phone number is registered in the identity resolution system.`
             );
           }
-          session.profile_id = lookupResponse.profiles[0];
+          session.profileId = lookupResponse.profiles[0];
         } catch (error) {
           this.logger.error(
             { err: error },
-            `Failed to lookup profile for ${session.author_info.address}`
+            `Failed to lookup profile for ${session.authorInfo.address}`
           );
           throw error;
         }
@@ -2196,7 +2216,7 @@ var TAC = class {
       try {
         const memoryResponse = await this.memoryClient.retrieveMemories(
           this.config.memoryStoreId,
-          session.profile_id,
+          session.profileId,
           { query }
         );
         return new TACMemoryResponse(memoryResponse);
@@ -2208,7 +2228,7 @@ var TAC = class {
       this.logger.info("Twilio Memory not configured, falling back to Conversations API");
       try {
         const communications = await this.conversationClient.listCommunications(
-          session.conversation_id
+          session.conversationId
         );
         return new TACMemoryResponse(communications);
       } catch (error) {
@@ -2301,19 +2321,19 @@ var BaseChannel = class {
       this.logger.debug(
         {
           conversation_id: conversationId,
-          profile_id: this.activeConversations.get(conversationId)?.profile_id,
-          service_id: this.activeConversations.get(conversationId)?.service_id
+          profile_id: this.activeConversations.get(conversationId)?.profileId,
+          service_id: this.activeConversations.get(conversationId)?.serviceId
         },
         "Conversation already active"
       );
       return this.activeConversations.get(conversationId);
     }
     const session = {
-      conversation_id: conversationId,
-      profile_id: profileId,
-      service_id: serviceId,
+      conversationId,
+      profileId,
+      serviceId,
       channel: this.channelType,
-      started_at: /* @__PURE__ */ new Date(),
+      startedAt: /* @__PURE__ */ new Date(),
       metadata: {}
     };
     this.activeConversations.set(conversationId, session);
@@ -2356,7 +2376,7 @@ var BaseChannel = class {
         {
           conversation_id: conversationId,
           channel: this.channelType,
-          service_id: session.service_id
+          service_id: session.serviceId
         },
         "Conversation ended"
       );
@@ -2531,26 +2551,26 @@ var SMSChannel = class extends BaseChannel {
           this.logger.debug(
             {
               conversation_id: conversationId,
-              old_profile_id: session.profile_id,
+              old_profile_id: session.profileId,
               new_profile_id: profileId
             },
             "Updating conversation profile ID from participant.added"
           );
-          session.profile_id = profileId;
+          session.profileId = profileId;
         }
       }
       if (payload.data?.serviceId) {
         const session = this.getConversationSession(conversationId);
-        if (session && session.service_id !== payload.data.serviceId) {
+        if (session && session.serviceId !== payload.data.serviceId) {
           this.logger.debug(
             {
               conversation_id: conversationId,
-              old_service_id: session.service_id,
+              old_service_id: session.serviceId,
               new_service_id: payload.data.serviceId
             },
             "Updating conversation configuration ID from participant.added"
           );
-          session.service_id = payload.data.serviceId;
+          session.serviceId = payload.data.serviceId;
         }
       }
     } else {
@@ -2606,23 +2626,23 @@ var SMSChannel = class extends BaseChannel {
       this.startConversation(conversationId, profileId ?? void 0, payload.data?.serviceId);
     } else if (payload.data?.serviceId) {
       const session2 = this.getConversationSession(conversationId);
-      if (session2 && session2.service_id !== payload.data.serviceId) {
+      if (session2 && session2.serviceId !== payload.data.serviceId) {
         this.logger.debug(
           {
             conversation_id: conversationId,
-            old_service_id: session2.service_id,
+            old_service_id: session2.serviceId,
             new_service_id: payload.data.serviceId
           },
           "Updating conversation configuration ID from communication.created"
         );
-        session2.service_id = payload.data.serviceId;
+        session2.serviceId = payload.data.serviceId;
       }
     }
     const session = this.getConversationSession(conversationId);
     if (session) {
-      session.author_info = {
+      session.authorInfo = {
         address: author,
-        participant_id: payload.data?.author?.participantId
+        participantId: payload.data?.author?.participantId
       };
     }
     let userMemory;
@@ -2631,7 +2651,7 @@ var SMSChannel = class extends BaseChannel {
       try {
         userMemory = await this.tac.retrieveMemory(session, message);
         this.logger.debug(
-          { conversation_id: conversationId, profile_id: session.profile_id },
+          { conversation_id: conversationId, profile_id: session.profileId },
           "User memory retrieved"
         );
       } catch (error) {
@@ -2696,7 +2716,7 @@ var SMSChannel = class extends BaseChannel {
           {
             conversation_id: conversationId,
             participant_count: participants.length,
-            service_id: session.service_id ?? this.config.conversationServiceId
+            service_id: session.serviceId ?? this.config.conversationServiceId
           },
           "Found participants"
         );
@@ -2879,7 +2899,12 @@ var VoiceChannel = class extends BaseChannel {
             break;
           case "prompt":
             if (conversationId) {
-              this.handlePromptMessage(conversationId, message);
+              void this.handlePromptMessage(conversationId, message).catch((err) => {
+                this.logger.error(
+                  { err, conversation_id: conversationId },
+                  "Failed to handle prompt message"
+                );
+              });
             }
             break;
           case "interrupt":
@@ -2933,7 +2958,7 @@ var VoiceChannel = class extends BaseChannel {
     this.webSocketConnections.set(conversationId, ws);
     this.callSidToConversationId.set(callSid, conversationId);
     const session = this.startConversation(conversationId, profileId);
-    session.author_info = {
+    session.authorInfo = {
       address: from
     };
     if (this.voiceCallbacks.onSetup) {
@@ -2954,13 +2979,31 @@ var VoiceChannel = class extends BaseChannel {
   /**
    * Handle WebSocket prompt message (user speech)
    */
-  handlePromptMessage(conversationId, message) {
+  async handlePromptMessage(conversationId, message) {
     const transcript = message.voicePrompt;
     this.cancelStreamTask(conversationId);
+    const session = this.getConversationSession(conversationId);
+    let userMemory;
+    if (session && this.tac.isMemoryEnabled()) {
+      try {
+        userMemory = await this.tac.retrieveMemory(session, transcript);
+        this.logger.debug(
+          { conversation_id: conversationId },
+          "Retrieved memory for active voice"
+        );
+      } catch (error) {
+        this.logger.warn(
+          { err: error, conversation_id: conversationId },
+          "Failed to retrieve memory for active voice"
+        );
+      }
+    }
     if (this.voiceCallbacks.onPrompt) {
       this.voiceCallbacks.onPrompt({
         conversationId,
-        transcript
+        transcript,
+        ...userMemory !== void 0 && { userMemory },
+        ...session !== void 0 && { session }
       });
     }
   }
@@ -3636,6 +3679,9 @@ var DEFAULT_CONFIG = {
     ws: "/ws",
     conversationRelayCallback: "/conversation-relay-callback"
   },
+  conversationRelayConfig: {
+    welcomeGreeting: "Hello! How can I assist you today?"
+  },
   development: false,
   validateWebhooks: true
 };
@@ -3645,7 +3691,20 @@ var TACServer = class {
   config;
   constructor(tac, config = {}) {
     this.tac = tac;
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_CONFIG,
+      ...config,
+      // Deep merge webhookPaths to preserve defaults while allowing overrides
+      webhookPaths: {
+        ...DEFAULT_CONFIG.webhookPaths,
+        ...config.webhookPaths
+      },
+      // Deep merge conversationRelayConfig to preserve defaults while allowing overrides
+      conversationRelayConfig: {
+        ...DEFAULT_CONFIG.conversationRelayConfig,
+        ...config.conversationRelayConfig
+      }
+    };
     this.fastify = Fastify({
       logger: this.config.development ? {
         level: process.env.LOG_LEVEL || "info",

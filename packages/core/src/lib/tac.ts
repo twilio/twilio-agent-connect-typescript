@@ -181,18 +181,23 @@ export class TAC {
       async ({
         conversationId,
         transcript,
+        userMemory,
+        session,
       }: {
         conversationId: ConversationId;
         transcript: string;
+        userMemory?: TACMemoryResponse;
+        session?: ConversationSession;
       }): Promise<void> => {
-        const session = channel.getConversationSession(conversationId);
-        if (session) {
+        // Use session from event if available, otherwise get from channel
+        const eventSession = session || channel.getConversationSession(conversationId);
+        if (eventSession) {
           await this.handleMessageReady({
             conversationId,
-            profileId: session.profileId ? (session.profileId as ProfileId) : undefined,
+            profileId: eventSession.profileId ? (eventSession.profileId as ProfileId) : undefined,
             message: transcript,
-            author: 'user', // Voice transcripts are always from user
-            userMemory: undefined,
+            author: eventSession.authorInfo?.address || 'user',
+            userMemory,
             channelType: channel.channelType,
           });
         }
