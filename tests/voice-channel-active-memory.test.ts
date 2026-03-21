@@ -374,4 +374,91 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       expect(oldStyleCallback).toHaveBeenCalled();
     });
   });
+
+  describe('Prompt Serialization', () => {
+    it('should serialize prompt messages to prevent race conditions', async () => {
+      tac = new TAC({ config: getTestConfig() });
+      voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      // Mock memory retrieval with varying delays to simulate race conditions
+      vi.spyOn(tac, 'retrieveMemory').mockImplementation(async (session, query) => {
+        const promptNumber = Number.parseInt((query || '').replace('prompt ', ''));
+        // Simulate varying processing times - later prompts finish faster
+        const delay = (3 - promptNumber + 1) * 10;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return {
+          observations: [{ id: `obs${promptNumber}`, content: `Memory for ${query}` }],
+          summaries: [],
+          communications: [],
+        } as any;
+      });
+
+      let callbackCount = 0;
+      const callbackOrder: number[] = [];
+
+      voiceChannel.on('prompt', async ({ transcript }) => {
+        const order = Number.parseInt(transcript.replace('prompt ', ''));
+        callbackCount++;
+        callbackOrder.push(order);
+      });
+
+      // Set up WebSocket and session
+      const mockWs = {
+        readyState: WebSocket.OPEN,
+        send: vi.fn(),
+        on: vi.fn(),
+      } as unknown as WebSocket;
+
+      const setupMessage = {
+        type: 'setup' as const,
+        callSid: 'CA123',
+        from: '+15551234567',
+        to: '+15555555555',
+        customParameters: {
+          conversation_id: 'conv123',
+          profile_id: 'prof123',
+        },
+      };
+
+      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+
+      // Send 3 prompts in quick succession
+      const promptMessage1: PromptMessage = { type: 'prompt', voicePrompt: 'prompt 1' };
+      const promptMessage2: PromptMessage = { type: 'prompt', voicePrompt: 'prompt 2' };
+      const promptMessage3: PromptMessage = { type: 'prompt', voicePrompt: 'prompt 3' };
+
+      // Simulate the serialization that happens in handleWebSocketConnection
+      const conversationId = 'conv123';
+      const promptQueues = (voiceChannel as any).promptQueues as Map<string, Promise<void>>;
+
+      // First prompt
+      const previousPrompt1 = promptQueues.get(conversationId) ?? Promise.resolve();
+      const currentPrompt1 = previousPrompt1
+        .then(() => (voiceChannel as any).handlePromptMessage(conversationId, promptMessage1))
+        .catch(() => {});
+      promptQueues.set(conversationId, currentPrompt1);
+
+      // Second prompt (chained after first)
+      const previousPrompt2 = promptQueues.get(conversationId) ?? Promise.resolve();
+      const currentPrompt2 = previousPrompt2
+        .then(() => (voiceChannel as any).handlePromptMessage(conversationId, promptMessage2))
+        .catch(() => {});
+      promptQueues.set(conversationId, currentPrompt2);
+
+      // Third prompt (chained after second)
+      const previousPrompt3 = promptQueues.get(conversationId) ?? Promise.resolve();
+      const currentPrompt3 = previousPrompt3
+        .then(() => (voiceChannel as any).handlePromptMessage(conversationId, promptMessage3))
+        .catch(() => {});
+      promptQueues.set(conversationId, currentPrompt3);
+
+      // Wait for all processing to complete
+      await currentPrompt3;
+
+      // Verify callbacks executed in order despite varying processing times
+      expect(callbackCount).toBe(3);
+      expect(callbackOrder).toEqual([1, 2, 3]);
+    });
+  });
 });

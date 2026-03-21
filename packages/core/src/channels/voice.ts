@@ -60,6 +60,7 @@ export class VoiceChannel extends BaseChannel {
   private readonly callSidToConversationId: Map<string, ConversationId>;
   private readonly voiceCallbacks: VoiceChannelEvents;
   private readonly streamTasks: Map<ConversationId, AbortController>;
+  private readonly promptQueues: Map<ConversationId, Promise<void>>;
 
   constructor(tac: TAC) {
     super(tac);
@@ -67,6 +68,7 @@ export class VoiceChannel extends BaseChannel {
     this.callSidToConversationId = new Map();
     this.voiceCallbacks = {};
     this.streamTasks = new Map();
+    this.promptQueues = new Map();
   }
 
   public get channelType(): ChannelType {
@@ -150,12 +152,20 @@ export class VoiceChannel extends BaseChannel {
 
           case 'prompt':
             if (conversationId) {
-              void this.handlePromptMessage(conversationId, message).catch((err: unknown) => {
-                this.logger.error(
-                  { err, conversation_id: conversationId },
-                  'Failed to handle prompt message'
-                );
-              });
+              // Capture conversationId for type narrowing in closure
+              const currentConversationId = conversationId;
+              // Serialize prompt handling per conversation to prevent race conditions
+              const previousPrompt =
+                this.promptQueues.get(currentConversationId) ?? Promise.resolve();
+              const currentPrompt = previousPrompt
+                .then(() => this.handlePromptMessage(currentConversationId, message))
+                .catch((err: unknown) => {
+                  this.logger.error(
+                    { err, conversation_id: currentConversationId },
+                    'Failed to handle prompt message'
+                  );
+                });
+              this.promptQueues.set(currentConversationId, currentPrompt);
             }
             break;
 
@@ -272,7 +282,7 @@ export class VoiceChannel extends BaseChannel {
     const session = this.getConversationSession(conversationId);
 
     // Automatic memory retrieval (matching passive voice behavior)
-    let userMemory;
+    let userMemory: TACMemoryResponse | undefined;
     if (session && this.tac.isMemoryEnabled()) {
       try {
         userMemory = await this.tac.retrieveMemory(session, transcript);
@@ -324,6 +334,7 @@ export class VoiceChannel extends BaseChannel {
    */
   private async handleWebSocketDisconnect(conversationId: ConversationId): Promise<void> {
     this.webSocketConnections.delete(conversationId);
+    this.promptQueues.delete(conversationId);
 
     // Find and remove call SID mapping
     for (const [callSid, cId] of this.callSidToConversationId.entries()) {
@@ -679,6 +690,7 @@ export class VoiceChannel extends BaseChannel {
     this.streamTasks.clear();
     this.webSocketConnections.clear();
     this.callSidToConversationId.clear();
+    this.promptQueues.clear();
     super.shutdown();
   }
 }

@@ -196,7 +196,7 @@ export class TAC {
             conversationId,
             profileId: eventSession.profileId ? (eventSession.profileId as ProfileId) : undefined,
             message: transcript,
-            author: eventSession.authorInfo?.address || 'user',
+            author: 'user',
             userMemory,
             channelType: channel.channelType,
           });
