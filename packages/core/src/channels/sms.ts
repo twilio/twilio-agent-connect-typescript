@@ -1,4 +1,3 @@
-import Twilio from 'twilio';
 import {
   ChannelType,
   ConversationId,
@@ -65,12 +64,10 @@ export interface SMSChannelEvents extends BaseChannelEvents {
  * Automatically retrieves user memory and manages conversation lifecycle.
  */
 export class SMSChannel extends BaseChannel {
-  private readonly twilioClient: ReturnType<typeof Twilio>;
   private readonly smsCallbacks: SMSChannelEvents;
 
   constructor(tac: TAC) {
     super(tac);
-    this.twilioClient = Twilio(this.config.twilioAccountSid, this.config.twilioAuthToken);
     this.smsCallbacks = {};
   }
 
@@ -369,8 +366,7 @@ export class SMSChannel extends BaseChannel {
   }
 
   /**
-   * Send SMS response using Twilio Messages API
-   * Note: This is a workaround until Conversations Service supports sending messages
+   * Send SMS response using Conversation Orchestrator Send API
    */
   public async sendResponse(
     conversationId: ConversationId,
@@ -393,80 +389,71 @@ export class SMSChannel extends BaseChannel {
         throw new Error(`No active session found for conversation ${conversationId}`);
       }
 
-      // TODO: Temporary workaround until Conversations Service supports direct message sending.
-      // Replace with proper Conversations Service API when available.
-      // Defensively go from conversation_id -> participant -> address -> phone number
-      try {
-        this.logger.debug(
-          { conversation_id: conversationId },
-          'Listing participants for conversation'
+      if (!session.authorInfo) {
+        throw new Error(
+          `No author info found for conversation ${conversationId} - no inbound message received yet`
         );
-        const participants = await this.conversationClient.listParticipants(conversationId);
-
-        this.logger.debug(
-          {
-            conversation_id: conversationId,
-            participant_count: participants.length,
-            service_id: session.serviceId ?? this.config.conversationServiceId,
-          },
-          'Found participants'
-        );
-
-        let messagesSent = 0;
-        for (const participant of participants) {
-          if (participant.type !== 'CUSTOMER') {
-            this.logger.debug(
-              { participant_type: participant.type },
-              'Skipping non-customer participant'
-            );
-            continue;
-          }
-
-          // Check addresses array (Conversations Service API format)
-          const addresses = participant.addresses || [];
-          this.logger.debug(
-            { addresses_count: addresses.length },
-            'Checking participant addresses'
-          );
-
-          for (const addr of addresses) {
-            if (addr.channel !== 'SMS') {
-              this.logger.debug({ channel: addr.channel }, 'Skipping non-SMS address');
-              continue;
-            }
-
-            this.logger.debug(
-              { to_address: addr.address, from_number: this.config.twilioPhoneNumber },
-              'Sending SMS'
-            );
-
-            await this.twilioClient.messages.create({
-              to: addr.address,
-              from: this.config.twilioPhoneNumber,
-              body: message,
-            });
-
-            this.logger.info(
-              { conversation_id: conversationId, to_address: addr.address },
-              'SMS sent successfully'
-            );
-            messagesSent++;
-          }
-        }
-
-        if (messagesSent === 0) {
-          this.logger.warn(
-            { conversation_id: conversationId },
-            'No SMS addresses found for any CUSTOMER participants'
-          );
-        }
-      } catch (error) {
-        this.logger.error(
-          { err: error, conversation_id: conversationId },
-          'Failed to list participants'
-        );
-        throw error;
       }
+
+      const recipientAddress = session.authorInfo.address;
+
+      // Fetch current agent participant from Conversation Orchestrator
+      const participants = await this.conversationClient.listParticipants(conversationId);
+
+      // First, find all participants that have the configured SMS address
+      const smsParticipants = participants.filter(
+        p =>
+          Array.isArray(p.addresses) &&
+          p.addresses.some(
+            addr => addr.channel === 'SMS' && addr.address === this.config.twilioPhoneNumber
+          )
+      );
+
+      // Prefer AI/HUMAN agent participants when available, but fall back to any SMS participant
+      const agentParticipant =
+        smsParticipants.find(p => p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT') ??
+        smsParticipants[0];
+
+      if (!agentParticipant) {
+        throw new Error(
+          `Agent participant not found for conversation ${conversationId} with phone ${this.config.twilioPhoneNumber}`
+        );
+      }
+
+      this.logger.debug(
+        {
+          conversation_id: conversationId,
+          recipient_address: recipientAddress,
+          recipient_participant_id: session.authorInfo.participantId,
+          agent_participant_id: agentParticipant.id,
+          from_number: this.config.twilioPhoneNumber,
+        },
+        'Sending SMS via Send API'
+      );
+
+      await this.conversationClient.sendCommunication(conversationId, {
+        author: {
+          address: this.config.twilioPhoneNumber,
+          channel: 'SMS',
+          participantId: agentParticipant.id,
+        },
+        recipients: [
+          {
+            address: recipientAddress,
+            channel: 'SMS',
+            participantId: session.authorInfo.participantId,
+          },
+        ],
+        content: {
+          type: 'TEXT',
+          text: message,
+        },
+      });
+
+      this.logger.info(
+        { conversation_id: conversationId, recipient_address: recipientAddress },
+        'SMS sent successfully via Send API'
+      );
     } catch (error) {
       this.logger.error({ err: error, conversation_id: conversationId }, 'Send response error');
       this.handleError(error instanceof Error ? error : new Error(String(error)), {

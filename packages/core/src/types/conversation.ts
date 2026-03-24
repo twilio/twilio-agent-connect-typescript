@@ -100,6 +100,51 @@ export const CommunicationSchema = z.object({
 export type Communication = z.infer<typeof CommunicationSchema>;
 
 /**
+ * Send API author/recipient address (ParticipantAddress)
+ */
+export const SendCommunicationParticipantAddressSchema = z.object({
+  address: z.string().min(1, 'Address is required').max(254),
+  channel: ParticipantAddressTypeSchema,
+  participantId: z.string().optional(),
+});
+
+export type SendCommunicationParticipantAddress = z.infer<
+  typeof SendCommunicationParticipantAddressSchema
+>;
+
+/**
+ * Send API request fields for POST /v2/Communications.
+ * Note: conversationId is supplied separately as a parameter to sendCommunication()
+ * and merged into the JSON payload by the client before sending.
+ */
+export const SendCommunicationRequestSchema = z.object({
+  author: SendCommunicationParticipantAddressSchema,
+  content: z.object({
+    type: z.enum(['TEXT', 'TRANSCRIPTION']),
+    text: z.string(),
+    transcription: TranscriptionSchema.optional(),
+  }),
+  recipients: z.array(SendCommunicationParticipantAddressSchema).min(1),
+  channelId: z.string().optional(),
+});
+
+export type SendCommunicationRequest = z.infer<typeof SendCommunicationRequestSchema>;
+
+/**
+ * Send API response from POST /v2/Communications endpoint
+ * Returns 202 Accepted with async job status.
+ * The Communication record is created asynchronously after message delivery.
+ * Listen for COMMUNICATION_CREATED webhook to get the full Communication.
+ */
+export const SendCommunicationResponseSchema = z.object({
+  message: z.string(),
+  conversationId: z.string(),
+  channelId: z.string().nullable(),
+});
+
+export type SendCommunicationResponse = z.infer<typeof SendCommunicationResponseSchema>;
+
+/**
  * Author information for a conversation session
  */
 export const AuthorInfoSchema = z.object({

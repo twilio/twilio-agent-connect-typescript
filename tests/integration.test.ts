@@ -2,18 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SpyInstance } from 'vitest';
 import { TAC, SMSChannel } from '@twilio/tac-core';
 
-vi.mock('twilio', () => {
-  const createClient = vi.fn(() => ({
-    messages: {
-      create: vi.fn().mockResolvedValue({ sid: 'SM00000000000000000000000000000000' }),
-    },
-  }));
-
-  return {
-    default: createClient,
-  };
-});
-
 describe('Integration Tests', () => {
   const getTestConfig = () => ({
     environment: 'dev' as const,
@@ -30,29 +18,45 @@ describe('Integration Tests', () => {
   let fetchSpy: SpyInstance;
 
   beforeEach(() => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
-      const participantResponse = {
-        participants: [
-          {
-            id: 'PA00000000000000000000000000000000',
-            type: 'CUSTOMER',
-            addresses: [
-              {
-                channel: 'SMS',
-                address: '+15559876543',
-                channelId: null,
-              },
-            ],
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            name: null,
-            profileId: null,
-          },
-        ],
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: string | URL) => {
+      const urlString = url.toString();
+
+      // Mock listParticipants call
+      if (urlString.includes('/Participants')) {
+        const participantResponse = {
+          participants: [
+            {
+              id: 'PA111',
+              conversationId: 'CHtest123456789',
+              accountId: 'ACtest123456789',
+              type: 'HUMAN_AGENT',
+              addresses: [{ channel: 'SMS', address: '+15551234567' }],
+            },
+            {
+              id: 'PA222',
+              conversationId: 'CHtest123456789',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              addresses: [{ channel: 'SMS', address: '+15559876543' }],
+            },
+          ],
+        };
+
+        return new Response(JSON.stringify(participantResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Mock sendCommunication call (returns 202 Accepted)
+      const sendResponse = {
+        message: 'Conversation setup complete',
+        conversationId: 'CHtest123456789',
+        channelId: 'SM123abc',
       };
 
-      return new Response(JSON.stringify(participantResponse), {
-        status: 200,
+      return new Response(JSON.stringify(sendResponse), {
+        status: 202,
         headers: { 'Content-Type': 'application/json' },
       });
     });

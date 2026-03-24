@@ -6,6 +6,9 @@ import {
   ConversationAddress,
   ConversationParticipant,
   ConversationParticipantSchema,
+  SendCommunicationRequest,
+  SendCommunicationResponse,
+  SendCommunicationResponseSchema,
 } from '../types/index';
 import { TACConfig } from '../lib/config';
 import { Logger, createLogger } from '../lib/logger';
@@ -40,6 +43,63 @@ export class ConversationClient {
     this.conversationServiceId = config.conversationServiceId;
     const baseLogger = logger || createLogger({ name: 'tac-conversations' });
     this.logger = baseLogger.child({ client: 'conversations' });
+  }
+
+  /**
+   * Send a communication using the Conversation Orchestrator Send API
+   *
+   * @param conversationId - The conversation ID
+   * @param request - Send communication request
+   * @returns Promise containing communication response
+   */
+  public async sendCommunication(
+    conversationId: string,
+    request: SendCommunicationRequest
+  ): Promise<SendCommunicationResponse> {
+    const url = `${this.baseUrl}/v2/Communications`;
+
+    const requestBody = {
+      conversationId,
+      ...request,
+    };
+
+    const options: RequestOptions = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: this.getBasicAuthHeader(),
+      },
+      body: JSON.stringify(requestBody),
+    };
+
+    this.logRequest(options.method, url, options.body);
+    const response = await fetch(url, options);
+    await this.logResponse(response);
+
+    if (!response.ok) {
+      const errorBody = await response.clone().text();
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody,
+          requestBody: options.body,
+        },
+        'Send communication failed'
+      );
+      throw new Error(`Failed to send communication: ${response.status} ${response.statusText}`);
+    }
+
+    // Log if we get an unexpected 2xx status (expected 202 Accepted)
+    if (response.status !== 202) {
+      this.logger.warn(
+        { status: response.status, expected: 202 },
+        'Send API returned unexpected success status (expected 202 Accepted)'
+      );
+    }
+
+    const data = await response.json();
+    return SendCommunicationResponseSchema.parse(data);
   }
 
   /**

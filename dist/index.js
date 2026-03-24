@@ -1,13 +1,13 @@
 import { z } from 'zod';
 export { z } from 'zod';
 import pino from 'pino';
-import twilio from 'twilio';
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
 import Fastify from 'fastify';
 import formbody from '@fastify/formbody';
 import websocket from '@fastify/websocket';
 import gracefulShutdown from 'fastify-graceful-shutdown';
+import twilio from 'twilio';
 
 // packages/core/src/types/tac.ts
 var EnvironmentSchema = z.enum(["dev", "stage", "prod"]).default("prod");
@@ -119,6 +119,26 @@ var CommunicationSchema = z.object({
   createdAt: z.string().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   occurredAt: z.string().nullable().optional()
+});
+var SendCommunicationParticipantAddressSchema = z.object({
+  address: z.string().min(1, "Address is required").max(254),
+  channel: ParticipantAddressTypeSchema,
+  participantId: z.string().optional()
+});
+var SendCommunicationRequestSchema = z.object({
+  author: SendCommunicationParticipantAddressSchema,
+  content: z.object({
+    type: z.enum(["TEXT", "TRANSCRIPTION"]),
+    text: z.string(),
+    transcription: TranscriptionSchema.optional()
+  }),
+  recipients: z.array(SendCommunicationParticipantAddressSchema).min(1),
+  channelId: z.string().optional()
+});
+var SendCommunicationResponseSchema = z.object({
+  message: z.string(),
+  conversationId: z.string(),
+  channelId: z.string().nullable()
 });
 var AuthorInfoSchema = z.object({
   address: z.string(),
@@ -1129,6 +1149,52 @@ var ConversationClient = class {
     this.logger = baseLogger.child({ client: "conversations" });
   }
   /**
+   * Send a communication using the Conversation Orchestrator Send API
+   *
+   * @param conversationId - The conversation ID
+   * @param request - Send communication request
+   * @returns Promise containing communication response
+   */
+  async sendCommunication(conversationId, request) {
+    const url = `${this.baseUrl}/v2/Communications`;
+    const requestBody = {
+      conversationId,
+      ...request
+    };
+    const options = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: this.getBasicAuthHeader()
+      },
+      body: JSON.stringify(requestBody)
+    };
+    this.logRequest(options.method, url, options.body);
+    const response = await fetch(url, options);
+    await this.logResponse(response);
+    if (!response.ok) {
+      const errorBody = await response.clone().text();
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody,
+          requestBody: options.body
+        },
+        "Send communication failed"
+      );
+      throw new Error(`Failed to send communication: ${response.status} ${response.statusText}`);
+    }
+    if (response.status !== 202) {
+      this.logger.warn(
+        { status: response.status, expected: 202 },
+        "Send API returned unexpected success status (expected 202 Accepted)"
+      );
+    }
+    const data = await response.json();
+    return SendCommunicationResponseSchema.parse(data);
+  }
+  /**
    * List communications for a conversation
    *
    * @param conversationId - The conversation ID
@@ -1903,7 +1969,7 @@ var TAC = class {
             conversationId,
             profileId: eventSession.profileId ? eventSession.profileId : void 0,
             message: transcript,
-            author: eventSession.authorInfo?.address || "user",
+            author: "user",
             userMemory,
             channelType: channel.channelType
           });
@@ -2428,12 +2494,12 @@ var BaseChannel = class {
     delete this.callbacks.onError;
   }
 };
+
+// packages/core/src/channels/sms.ts
 var SMSChannel = class extends BaseChannel {
-  twilioClient;
   smsCallbacks;
   constructor(tac) {
     super(tac);
-    this.twilioClient = twilio(this.config.twilioAccountSid, this.config.twilioAuthToken);
     this.smsCallbacks = {};
   }
   get channelType() {
@@ -2689,8 +2755,7 @@ var SMSChannel = class extends BaseChannel {
     }
   }
   /**
-   * Send SMS response using Twilio Messages API
-   * Note: This is a workaround until Conversations Service supports sending messages
+   * Send SMS response using Conversation Orchestrator Send API
    */
   async sendResponse(conversationId, message, metadata) {
     this.logger.debug(
@@ -2706,68 +2771,56 @@ var SMSChannel = class extends BaseChannel {
       if (!session) {
         throw new Error(`No active session found for conversation ${conversationId}`);
       }
-      try {
-        this.logger.debug(
-          { conversation_id: conversationId },
-          "Listing participants for conversation"
+      if (!session.authorInfo) {
+        throw new Error(
+          `No author info found for conversation ${conversationId} - no inbound message received yet`
         );
-        const participants = await this.conversationClient.listParticipants(conversationId);
-        this.logger.debug(
-          {
-            conversation_id: conversationId,
-            participant_count: participants.length,
-            service_id: session.serviceId ?? this.config.conversationServiceId
-          },
-          "Found participants"
-        );
-        let messagesSent = 0;
-        for (const participant of participants) {
-          if (participant.type !== "CUSTOMER") {
-            this.logger.debug(
-              { participant_type: participant.type },
-              "Skipping non-customer participant"
-            );
-            continue;
-          }
-          const addresses = participant.addresses || [];
-          this.logger.debug(
-            { addresses_count: addresses.length },
-            "Checking participant addresses"
-          );
-          for (const addr of addresses) {
-            if (addr.channel !== "SMS") {
-              this.logger.debug({ channel: addr.channel }, "Skipping non-SMS address");
-              continue;
-            }
-            this.logger.debug(
-              { to_address: addr.address, from_number: this.config.twilioPhoneNumber },
-              "Sending SMS"
-            );
-            await this.twilioClient.messages.create({
-              to: addr.address,
-              from: this.config.twilioPhoneNumber,
-              body: message
-            });
-            this.logger.info(
-              { conversation_id: conversationId, to_address: addr.address },
-              "SMS sent successfully"
-            );
-            messagesSent++;
-          }
-        }
-        if (messagesSent === 0) {
-          this.logger.warn(
-            { conversation_id: conversationId },
-            "No SMS addresses found for any CUSTOMER participants"
-          );
-        }
-      } catch (error) {
-        this.logger.error(
-          { err: error, conversation_id: conversationId },
-          "Failed to list participants"
-        );
-        throw error;
       }
+      const recipientAddress = session.authorInfo.address;
+      const participants = await this.conversationClient.listParticipants(conversationId);
+      const smsParticipants = participants.filter(
+        (p) => Array.isArray(p.addresses) && p.addresses.some(
+          (addr) => addr.channel === "SMS" && addr.address === this.config.twilioPhoneNumber
+        )
+      );
+      const agentParticipant = smsParticipants.find((p) => p.type === "AI_AGENT" || p.type === "HUMAN_AGENT") ?? smsParticipants[0];
+      if (!agentParticipant) {
+        throw new Error(
+          `Agent participant not found for conversation ${conversationId} with phone ${this.config.twilioPhoneNumber}`
+        );
+      }
+      this.logger.debug(
+        {
+          conversation_id: conversationId,
+          recipient_address: recipientAddress,
+          recipient_participant_id: session.authorInfo.participantId,
+          agent_participant_id: agentParticipant.id,
+          from_number: this.config.twilioPhoneNumber
+        },
+        "Sending SMS via Send API"
+      );
+      await this.conversationClient.sendCommunication(conversationId, {
+        author: {
+          address: this.config.twilioPhoneNumber,
+          channel: "SMS",
+          participantId: agentParticipant.id
+        },
+        recipients: [
+          {
+            address: recipientAddress,
+            channel: "SMS",
+            participantId: session.authorInfo.participantId
+          }
+        ],
+        content: {
+          type: "TEXT",
+          text: message
+        }
+      });
+      this.logger.info(
+        { conversation_id: conversationId, recipient_address: recipientAddress },
+        "SMS sent successfully via Send API"
+      );
     } catch (error) {
       this.logger.error({ err: error, conversation_id: conversationId }, "Send response error");
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
@@ -2824,12 +2877,14 @@ var VoiceChannel = class extends BaseChannel {
   callSidToConversationId;
   voiceCallbacks;
   streamTasks;
+  promptQueues;
   constructor(tac) {
     super(tac);
     this.webSocketConnections = /* @__PURE__ */ new Map();
     this.callSidToConversationId = /* @__PURE__ */ new Map();
     this.voiceCallbacks = {};
     this.streamTasks = /* @__PURE__ */ new Map();
+    this.promptQueues = /* @__PURE__ */ new Map();
   }
   get channelType() {
     return "voice";
@@ -2899,12 +2954,15 @@ var VoiceChannel = class extends BaseChannel {
             break;
           case "prompt":
             if (conversationId) {
-              void this.handlePromptMessage(conversationId, message).catch((err) => {
+              const currentConversationId = conversationId;
+              const previousPrompt = this.promptQueues.get(currentConversationId) ?? Promise.resolve();
+              const currentPrompt = previousPrompt.then(() => this.handlePromptMessage(currentConversationId, message)).catch((err) => {
                 this.logger.error(
-                  { err, conversation_id: conversationId },
+                  { err, conversation_id: currentConversationId },
                   "Failed to handle prompt message"
                 );
               });
+              this.promptQueues.set(currentConversationId, currentPrompt);
             }
             break;
           case "interrupt":
@@ -2987,10 +3045,7 @@ var VoiceChannel = class extends BaseChannel {
     if (session && this.tac.isMemoryEnabled()) {
       try {
         userMemory = await this.tac.retrieveMemory(session, transcript);
-        this.logger.debug(
-          { conversation_id: conversationId },
-          "Retrieved memory for active voice"
-        );
+        this.logger.debug({ conversation_id: conversationId }, "Retrieved memory for active voice");
       } catch (error) {
         this.logger.warn(
           { err: error, conversation_id: conversationId },
@@ -3032,6 +3087,7 @@ var VoiceChannel = class extends BaseChannel {
    */
   async handleWebSocketDisconnect(conversationId) {
     this.webSocketConnections.delete(conversationId);
+    this.promptQueues.delete(conversationId);
     for (const [callSid, cId] of this.callSidToConversationId.entries()) {
       if (cId === conversationId) {
         this.callSidToConversationId.delete(callSid);
@@ -3300,6 +3356,7 @@ var VoiceChannel = class extends BaseChannel {
     this.streamTasks.clear();
     this.webSocketConnections.clear();
     this.callSidToConversationId.clear();
+    this.promptQueues.clear();
     super.shutdown();
   }
 };
@@ -4012,6 +4069,6 @@ var TACServer = class {
   }
 };
 
-export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

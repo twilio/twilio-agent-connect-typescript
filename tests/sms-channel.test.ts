@@ -1,19 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SMSChannel, TAC, ConversationSession } from '@twilio/tac-core';
 
-vi.mock('twilio', () => {
-  const createClient = vi.fn(() => ({
-    messages: {
-      create: vi.fn().mockResolvedValue({ sid: 'SM00000000000000000000000000000000' }),
-    },
-  }));
-
-  return {
-    default: createClient,
-  };
-});
-
 describe('SMS Channel', () => {
+  let originalFetch: typeof global.fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
   const getTestConfig = () => ({
     environment: 'dev' as const,
     twilioAccountSid: 'ACtest123456789',
@@ -321,6 +319,164 @@ describe('SMS Channel', () => {
       };
 
       await expect(channel.processWebhook(webhookPayload)).resolves.not.toThrow();
+    });
+  });
+
+  describe('sendResponse', () => {
+    beforeEach(() => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        // Mock listParticipants call
+        if (url.includes('/Participants')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              participants: [
+                {
+                  id: 'PA111',
+                  conversationId: 'CHtest123456789',
+                  accountId: 'ACtest123456789',
+                  type: 'HUMAN_AGENT',
+                  addresses: [{ channel: 'SMS', address: '+15551234567' }],
+                },
+                {
+                  id: 'PA123',
+                  conversationId: 'CHtest123456789',
+                  accountId: 'ACtest123456789',
+                  type: 'CUSTOMER',
+                  addresses: [{ channel: 'SMS', address: '+15559876543' }],
+                },
+              ],
+            }),
+            clone: function () {
+              return this;
+            },
+            text: async () =>
+              JSON.stringify({
+                participants: [
+                  {
+                    id: 'PA111',
+                    conversationId: 'CHtest123456789',
+                    accountId: 'ACtest123456789',
+                    type: 'HUMAN_AGENT',
+                    addresses: [{ channel: 'SMS', address: '+15551234567' }],
+                  },
+                  {
+                    id: 'PA123',
+                    conversationId: 'CHtest123456789',
+                    accountId: 'ACtest123456789',
+                    type: 'CUSTOMER',
+                    addresses: [{ channel: 'SMS', address: '+15559876543' }],
+                  },
+                ],
+              }),
+          };
+        }
+
+        // Mock sendCommunication call (returns 202 Accepted)
+        return {
+          ok: true,
+          status: 202,
+          json: async () => ({
+            message: 'Conversation setup complete',
+            conversationId: 'CHtest123456789',
+            channelId: 'SM123abc',
+          }),
+          clone: function () {
+            return this;
+          },
+          text: async () =>
+            JSON.stringify({
+              message: 'Conversation setup complete',
+              conversationId: 'CHtest123456789',
+              channelId: 'SM123abc',
+            }),
+        };
+      });
+    });
+
+    it('should send SMS via Send API', async () => {
+      // Start conversation and receive message to populate author_info
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+        },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: '+15559876543',
+            participantId: 'PA123',
+          },
+        },
+      });
+
+      await channel.sendResponse('CHtest123456789', 'Hello back!');
+
+      // Should have called listParticipants first
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/v2/Conversations/CHtest123456789/Participants'),
+        expect.objectContaining({
+          method: 'GET',
+        })
+      );
+
+      // Then called sendCommunication
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/v2/Communications'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            Authorization: expect.stringContaining('Basic'),
+          }),
+          body: expect.stringContaining('+15559876543'),
+        })
+      );
+
+      // Find the sendCommunication call (not the listParticipants call)
+      const sendCommCall = (global.fetch as any).mock.calls.find(
+        (call: any) => call[1]?.method === 'POST'
+      );
+      const body = JSON.parse(sendCommCall[1].body);
+      expect(body.conversationId).toBe('CHtest123456789');
+      expect(body.author.address).toBe('+15551234567');
+      expect(body.author.channel).toBe('SMS');
+      expect(body.author.participantId).toBe('PA111');
+      expect(body.recipients).toHaveLength(1);
+      expect(body.recipients[0].address).toBe('+15559876543');
+      expect(body.recipients[0].channel).toBe('SMS');
+      expect(body.recipients[0].participantId).toBe('PA123');
+      expect(body.content.type).toBe('TEXT');
+      expect(body.content.text).toBe('Hello back!');
+    });
+
+    it('should throw error when no session exists', async () => {
+      await expect(channel.sendResponse('CHnonexistent', 'Test')).rejects.toThrow(
+        'No active session found'
+      );
+    });
+
+    it('should throw error when no author_info exists', async () => {
+      // Start conversation but don't receive any message
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+        },
+      });
+
+      await expect(channel.sendResponse('CHtest123456789', 'Test')).rejects.toThrow(
+        'No author info found'
+      );
     });
   });
 });

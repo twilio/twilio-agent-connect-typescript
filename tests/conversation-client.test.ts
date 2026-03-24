@@ -300,4 +300,78 @@ describe('ConversationClient', () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe('sendCommunication()', () => {
+    it('should send communication successfully', async () => {
+      const mockResponse = {
+        message: 'Conversation setup complete',
+        conversationId: 'CH123456',
+        channelId: 'SM123abc',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockResponse, { ok: true, status: 202 }));
+
+      const request = {
+        author: {
+          address: '+15551234567',
+          channel: 'SMS' as const,
+        },
+        recipients: [
+          {
+            address: '+15559876543',
+            channel: 'SMS' as const,
+            participantId: 'PA222',
+          },
+        ],
+        content: {
+          type: 'TEXT' as const,
+          text: 'Hello world',
+        },
+      };
+
+      const result = await conversationClient.sendCommunication('CH123456', request);
+
+      expect(result.message).toBe('Conversation setup complete');
+      expect(result.conversationId).toBe('CH123456');
+      expect(result.channelId).toBe('SM123abc');
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/v2/Communications'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            Authorization: expect.stringContaining('Basic'),
+          }),
+          body: JSON.stringify({ conversationId: 'CH123456', ...request }),
+        })
+      );
+    });
+
+    it('should handle API errors', async () => {
+      global.fetch = vi
+        .fn()
+        .mockResolvedValue(createMockResponse(null, { ok: false, status: 400, statusText: 'Bad Request' }));
+
+      const request = {
+        author: {
+          address: '+15551234567',
+          channel: 'SMS' as const,
+        },
+        recipients: [
+          {
+            address: '+15559876543',
+            channel: 'SMS' as const,
+          },
+        ],
+        content: {
+          type: 'TEXT' as const,
+          text: 'Hello',
+        },
+      };
+
+      await expect(conversationClient.sendCommunication('CH123456', request)).rejects.toThrow(
+        'Failed to send communication: 400 Bad Request'
+      );
+    });
+  });
 });
