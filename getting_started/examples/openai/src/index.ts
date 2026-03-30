@@ -15,6 +15,8 @@ import {
   ConversationSession,
   TACMemoryResponse,
   ConversationId,
+  ChannelType,
+  ProfileId,
   TACServer,
 } from 'twilio-agent-connect';
 
@@ -104,10 +106,12 @@ function buildMemoryMessages(
  */
 async function handleMessageReady(params: {
   conversationId: ConversationId;
+  profileId: ProfileId | undefined;
   message: string;
+  author: string;
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
-  channel: 'sms' | 'voice';
+  channel: ChannelType;
 }): Promise<void> {
   const { conversationId, message, memory, session, channel } = params;
   const convId = conversationId as string;

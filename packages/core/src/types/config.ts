@@ -9,7 +9,7 @@ export type Environment = z.infer<typeof EnvironmentSchema>;
 /**
  * Channel types supported by the framework
  */
-export const ChannelTypeSchema = z.enum(['sms', 'voice']);
+export const ChannelTypeSchema = z.enum(['sms', 'voice', 'chat']);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
 /**

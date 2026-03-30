@@ -32,8 +32,13 @@ export { KnowledgeClient } from './clients/knowledge';
 export { BaseChannel } from './channels/base';
 export type { BaseChannelEvents } from './channels/base';
 
+export { MessagingChannel } from './channels/messaging';
+export type { MessagingChannelEvents, MessagingWebhookPayload } from './channels/messaging';
+
 export { SMSChannel } from './channels/sms';
-export type { SMSChannelEvents } from './channels/sms';
+
+export { ChatChannel } from './channels/chat';
+export type { ChatChannelConfig } from './channels/chat';
 
 export { VoiceChannel } from './channels/voice';
 export type { VoiceChannelEvents } from './channels/voice';

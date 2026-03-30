@@ -27,7 +27,8 @@
     "format": "prettier --write packages/*/src/**/*.ts src/**/*.ts getting_started/**/*.ts",
     "format:check": "prettier --check packages/*/src/**/*.ts src/**/*.ts getting_started/**/*.ts",
     "typecheck": "tsc --noEmit",
-    "example:getting-started": "cd getting_started/examples/openai && npm install && npm run dev"
+    "example:getting-started": "cd getting_started/examples/openai && npm install && npm run dev",
+    "example:chat": "cd getting_started/examples/chat && npm install && npm run dev"
   },
   "keywords": [
     "twilio",

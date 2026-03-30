@@ -99,7 +99,8 @@ describe('Integration Tests', () => {
             text: 'Hello TAC',
           },
           author: {
-            address: '+15559876543'
+            address: '+15559876543',
+            channel: 'SMS'
           }
         }
       });
@@ -144,7 +145,8 @@ describe('Integration Tests', () => {
               text: `Message from ${convId}`
             },
             author: {
-              address: '+15559876543'
+              address: '+15559876543',
+              channel: 'SMS'
             }
           }
         });
@@ -175,7 +177,8 @@ describe('Integration Tests', () => {
             text: 'Valid message'
           },
           author: {
-            address: '+15559876543'
+            address: '+15559876543',
+            channel: 'SMS'
           }
         }
       });
@@ -190,7 +193,8 @@ describe('Integration Tests', () => {
             text: ''
           },
           author: {
-            address: '+15559876543'
+            address: '+15559876543',
+            channel: 'SMS'
           }
         }
       });
@@ -204,7 +208,8 @@ describe('Integration Tests', () => {
             text: '   '  // Whitespace only
           },
           author: {
-            address: '+15559876543'
+            address: '+15559876543',
+            channel: 'SMS'
           }
         }
       });
@@ -255,7 +260,8 @@ describe('Integration Tests', () => {
             text: 'Test message'
           },
           author: {
-            address: '+15559876543'
+            address: '+15559876543',
+            channel: 'SMS'
           }
         }
       })).resolves.not.toThrow();

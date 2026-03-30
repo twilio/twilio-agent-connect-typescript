@@ -10,7 +10,8 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module',
-    project: './tsconfig.json',
+    project: true,
+    tsconfigRootDir: __dirname,
   },
   env: {
     node: true,
@@ -23,5 +24,5 @@ module.exports = {
     'prefer-const': 'error',
     '@typescript-eslint/no-inferrable-types': 'off',
   },
-  ignorePatterns: ['dist/', 'node_modules/', '*.js'],
+  ignorePatterns: ['dist/', 'node_modules/', '*.js', '*.cjs'],
 };

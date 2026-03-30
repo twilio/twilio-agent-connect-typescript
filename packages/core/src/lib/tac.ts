@@ -530,10 +530,8 @@ export class TAC {
   ): Promise<TACMemoryResponse> {
     // If Memory API is configured
     if (this.memoryClient && this.config.memoryStoreId) {
-      // If profileId is missing, try to lookup profile using phone number
+      // If profileId is missing, try to lookup profile using address
       if (!session.profileId) {
-        this.logger.debug('profileId not found, attempting to lookup profile using phone number');
-
         // Check if authorInfo and address are available
         if (!session.authorInfo || !session.authorInfo.address) {
           throw new Error(
@@ -544,19 +542,38 @@ export class TAC {
           );
         }
 
+        // Determine identity type based on address format
+        // Email addresses contain '@', phone numbers start with '+'
+        const address = session.authorInfo.address;
+        let identityType: 'email' | 'phone';
+        if (address.includes('@')) {
+          identityType = 'email';
+        } else if (address.startsWith('+')) {
+          identityType = 'phone';
+        } else {
+          throw new Error(
+            `Unsupported authorInfo.address format '${address}'. ` +
+              "Expected an email address containing '@' or a phone number starting with '+'."
+          );
+        }
+        this.logger.debug(
+          { identityType, address, channel: session.channel },
+          'profileId not found, attempting to lookup profile'
+        );
+
         try {
-          // Lookup profile using phone number
+          // Lookup profile using appropriate identity type
           const lookupResponse = await this.memoryClient.lookupProfile(
             this.config.memoryStoreId,
-            'phone',
+            identityType,
             session.authorInfo.address
           );
 
           // Check if any profiles were found
           if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
             throw new Error(
-              `No profile found for phone number ${session.authorInfo.address}. ` +
-                'Profile lookup returned no results. Ensure the phone number ' +
+              `No profile found for ${identityType} ${session.authorInfo.address}. ` +
+                'Profile lookup returned no results. Ensure the identity ' +
                 'is registered in the identity resolution system.'
             );
           }

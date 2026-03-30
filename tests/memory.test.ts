@@ -254,7 +254,7 @@ describe('Memory Functionality', () => {
       };
 
       await expect(tac.retrieveMemory(session)).rejects.toThrow(
-        'No profile found for phone number +13175556789'
+        'No profile found for phone +13175556789'
       );
     });
 

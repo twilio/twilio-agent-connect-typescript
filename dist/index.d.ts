@@ -13,7 +13,7 @@ type Environment = z.infer<typeof EnvironmentSchema>;
 /**
  * Channel types supported by the framework
  */
-declare const ChannelTypeSchema: z.ZodEnum<["sms", "voice"]>;
+declare const ChannelTypeSchema: z.ZodEnum<["sms", "voice", "chat"]>;
 type ChannelType = z.infer<typeof ChannelTypeSchema>;
 /**
  * TAC Configuration schema with environment-aware URL computation
@@ -1362,7 +1362,7 @@ declare const ConversationSessionSchema: z.ZodObject<{
     conversationId: z.ZodString;
     profileId: z.ZodOptional<z.ZodString>;
     serviceId: z.ZodOptional<z.ZodString>;
-    channel: z.ZodEnum<["sms", "voice"]>;
+    channel: z.ZodEnum<["sms", "voice", "chat"]>;
     startedAt: z.ZodDate;
     authorInfo: z.ZodOptional<z.ZodObject<{
         address: z.ZodString;
@@ -1377,7 +1377,7 @@ declare const ConversationSessionSchema: z.ZodObject<{
     profile: z.ZodOptional<z.ZodType<Profile, z.ZodTypeDef, Profile>>;
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
 }, "strip", z.ZodTypeAny, {
-    channel: "sms" | "voice";
+    channel: "sms" | "voice" | "chat";
     conversationId: string;
     startedAt: Date;
     metadata: Record<string, unknown>;
@@ -1389,7 +1389,7 @@ declare const ConversationSessionSchema: z.ZodObject<{
     } | undefined;
     profile?: Profile | undefined;
 }, {
-    channel: "sms" | "voice";
+    channel: "sms" | "voice" | "chat";
     conversationId: string;
     startedAt: Date;
     profileId?: string | undefined;
@@ -3537,9 +3537,44 @@ declare class TAC {
 }
 
 /**
- * SMS channel event callbacks extending base callbacks
+ * Text webhook event types from Twilio Conversations Service
+ * Supports the v2 format for SMS and Chat channels
  */
-interface SMSChannelEvents extends BaseChannelEvents {
+interface TextWebhookPayload {
+    eventType: string;
+    timestamp?: string;
+    data?: {
+        id?: string;
+        conversationId?: string;
+        accountId?: string;
+        serviceId?: string;
+        status?: string;
+        participantType?: string;
+        profileId?: string;
+        channelId?: string;
+        author?: {
+            address?: string;
+            channel?: string;
+            participantId?: string;
+        };
+        content?: {
+            type?: string;
+            text?: string;
+        };
+        recipients?: Array<{
+            address?: string;
+            channel?: string;
+            participantId?: string;
+            deliveryStatus?: string;
+        }>;
+        [key: string]: unknown;
+    };
+    [key: string]: unknown;
+}
+/**
+ * Text channel event callbacks extending base callbacks
+ */
+interface TextChannelEvents extends BaseChannelEvents {
     onMessageReceived?: (data: {
         conversationId: ConversationId;
         profileId: ProfileId | undefined;
@@ -3549,21 +3584,30 @@ interface SMSChannelEvents extends BaseChannelEvents {
     }) => void;
 }
 /**
- * SMS Channel implementation for Twilio Conversations Service
+ * Abstract Text Channel base class for SMS and Chat channels
  *
- * Handles SMS conversations through webhook events from Twilio.
- * Automatically retrieves user memory and manages conversation lifecycle.
+ * Provides shared webhook processing logic for text-based channels
+ * (SMS and Chat) that use the Conversations Service webhooks.
  */
-declare class SMSChannel extends BaseChannel {
-    private readonly smsCallbacks;
+declare abstract class TextChannel extends BaseChannel {
+    protected readonly textCallbacks: TextChannelEvents;
     constructor(tac: TAC);
-    get channelType(): ChannelType;
     /**
-     * Register event callbacks (override for SMS-specific events)
+     * Abstract method to check if a message is from the bot itself
+     * Subclasses implement channel-specific filtering (e.g., by phone number or agent address)
+     */
+    protected abstract isOwnMessage(authorAddress: string): boolean;
+    /**
+     * Register event callbacks (override for text-specific events)
      */
     on(event: string, callback: (...args: any[]) => void): void;
     /**
-     * Process SMS webhook from Twilio Conversations Service
+     * Check if this webhook event belongs to this channel.
+     * Returns false if the event is clearly for a different channel type.
+     */
+    private isEventForThisChannel;
+    /**
+     * Process text channel webhook from Twilio Conversations Service
      */
     processWebhook(payload: unknown): Promise<void>;
     /**
@@ -3583,10 +3627,6 @@ declare class SMSChannel extends BaseChannel {
      */
     private handleConversationUpdated;
     /**
-     * Send SMS response using Conversation Orchestrator Send API
-     */
-    sendResponse(conversationId: ConversationId, message: string, metadata?: Record<string, unknown>): Promise<void>;
-    /**
      * Extract conversation ID from webhook payload
      */
     protected extractConversationId(payload: unknown): ConversationId | null;
@@ -3595,9 +3635,55 @@ declare class SMSChannel extends BaseChannel {
      */
     protected extractProfileId(payload: unknown): ProfileId | null;
     /**
-     * Validate SMS webhook payload structure
+     * Validate text channel webhook payload structure
      */
     protected validateWebhookPayload(payload: unknown): boolean;
+}
+
+/**
+ * SMS Channel implementation for Twilio Conversations Service
+ *
+ * Handles SMS conversations through webhook events from Twilio.
+ * Automatically retrieves user memory and manages conversation lifecycle.
+ */
+declare class SMSChannel extends TextChannel {
+    get channelType(): ChannelType;
+    /**
+     * Check if a message is from the bot itself (by phone number)
+     */
+    protected isOwnMessage(authorAddress: string): boolean;
+    /**
+     * Send SMS response using Conversation Orchestrator Send API
+     */
+    sendResponse(conversationId: ConversationId, message: string, metadata?: Record<string, unknown>): Promise<void>;
+}
+
+/**
+ * Chat channel configuration options
+ */
+interface ChatChannelConfig {
+    /** Chat agent identity string (defaults to 'ai-assistant') */
+    agentAddress?: string;
+}
+/**
+ * Chat Channel implementation for Twilio Conversations Service
+ *
+ * Handles web chat conversations through webhook events from Twilio.
+ * Uses identity-based addressing instead of phone numbers.
+ * Automatically creates AI_AGENT participant if needed and manages conversation lifecycle.
+ */
+declare class ChatChannel extends TextChannel {
+    private readonly agentAddress;
+    constructor(tac: TAC, config?: ChatChannelConfig);
+    get channelType(): ChannelType;
+    /**
+     * Check if a message is from the bot itself (by agent address)
+     */
+    protected isOwnMessage(authorAddress: string): boolean;
+    /**
+     * Send chat response using Conversation Orchestrator Send API
+     */
+    sendResponse(conversationId: ConversationId, message: string, metadata?: Record<string, unknown>): Promise<void>;
 }
 
 /**
@@ -4004,7 +4090,7 @@ interface TACServerConfig {
     voice?: Partial<VoiceServerConfig>;
     /** Custom webhook paths */
     webhookPaths?: {
-        sms?: string;
+        messaging?: string;
         twiml?: string;
         ws?: string;
         conversationRelayCallback?: string;
@@ -4019,6 +4105,10 @@ interface TACServerConfig {
     development?: boolean;
     /** Enable Twilio webhook signature validation (default: true) */
     validateWebhooks?: boolean;
+    /** Voice channel instance (alternative to registering on TAC) */
+    voiceChannel?: VoiceChannel;
+    /** Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC) */
+    messagingChannels?: TextChannel[];
 }
 /**
  * Batteries-included Fastify server for TAC
@@ -4030,6 +4120,10 @@ declare class TACServer {
     private readonly fastify;
     private readonly tac;
     private readonly config;
+    /** All enabled messaging channels — webhooks are fanned out to each one */
+    private readonly messagingChannels;
+    /** Voice channel instance */
+    private readonly voiceChannel;
     constructor(tac: TAC, config?: TACServerConfig);
     /**
      * Get the full URL for webhook validation
@@ -4058,4 +4152,4 @@ declare class TACServer {
     stop(): Promise<void>;
 }
 
-export { type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, type BuiltInToolName, BuiltInTools, type ChannelType, ChannelTypeSchema, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationEndedCallback, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, type Environment, EnvironmentSchema, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SMSChannelEvents, type SendCommunicationParticipantAddress, SendCommunicationParticipantAddressSchema, type SendCommunicationRequest, SendCommunicationRequestSchema, type SendCommunicationResponse, SendCommunicationResponseSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, type BuiltInToolName, BuiltInTools, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationEndedCallback, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, type Environment, EnvironmentSchema, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendCommunicationParticipantAddress, SendCommunicationParticipantAddressSchema, type SendCommunicationRequest, SendCommunicationRequestSchema, type SendCommunicationResponse, SendCommunicationResponseSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, TextChannel, type TextChannelEvents, type TextTokenMessage, TextTokenMessageSchema, type TextWebhookPayload, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };

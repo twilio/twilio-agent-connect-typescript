@@ -148,6 +148,7 @@ describe('SMS Channel', () => {
           },
           author: {
             address: '+15559876543',
+            channel: 'SMS',
           },
         },
       };
@@ -175,6 +176,7 @@ describe('SMS Channel', () => {
           },
           author: {
             address: '+15559876543',
+            channel: 'SMS',
           },
         },
       };
@@ -414,6 +416,7 @@ describe('SMS Channel', () => {
           },
           author: {
             address: '+15559876543',
+            channel: 'SMS',
             participantId: 'PA123',
           },
         },

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TAC Chat</title>
+<script src="https://media.twiliocdn.com/sdk/js/conversations/v2.7/twilio-conversations.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #eef1f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+
+  #app {
+    width: 480px;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100dvh;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 40px rgba(0,0,0,0.08);
+  }
+
+  /* Header */
+  #header {
+    background: #06033A;
+    color: #fff;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  #header h1 {
+    font-size: 17px;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  #status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.7);
+  }
+
+  #status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f59e0b;
+    transition: background 0.3s;
+  }
+
+  #status-dot.connected { background: #22c55e; }
+  #status-dot.error { background: #ef4444; }
+
+  /* Messages */
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .msg-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .msg-row.user { justify-content: flex-end; }
+  .msg-row.ai { justify-content: flex-start; }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #6d28d9;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .msg-row.user .avatar { display: none; }
+
+  .msg-content {
+    max-width: 75%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  .msg-row.user .bubble {
+    background: #0263E0;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+
+  .msg-row.ai .bubble {
+    background: #F4F4F6;
+    color: #1a1a1a;
+    border-bottom-left-radius: 4px;
+  }
+
+  .timestamp {
+    font-size: 11px;
+    color: #999;
+    padding: 0 4px;
+  }
+
+  .msg-row.user .timestamp { text-align: right; }
+
+  /* Typing indicator */
+  #typing {
+    display: none;
+    padding: 0 20px 12px;
+  }
+
+  #typing.visible { display: flex; align-items: center; gap: 8px; }
+
+  .typing-dots {
+    display: flex;
+    gap: 4px;
+  }
+
+  .typing-dots span {
+    width: 6px;
+    height: 6px;
+    background: #999;
+    border-radius: 50%;
+    animation: bounce 1.2s infinite;
+  }
+
+  .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  /* Input area */
+  #input-area {
+    padding: 12px 16px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
+    background: #fff;
+  }
+
+  #message-input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 20px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    resize: none;
+    max-height: 120px;
+    line-height: 1.4;
+    overflow-y: auto;
+  }
+
+  #message-input:focus { border-color: #0263E0; }
+
+  #send-btn {
+    width: 40px;
+    height: 40px;
+    background: #0263E0;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+
+  #send-btn:hover { background: #0150b5; }
+  #send-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+  #send-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: #fff;
+  }
+
+  /* Welcome */
+  .welcome {
+    text-align: center;
+    color: #6b7280;
+    font-size: 14px;
+    padding: 40px 20px;
+    line-height: 1.6;
+  }
+
+  .welcome strong {
+    display: block;
+    font-size: 16px;
+    color: #1a1a1a;
+    margin-bottom: 4px;
+  }
+
+  /* Login screen */
+  #login-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 40px 20px;
+  }
+
+  #login-screen strong {
+    font-size: 16px;
+    color: #1a1a1a;
+  }
+
+  #login-screen p {
+    font-size: 14px;
+    color: #6b7280;
+  }
+
+  #email-select {
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    width: 260px;
+  }
+
+  #email-select:focus { border-color: #0263E0; }
+
+  #start-btn {
+    padding: 10px 24px;
+    background: #0263E0;
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  #start-btn:hover { background: #0150b5; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-4px); }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="header">
+    <h1>TAC Chat</h1>
+    <div id="status">
+      <div id="status-dot"></div>
+      <span id="status-text">Connecting...</span>
+    </div>
+  </div>
+
+  <div id="login-screen">
+    <strong>Welcome to TAC Chat</strong>
+    <p>Select your identity to start chatting.</p>
+    <label for="email-select">Identity</label>
+    <select id="email-select">
+      <option value="test1@example.com">test1@example.com</option>
+      <option value="test2@example.com">test2@example.com</option>
+      <option value="test3@example.com">test3@example.com</option>
+    </select>
+    <button id="start-btn">Start Chat</button>
+  </div>
+
+  <div id="messages" style="display:none;">
+    <div class="welcome">
+      <strong>Welcome to TAC Chat</strong>
+      Send a message to start a conversation.
+    </div>
+  </div>
+
+  <div id="typing">
+    <div class="avatar" style="width:24px;height:24px;font-size:9px;">AI</div>
+    <div class="typing-dots"><span></span><span></span><span></span></div>
+  </div>
+
+  <div id="input-area">
+    <textarea id="message-input" rows="1" placeholder="Type a message..."></textarea>
+    <button id="send-btn" disabled>
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const loginScreen = document.getElementById('login-screen');
+  const emailSelect = document.getElementById('email-select');
+  const startBtn = document.getElementById('start-btn');
+  const messagesEl = document.getElementById('messages');
+  const inputEl = document.getElementById('message-input');
+  const sendBtn = document.getElementById('send-btn');
+  const statusDot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const typingEl = document.getElementById('typing');
+
+  let identity = null;
+  let client = null;
+  let conversation = null;
+  let welcomeVisible = true;
+  let waitingForAI = false;
+
+  // Auto-grow textarea
+  inputEl.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  function setStatus(state, text) {
+    statusDot.className = state;
+    statusText.textContent = text;
+  }
+
+  function formatTime(date) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function addMessage(text, role, time) {
+    if (welcomeVisible) {
+      messagesEl.innerHTML = '';
+      welcomeVisible = false;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + role;
+
+    let html = '';
+    if (role === 'ai') {
+      html += '<div class="avatar">AI</div>';
+    }
+    html += '<div class="msg-content">';
+    html += '<div class="bubble">' + escapeHtml(text) + '</div>';
+    if (time) {
+      html += '<div class="timestamp">' + formatTime(time) + '</div>';
+    }
+    html += '</div>';
+
+    row.innerHTML = html;
+    messagesEl.appendChild(row);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function escapeHtml(text) {
+    const el = document.createElement('span');
+    el.textContent = text;
+    return el.innerHTML;
+  }
+
+  function showTyping(show) {
+    typingEl.className = show ? 'visible' : '';
+    if (show) messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function init() {
+    try {
+      const res = await fetch('/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identity: identity }),
+      });
+      const data = await res.json();
+
+      client = new Twilio.Conversations.Client(data.token);
+
+      client.on('connectionStateChanged', function(state) {
+        if (state === 'connected') {
+          setStatus('connected', 'Connected');
+          sendBtn.disabled = false;
+        } else if (state === 'connecting') {
+          setStatus('', 'Connecting...');
+        } else {
+          setStatus('error', 'Disconnected');
+          sendBtn.disabled = true;
+        }
+      });
+
+      client.on('conversationJoined', function(conv) {
+        conversation = conv;
+        conv.on('messageAdded', function(message) {
+          // Only show messages from others (AI responses)
+          if (message.author !== identity) {
+            waitingForAI = false;
+            showTyping(false);
+            addMessage(message.body, 'ai', message.dateCreated);
+          }
+        });
+      });
+    } catch (err) {
+      setStatus('error', 'Connection failed');
+      console.error('Failed to initialize:', err);
+    }
+  }
+
+  async function sendMessage() {
+    const text = inputEl.value.trim();
+    if (!text || !client) return;
+
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    addMessage(text, 'user', new Date());
+    waitingForAI = true;
+    showTyping(true);
+
+    try {
+      if (!conversation) {
+        conversation = await client.createConversation();
+        await conversation.join();
+      }
+
+      await conversation.sendMessage(text);
+    } catch (err) {
+      console.error('Send failed:', err);
+      waitingForAI = false;
+      showTyping(false);
+      addMessage('Failed to send message. Please try again.', 'ai', new Date());
+    }
+
+    sendBtn.disabled = !client;
+    inputEl.focus();
+  }
+
+  sendBtn.addEventListener('click', sendMessage);
+  inputEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  startBtn.addEventListener('click', function() {
+    identity = emailSelect.value;
+    loginScreen.style.display = 'none';
+    messagesEl.style.display = 'flex';
+    document.getElementById('input-area').style.display = 'flex';
+    init();
+  });
+
+  // Hide input area until logged in
+  document.getElementById('input-area').style.display = 'none';
+})();
+</script>
+
+</body>
+</html>
