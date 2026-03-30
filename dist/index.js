@@ -2509,20 +2509,20 @@ var BaseChannel = class {
   }
 };
 
-// packages/core/src/channels/text.ts
-var TextChannel = class extends BaseChannel {
-  textCallbacks;
+// packages/core/src/channels/messaging.ts
+var MessagingChannel = class extends BaseChannel {
+  messagingCallbacks;
   constructor(tac) {
     super(tac);
-    this.textCallbacks = {};
+    this.messagingCallbacks = {};
   }
   /**
-   * Register event callbacks (override for text-specific events)
+   * Register event callbacks (override for messaging-specific events)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic event callback needs to accept any args
   on(event, callback) {
     if (event === "messageReceived") {
-      this.textCallbacks.onMessageReceived = callback;
+      this.messagingCallbacks.onMessageReceived = callback;
     } else {
       super.on(event, callback);
     }
@@ -2549,7 +2549,7 @@ var TextChannel = class extends BaseChannel {
     return true;
   }
   /**
-   * Process text channel webhook from Twilio Conversations Service
+   * Process messaging channel webhook from Twilio Conversations Service
    */
   async processWebhook(payload) {
     this.logger.debug({ operation: "webhook_processing", payload }, "Processing webhook");
@@ -2773,9 +2773,9 @@ var TextChannel = class extends BaseChannel {
         );
       }
     }
-    if (this.textCallbacks.onMessageReceived) {
+    if (this.messagingCallbacks.onMessageReceived) {
       this.logger.debug({ conversation_id: conversationId }, "Invoking message received callback");
-      this.textCallbacks.onMessageReceived({
+      this.messagingCallbacks.onMessageReceived({
         conversationId,
         profileId: session?.profileId ?? profileId ?? void 0,
         message,
@@ -2831,7 +2831,7 @@ var TextChannel = class extends BaseChannel {
     return null;
   }
   /**
-   * Validate text channel webhook payload structure
+   * Validate messaging channel webhook payload structure
    */
   validateWebhookPayload(payload) {
     if (!super.validateWebhookPayload(payload)) {
@@ -2843,7 +2843,7 @@ var TextChannel = class extends BaseChannel {
 };
 
 // packages/core/src/channels/sms.ts
-var SMSChannel = class extends TextChannel {
+var SMSChannel = class extends MessagingChannel {
   get channelType() {
     return "sms";
   }
@@ -2933,7 +2933,7 @@ var SMSChannel = class extends TextChannel {
 };
 
 // packages/core/src/channels/chat.ts
-var ChatChannel = class extends TextChannel {
+var ChatChannel = class extends MessagingChannel {
   agentAddress;
   constructor(tac, config) {
     super(tac);
@@ -3960,7 +3960,7 @@ var TACServer = class {
     this.messagingChannels = config.messagingChannels ?? [tac.getChannel("sms"), tac.getChannel("chat")].filter((ch) => ch != null);
     if (this.messagingChannels.length === 0) {
       console.warn(
-        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a TextChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
+        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
       );
     }
     this.fastify = Fastify({
@@ -4263,6 +4263,6 @@ var TACServer = class {
   }
 };
 
-export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextChannel, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map
