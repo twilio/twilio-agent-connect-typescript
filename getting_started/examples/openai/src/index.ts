@@ -46,59 +46,89 @@ const SYSTEM_MESSAGE: OpenAI.Chat.ChatCompletionSystemMessageParam = {
 };
 
 /**
- * Build memory context messages from TAC memory response
+ * Build a memory context system message from TAC memory response.
+ * Follows the same format as the Python SDK's MemoryPromptBuilder.
  */
-function buildMemoryMessages(
+function buildMemoryMessage(
   memoryResponse: TACMemoryResponse | null,
   context: ConversationSession
-): OpenAI.Chat.ChatCompletionMessageParam[] {
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-
-  if (!memoryResponse) {
-    return messages;
-  }
+): OpenAI.Chat.ChatCompletionSystemMessageParam | null {
+  const sections: string[] = [];
 
   // Add profile information if available
-  if (context.profile) {
-    const profileParts: string[] = ['User Profile:'];
-
-    if (context.profile.traits) {
-      const traits = context.profile.traits;
-      for (const [key, value] of Object.entries(traits)) {
-        if (value && typeof value === 'object') {
-          profileParts.push(`${key}: ${JSON.stringify(value)}`);
-        } else if (value !== null && value !== undefined) {
-          profileParts.push(`${key}: ${String(value)}`);
-        }
+  if (context.profile?.traits) {
+    const traitLines: string[] = [];
+    for (const [key, value] of Object.entries(context.profile.traits)) {
+      if (value !== null && value !== undefined) {
+        traitLines.push(
+          `- ${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`
+        );
       }
     }
-
-    if (profileParts.length > 1) {
-      messages.push({
-        role: 'system',
-        content: profileParts.join('\n'),
-      });
+    if (traitLines.length > 0) {
+      sections.push(
+        ['## Customer Profile', 'Information about this customer:', ...traitLines].join('\n')
+      );
     }
   }
 
-  // Add conversation history
-  if (memoryResponse.communications && memoryResponse.communications.length > 0) {
-    const historyParts = ['Previous conversation history:'];
-
-    for (const comm of memoryResponse.communications.slice(0, 10)) {
-      // Limit to last 10
-      const author = comm.author?.name || 'Unknown';
-      const content = comm.content?.text || '';
-      historyParts.push(`${author}: ${content}`);
+  // Add observations
+  if (memoryResponse && memoryResponse.observations.length > 0) {
+    const lines = [
+      '## Key Observations',
+      'Important notes about the customer from previous interactions:',
+    ];
+    for (const obs of memoryResponse.observations) {
+      lines.push(`- ${obs.content}`);
     }
-
-    messages.push({
-      role: 'system',
-      content: historyParts.join('\n'),
-    });
+    sections.push(lines.join('\n'));
   }
 
-  return messages;
+  // Add conversation summaries
+  if (memoryResponse && memoryResponse.summaries.length > 0) {
+    const lines = [
+      '## Past Conversation Summaries',
+      'Summaries of previous conversations with this customer:',
+    ];
+    for (const summary of memoryResponse.summaries) {
+      lines.push(`- ${summary.content}`);
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  // Add recent message history (limit to last 10 messages to avoid exceeding context limits)
+  if (memoryResponse && memoryResponse.communications.length > 0) {
+    const lines = ['## Recent Message History', 'Recent messages exchanged with this customer:'];
+    const recentComms = memoryResponse.communications.slice(-10);
+    for (const comm of recentComms) {
+      let role: string;
+      if (comm.author?.type === 'CUSTOMER') {
+        role = 'User';
+      } else if (comm.author?.type) {
+        role = 'Assistant';
+      } else {
+        role = 'Unknown';
+      }
+      const content = comm.content?.text ?? '';
+      lines.push(`${role}: ${content}`);
+    }
+    sections.push(lines.join('\n'));
+  }
+
+  if (sections.length === 0) {
+    return null;
+  }
+
+  const header = [
+    '# Customer Context',
+    'You have access to the following information about this customer from previous interactions:',
+    '',
+  ].join('\n');
+
+  return {
+    role: 'system',
+    content: header + '\n' + sections.join('\n\n'),
+  };
 }
 
 /**
@@ -128,19 +158,19 @@ async function handleMessageReady(params: {
       content: message,
     });
 
-    // Build memory context messages
-    const memoryMessages = buildMemoryMessages(memory ?? null, session);
+    // Build memory context message
+    const memoryMessage = buildMemoryMessage(memory ?? null, session);
 
     // Combine system message, memory context, and conversation history
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       SYSTEM_MESSAGE,
-      ...memoryMessages,
+      ...(memoryMessage ? [memoryMessage] : []),
       ...conversationMessages[convId],
     ];
 
     // Call OpenAI
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5.4-mini',
       messages,
     });
 

@@ -13,26 +13,12 @@ This guide will walk you through setting up and running your first TAC applicati
 
 You need to create Twilio Conversation and Memory services before using TAC.
 
-**Option 1: Use the Setup Wizard (Recommended)**
-
-Use the [Twilio Setup Wizard](https://github.com/twilio-innovation/twilio-agent-connect-python/tree/main/getting_started/twilio_setup) from the Python repository to automatically create Memory and Conversation services and generate your `.env` file:
-
-```bash
-git clone https://github.com/twilio-innovation/twilio-agent-connect-python.git
-cd twilio-agent-connect-python
-make setup  # Open http://localhost:8080
-```
-
-Copy the generated `.env` file to your TypeScript project's `getting_started/examples/` directory.
-
-**Option 2: Manual Setup**
-
-You can also create services manually through the [Twilio Console](https://console.twilio.com/).
+Create services through the [Twilio Console](https://1console.twilio.com/).
 
 **Required Services:**
 
 - **Conversation Configuration**: For managing conversations
-- **Memory Service** (optional): For persistent user profiles and conversation history
+- **Memory Service** (optional): For storing and retrieving user context (e.g., persistent profiles, observations, summaries, and richer communication history)
 
 ## Step 2: Run the Example
 
@@ -47,9 +33,7 @@ npm run build
 
 ### Configure Environment Variables
 
-If you used the Setup Wizard, copy the generated `.env` file to `getting_started/examples/`.
-
-Otherwise, create your `.env` file manually:
+Create your `.env` file:
 
 ```bash
 cd getting_started/examples
@@ -59,12 +43,13 @@ cp .env.example .env
 
 See the **Environment Variables** section below for details.
 
-### Run the Server
+### Install Example Dependencies and Run the Server
 
-From the `getting_started/examples` directory:
+From the `getting_started/examples/openai` directory:
 
 ```bash
-cd openai
+cd getting_started/examples/openai
+npm install
 npm run dev
 ```
 
@@ -104,6 +89,10 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - `VOICE_PUBLIC_DOMAIN`: Your ngrok domain (required for voice)
 
 **Note**: The `ENVIRONMENT` variable is optional and defaults to `prod`. You can omit it for production use.
+
+## Other Examples
+
+- **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel
 
 ## Next Steps
 

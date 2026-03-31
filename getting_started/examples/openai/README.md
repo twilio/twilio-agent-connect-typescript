@@ -28,11 +28,19 @@ npm install
 npm run build
 ```
 
-### 2. Configure Environment Variables
+Then install the example's dependencies:
 
 ```bash
 cd getting_started/examples/openai
-cp ../.env.example .env
+npm install
+```
+
+### 2. Configure Environment Variables
+
+From the `getting_started/examples/` directory:
+
+```bash
+cp .env.example .env
 # Edit .env with your credentials
 ```
 
@@ -60,9 +68,9 @@ MEMORY_STORE_ID=mem_store_xxxxxxxxxxxxxxxxxxxxxxxxxx
 npm run dev
 ```
 
-The server starts on `http://localhost:3000` with endpoints:
+The server starts on `http://localhost:8000` with endpoints:
 
-- `POST /sms` - SMS webhook endpoint
+- `POST /webhook` - SMS webhook endpoint
 - `POST /twiml` - Voice webhook endpoint (generates TwiML)
 - `WS /ws` - Voice WebSocket endpoint
 - `POST /conversation-relay-callback` - Voice callback endpoint
@@ -72,18 +80,26 @@ The server starts on `http://localhost:3000` with endpoints:
 In another terminal, start ngrok:
 
 ```bash
-ngrok http 3000
+ngrok http 8000
 ```
 
 Copy the ngrok URL (e.g., `https://abc123.ngrok.io`).
 
 ### 5. Configure Twilio Webhooks
 
-1. Go to [Twilio Console](https://console.twilio.com/us1/develop/phone-numbers/manage/active)
-2. Select your Twilio phone number
-3. Configure webhooks:
-   - **SMS**: Set "A MESSAGE COMES IN" webhook to `https://abc123.ngrok.io/sms`
-   - **Voice**: Set "A CALL COMES IN" webhook to `https://abc123.ngrok.io/twiml`
+**SMS:**
+
+1. In the [Console](https://1console.twilio.com/), go to **Products & services** > **Conversation Orchestrator** > **Conversation Configurations**.
+2. Select your conversation configuration.
+3. In the **Overview** tab, click **Edit**.
+4. Set **Webhook > Callback method** to `https://abc123.ngrok.io/webhook` with HTTP method `POST`.
+5. Click **Save changes**.
+
+**Voice:**
+
+1. In the [Console](https://1console.twilio.com/), go to **Products & services** > **Numbers & senders**.
+2. Select your Twilio phone number.
+3. Under **Voice configuration**, set the webhook URL to `https://abc123.ngrok.io/twiml` with HTTP method `POST`.
 
 ## Example Conversations
 
@@ -111,7 +127,6 @@ getting_started/examples/openai/
 │   └── index.ts           # Main application
 ├── package.json           # Dependencies
 ├── tsconfig.json          # TypeScript config
-├── tsup.config.ts         # Build config
 └── README.md              # This file
 ```
 

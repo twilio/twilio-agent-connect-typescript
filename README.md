@@ -41,35 +41,19 @@ npm install
 npm run build
 ```
 
-### Option 2: Install from Local Repository
+### Option 2: Install from GitHub
 
-If you have an existing project, you can install from this local repository:
+If you have an existing project, you can install directly from GitHub:
 
 ```bash
-# In your project directory
-npm install /path/to/twilio-agent-connect-typescript/packages/core
-npm install /path/to/twilio-agent-connect-typescript/packages/server
+npm install git@github.com:twilio-innovation/twilio-agent-connect-typescript.git
 ```
 
 ## Quick Examples
 
-**Option 1: Use the Setup Wizard**
+Create Memory and Conversation services through the [Twilio Console](https://1console.twilio.com), then configure your `.env` file (see the [getting started guide](getting_started/README.md) for details).
 
-Use the [Twilio Setup Wizard](https://github.com/twilio-innovation/twilio-agent-connect-python/tree/main/getting_started/twilio_setup) from the Python repository to automatically create Memory and Conversation services and generate your `.env` file:
-
-```bash
-git clone https://github.com/twilio-innovation/twilio-agent-connect-python.git
-cd twilio-agent-connect-python
-make setup  # Open http://localhost:8080
-```
-
-**Option 2: Manual Setup**
-
-You can also create Memory and Conversation services manually through the [Twilio Console](https://console.twilio.com).
-
----
-
-After completing setup, here's a minimal example to get started:
+Here's a minimal example to get started:
 
 ### Multi-Channel with OpenAI SDK
 
@@ -91,8 +75,8 @@ import {
   TACConfig,
   VoiceChannel,
   SMSChannel,
-} from '@twilio/tac-core';
-import { TACServer } from '@twilio/tac-server';
+  TACServer,
+} from 'twilio-agent-connect';
 
 config();
 

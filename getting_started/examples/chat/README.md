@@ -4,25 +4,37 @@ Example demonstrating ChatChannel integration with Twilio Agent Connect. Uses th
 
 ## Setup
 
-1. Copy `.env.example` to `../.env` (in the `getting_started/examples` directory) and fill in your credentials:
+1. From the repository root, install and build the SDK:
+   ```bash
+   npm install
+   npm run build
+   ```
+
+2. Configure environment variables. From the `getting_started/examples/` directory, copy and fill in the template:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
+
+   Required credentials:
    - Standard TAC credentials (Account SID, Auth Token, API credentials, Conversation Service ID)
    - `TWILIO_API_KEY` - API Key SID (starts with SK) for token generation
    - `TWILIO_API_TOKEN` - API Token
    - `TWILIO_CONVERSATION_SERVICE_SID` - Conversations v1 Service SID (starts with IS, **not** the Conversation Orchestrator configuration ID)
    - `OPENAI_API_KEY` - OpenAI API key
 
-2. Install dependencies:
+3. Install the example's dependencies:
    ```bash
    cd getting_started/examples/chat
    npm install
    ```
 
-3. Start the server:
+4. Start the server:
    ```bash
    npm start
    ```
 
-4. Open http://localhost:8000 in your browser
+5. Open http://localhost:8000 in your browser
 
 ## How it Works
 
