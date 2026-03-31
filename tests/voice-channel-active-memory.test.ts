@@ -12,8 +12,8 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
     environment: 'dev' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
-    apiKey: 'SKtest_api_key',
-    apiToken: 'test_api_token',
+    twilioApiKey: 'SKtest_api_key',
+    twilioApiToken: 'test_api_token',
     twilioPhoneNumber: '+15555555555',
     conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
     memoryStoreId: 'mem_store_01234567890123456789abcdef', // Enable memory
@@ -23,8 +23,8 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
     environment: 'dev' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
-    apiKey: 'SKtest_api_key',
-    apiToken: 'test_api_token',
+    twilioApiKey: 'SKtest_api_key',
+    twilioApiToken: 'test_api_token',
     twilioPhoneNumber: '+15555555555',
     conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
     // No memoryStoreId - memory disabled

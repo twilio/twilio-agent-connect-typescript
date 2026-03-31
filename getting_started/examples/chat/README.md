@@ -7,7 +7,7 @@ Example demonstrating ChatChannel integration with Twilio Agent Connect. Uses th
 1. Copy `.env.example` to `../.env` (in the `getting_started/examples` directory) and fill in your credentials:
    - Standard TAC credentials (Account SID, Auth Token, API credentials, Conversation Service ID)
    - `TWILIO_API_KEY` - API Key SID (starts with SK) for token generation
-   - `TWILIO_API_SECRET` - API Key Secret
+   - `TWILIO_API_TOKEN` - API Token
    - `TWILIO_CONVERSATION_SERVICE_SID` - Conversations v1 Service SID (starts with IS, **not** the Conversation Orchestrator configuration ID)
    - `OPENAI_API_KEY` - OpenAI API key
 

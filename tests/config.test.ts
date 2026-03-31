@@ -6,8 +6,8 @@ describe('TACConfig', () => {
     environment: 'prod' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
-    apiKey: 'SKtest123456789',
-    apiToken: 'test_api_token_123',
+    twilioApiKey: 'SKtest123456789',
+    twilioApiToken: 'test_api_token_123',
     twilioPhoneNumber: '+15551234567',
     memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
     conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
@@ -21,8 +21,8 @@ describe('TACConfig', () => {
       ENVIRONMENT: process.env.ENVIRONMENT,
       TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
       TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
-      API_KEY: process.env.API_KEY,
-      API_TOKEN: process.env.API_TOKEN,
+      TWILIO_API_KEY: process.env.TWILIO_API_KEY,
+      TWILIO_API_TOKEN: process.env.TWILIO_API_TOKEN,
       TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
       MEMORY_STORE_ID: process.env.MEMORY_STORE_ID,
       CONVERSATION_SERVICE_ID: process.env.CONVERSATION_SERVICE_ID,
@@ -138,8 +138,8 @@ describe('TACConfig', () => {
       process.env.ENVIRONMENT = 'prod';
       process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
       process.env.TWILIO_AUTH_TOKEN = 'test_auth_token';
-      process.env.API_KEY = 'SKtest123';
-      process.env.API_TOKEN = 'test_api_token';
+      process.env.TWILIO_API_KEY = 'SKtest123';
+      process.env.TWILIO_API_TOKEN = 'test_api_token';
       process.env.TWILIO_PHONE_NUMBER = '+1234567890';
       process.env.MEMORY_STORE_ID = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg';
       process.env.CONVERSATION_SERVICE_ID = 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd';
@@ -194,22 +194,22 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_AUTH_TOKEN');
     });
 
-    it('should throw error when API_KEY is missing', () => {
+    it('should throw error when TWILIO_API_KEY is missing', () => {
       setRequiredEnvVars();
-      delete process.env.API_KEY;
+      delete process.env.TWILIO_API_KEY;
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: API_KEY');
+      }).toThrow('Missing required environment variable: TWILIO_API_KEY');
     });
 
-    it('should throw error when API_TOKEN is missing', () => {
+    it('should throw error when TWILIO_API_TOKEN is missing', () => {
       setRequiredEnvVars();
-      delete process.env.API_TOKEN;
+      delete process.env.TWILIO_API_TOKEN;
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: API_TOKEN');
+      }).toThrow('Missing required environment variable: TWILIO_API_TOKEN');
     });
 
     it('should throw error when TWILIO_PHONE_NUMBER is missing', () => {

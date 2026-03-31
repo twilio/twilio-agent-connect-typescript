@@ -30,10 +30,10 @@ export class KnowledgeClient {
   constructor(config: TACConfig, logger?: Logger) {
     this.baseUrl = config.knowledgeApiUrl;
 
-    // Use API credentials (api_key/api_token)
+    // Use Twilio API Key credentials (twilioApiKey / twilioApiToken)
     this.credentials = {
-      username: config.apiKey,
-      password: config.apiToken,
+      username: config.twilioApiKey,
+      password: config.twilioApiToken,
     };
     const baseLogger = logger || createLogger({ name: 'tac-knowledge' });
     this.logger = baseLogger.child({ client: 'knowledge' });

@@ -49,7 +49,7 @@ getting_started/  # Example apps (OpenAI integration)
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onHandoff`, `onConversationEnded`) instead of EventEmitter
 - **Tool system** (`packages/tools/src/lib/builder.ts`): `defineTool()` with JSON schema; supports conversion to OpenAI and Anthropic formats
 - **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars; environment-aware API URL computation (dev/stage/prod)
-- **API credentials consolidated** at `TACConfig` level (apiKey/apiToken shared across Memory, Conversation, Knowledge clients)
+- **API credentials consolidated** at `TACConfig` level (twilioApiKey/twilioApiToken shared across Memory, Conversation, Knowledge clients)
 - **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server with default `welcomeGreeting` for voice calls; customizable via `conversationRelayConfig`
 
 ## Dependencies

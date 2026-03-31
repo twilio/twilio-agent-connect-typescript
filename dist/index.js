@@ -16,8 +16,8 @@ var TACConfigSchema = z.object({
   environment: EnvironmentSchema,
   twilioAccountSid: z.string().min(1, "Twilio Account SID is required"),
   twilioAuthToken: z.string().min(1, "Twilio Auth Token is required"),
-  apiKey: z.string().min(1, "API Key is required"),
-  apiToken: z.string().min(1, "API Token is required"),
+  twilioApiKey: z.string().min(1, "Twilio API Key is required"),
+  twilioApiToken: z.string().min(1, "Twilio API Token is required"),
   twilioPhoneNumber: z.string().min(1, "Twilio Phone Number is required"),
   memoryStoreId: z.string().regex(/^mem_(service|store)_[0-9a-z]{26}$/, "Invalid Memory Store ID format").optional(),
   traitGroups: z.array(z.string()).optional(),
@@ -34,8 +34,8 @@ var EnvironmentVariables = {
   ENVIRONMENT: "ENVIRONMENT",
   TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID",
   TWILIO_AUTH_TOKEN: "TWILIO_AUTH_TOKEN",
-  API_KEY: "API_KEY",
-  API_TOKEN: "API_TOKEN",
+  TWILIO_API_KEY: "TWILIO_API_KEY",
+  TWILIO_API_TOKEN: "TWILIO_API_TOKEN",
   TWILIO_PHONE_NUMBER: "TWILIO_PHONE_NUMBER",
   MEMORY_STORE_ID: "MEMORY_STORE_ID",
   TRAIT_GROUPS: "TRAIT_GROUPS",
@@ -712,8 +712,8 @@ var TACConfig = class _TACConfig {
   environment;
   twilioAccountSid;
   twilioAuthToken;
-  apiKey;
-  apiToken;
+  twilioApiKey;
+  twilioApiToken;
   twilioPhoneNumber;
   memoryStoreId;
   traitGroups;
@@ -731,8 +731,8 @@ var TACConfig = class _TACConfig {
     this.environment = validatedConfig.environment;
     this.twilioAccountSid = validatedConfig.twilioAccountSid;
     this.twilioAuthToken = validatedConfig.twilioAuthToken;
-    this.apiKey = validatedConfig.apiKey;
-    this.apiToken = validatedConfig.apiToken;
+    this.twilioApiKey = validatedConfig.twilioApiKey;
+    this.twilioApiToken = validatedConfig.twilioApiToken;
     this.twilioPhoneNumber = validatedConfig.twilioPhoneNumber;
     if (validatedConfig.memoryStoreId) {
       this.memoryStoreId = validatedConfig.memoryStoreId;
@@ -764,8 +764,8 @@ var TACConfig = class _TACConfig {
    * - ENVIRONMENT: TAC environment (dev, stage, or prod) - defaults to 'prod'
    * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
-   * - API_KEY: API Key (required)
-   * - API_TOKEN: API Token (required)
+   * - TWILIO_API_KEY: Twilio API Key (required)
+   * - TWILIO_API_TOKEN: Twilio API Token (required)
    * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
    * - MEMORY_STORE_ID: Memory Store ID (optional, for Twilio Memory)
    * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
@@ -787,8 +787,8 @@ var TACConfig = class _TACConfig {
     const requiredVars = [
       { key: EnvironmentVariables.TWILIO_ACCOUNT_SID, name: "TWILIO_ACCOUNT_SID" },
       { key: EnvironmentVariables.TWILIO_AUTH_TOKEN, name: "TWILIO_AUTH_TOKEN" },
-      { key: EnvironmentVariables.API_KEY, name: "API_KEY" },
-      { key: EnvironmentVariables.API_TOKEN, name: "API_TOKEN" },
+      { key: EnvironmentVariables.TWILIO_API_KEY, name: "TWILIO_API_KEY" },
+      { key: EnvironmentVariables.TWILIO_API_TOKEN, name: "TWILIO_API_TOKEN" },
       { key: EnvironmentVariables.TWILIO_PHONE_NUMBER, name: "TWILIO_PHONE_NUMBER" },
       { key: EnvironmentVariables.CONVERSATION_SERVICE_ID, name: "CONVERSATION_SERVICE_ID" }
     ];
@@ -801,8 +801,8 @@ var TACConfig = class _TACConfig {
       environment: process.env[EnvironmentVariables.ENVIRONMENT] ?? "prod",
       twilioAccountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID],
       twilioAuthToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN],
-      apiKey: process.env[EnvironmentVariables.API_KEY],
-      apiToken: process.env[EnvironmentVariables.API_TOKEN],
+      twilioApiKey: process.env[EnvironmentVariables.TWILIO_API_KEY],
+      twilioApiToken: process.env[EnvironmentVariables.TWILIO_API_TOKEN],
       twilioPhoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER],
       memoryStoreId: process.env[EnvironmentVariables.MEMORY_STORE_ID],
       traitGroups: process.env[EnvironmentVariables.TRAIT_GROUPS]?.split(","),
@@ -852,8 +852,8 @@ var MemoryClient = class {
   constructor(config, logger2) {
     this.baseUrl = config.memoryApiUrl;
     this.credentials = {
-      username: config.apiKey,
-      password: config.apiToken
+      username: config.twilioApiKey,
+      password: config.twilioApiToken
     };
     const baseLogger = logger2 || createLogger({ name: "tac-memory" });
     this.logger = baseLogger.child({ client: "memory" });
@@ -1141,8 +1141,8 @@ var ConversationClient = class {
   constructor(config, logger2) {
     this.baseUrl = config.conversationsApiUrl;
     this.credentials = {
-      username: config.apiKey,
-      password: config.apiToken
+      username: config.twilioApiKey,
+      password: config.twilioApiToken
     };
     this.conversationServiceId = config.conversationServiceId;
     const baseLogger = logger2 || createLogger({ name: "tac-conversations" });
@@ -1424,8 +1424,8 @@ var KnowledgeClient = class {
   constructor(config, logger2) {
     this.baseUrl = config.knowledgeApiUrl;
     this.credentials = {
-      username: config.apiKey,
-      password: config.apiToken
+      username: config.twilioApiKey,
+      password: config.twilioApiToken
     };
     const baseLogger = logger2 || createLogger({ name: "tac-knowledge" });
     this.logger = baseLogger.child({ client: "knowledge" });

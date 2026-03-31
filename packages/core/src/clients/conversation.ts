@@ -37,8 +37,8 @@ export class ConversationClient {
   constructor(config: TACConfig, logger?: Logger) {
     this.baseUrl = config.conversationsApiUrl;
     this.credentials = {
-      username: config.apiKey,
-      password: config.apiToken,
+      username: config.twilioApiKey,
+      password: config.twilioApiToken,
     };
     this.conversationServiceId = config.conversationServiceId;
     const baseLogger = logger || createLogger({ name: 'tac-conversations' });

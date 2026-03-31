@@ -12,7 +12,7 @@
  *
  * Required env vars (in addition to standard TAC vars):
  *     TWILIO_API_KEY                  - API Key SID (starts with SK)
- *     TWILIO_API_SECRET               - API Key Secret
+ *     TWILIO_API_TOKEN                - API Token
  *     TWILIO_CONVERSATION_SERVICE_SID - Conversations v1 Service SID (starts with IS)
  */
 
@@ -182,8 +182,8 @@ app.post('/token', async (request, reply) => {
   }
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const apiKey = process.env.TWILIO_API_KEY || process.env.API_KEY;
-  const apiSecret = process.env.TWILIO_API_SECRET || process.env.API_TOKEN;
+  const apiKey = process.env.TWILIO_API_KEY;
+  const apiSecret = process.env.TWILIO_API_TOKEN;
   const serviceSid = process.env.TWILIO_CONVERSATION_SERVICE_SID;
 
   if (!accountSid || !apiKey || !apiSecret || !serviceSid) {

@@ -22,8 +22,8 @@ declare const TACConfigSchema: z.ZodObject<{
     environment: z.ZodDefault<z.ZodEnum<["dev", "stage", "prod"]>>;
     twilioAccountSid: z.ZodString;
     twilioAuthToken: z.ZodString;
-    apiKey: z.ZodString;
-    apiToken: z.ZodString;
+    twilioApiKey: z.ZodString;
+    twilioApiToken: z.ZodString;
     twilioPhoneNumber: z.ZodString;
     memoryStoreId: z.ZodOptional<z.ZodString>;
     traitGroups: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
@@ -36,8 +36,8 @@ declare const TACConfigSchema: z.ZodObject<{
     environment: "dev" | "stage" | "prod";
     twilioAccountSid: string;
     twilioAuthToken: string;
-    apiKey: string;
-    apiToken: string;
+    twilioApiKey: string;
+    twilioApiToken: string;
     twilioPhoneNumber: string;
     conversationServiceId: string;
     memoryStoreId?: string | undefined;
@@ -49,8 +49,8 @@ declare const TACConfigSchema: z.ZodObject<{
 }, {
     twilioAccountSid: string;
     twilioAuthToken: string;
-    apiKey: string;
-    apiToken: string;
+    twilioApiKey: string;
+    twilioApiToken: string;
     twilioPhoneNumber: string;
     conversationServiceId: string;
     environment?: "dev" | "stage" | "prod" | undefined;
@@ -69,8 +69,8 @@ declare const EnvironmentVariables: {
     readonly ENVIRONMENT: "ENVIRONMENT";
     readonly TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID";
     readonly TWILIO_AUTH_TOKEN: "TWILIO_AUTH_TOKEN";
-    readonly API_KEY: "API_KEY";
-    readonly API_TOKEN: "API_TOKEN";
+    readonly TWILIO_API_KEY: "TWILIO_API_KEY";
+    readonly TWILIO_API_TOKEN: "TWILIO_API_TOKEN";
     readonly TWILIO_PHONE_NUMBER: "TWILIO_PHONE_NUMBER";
     readonly MEMORY_STORE_ID: "MEMORY_STORE_ID";
     readonly TRAIT_GROUPS: "TRAIT_GROUPS";
@@ -3013,8 +3013,8 @@ declare class TACConfig {
     readonly environment: Environment;
     readonly twilioAccountSid: string;
     readonly twilioAuthToken: string;
-    readonly apiKey: string;
-    readonly apiToken: string;
+    readonly twilioApiKey: string;
+    readonly twilioApiToken: string;
     readonly twilioPhoneNumber: string;
     readonly memoryStoreId?: string;
     readonly traitGroups?: string[];
@@ -3034,8 +3034,8 @@ declare class TACConfig {
      * - ENVIRONMENT: TAC environment (dev, stage, or prod) - defaults to 'prod'
      * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
      * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
-     * - API_KEY: API Key (required)
-     * - API_TOKEN: API Token (required)
+     * - TWILIO_API_KEY: Twilio API Key (required)
+     * - TWILIO_API_TOKEN: Twilio API Token (required)
      * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
      * - MEMORY_STORE_ID: Memory Store ID (optional, for Twilio Memory)
      * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)

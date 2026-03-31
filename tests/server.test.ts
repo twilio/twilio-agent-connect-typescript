@@ -32,8 +32,8 @@ describe('TACServer Webhook Validation', () => {
     environment: 'dev' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
-    apiKey: 'test_api_key',
-    apiToken: 'test_api_token',
+    twilioApiKey: 'test_api_key',
+    twilioApiToken: 'test_api_token',
     twilioPhoneNumber: '+15551234567',
     conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
@@ -290,8 +290,8 @@ describe('TACServer with conversationRelayConfig', () => {
     environment: 'dev' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
-    apiKey: 'test_api_key',
-    apiToken: 'test_api_token',
+    twilioApiKey: 'test_api_key',
+    twilioApiToken: 'test_api_token',
     twilioPhoneNumber: '+15551234567',
     conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
   });

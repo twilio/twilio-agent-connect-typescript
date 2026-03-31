@@ -19,8 +19,8 @@ export const TACConfigSchema = z.object({
   environment: EnvironmentSchema,
   twilioAccountSid: z.string().min(1, 'Twilio Account SID is required'),
   twilioAuthToken: z.string().min(1, 'Twilio Auth Token is required'),
-  apiKey: z.string().min(1, 'API Key is required'),
-  apiToken: z.string().min(1, 'API Token is required'),
+  twilioApiKey: z.string().min(1, 'Twilio API Key is required'),
+  twilioApiToken: z.string().min(1, 'Twilio API Token is required'),
   twilioPhoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
   memoryStoreId: z
     .string()
@@ -48,8 +48,8 @@ export const EnvironmentVariables = {
   ENVIRONMENT: 'ENVIRONMENT',
   TWILIO_ACCOUNT_SID: 'TWILIO_ACCOUNT_SID',
   TWILIO_AUTH_TOKEN: 'TWILIO_AUTH_TOKEN',
-  API_KEY: 'API_KEY',
-  API_TOKEN: 'API_TOKEN',
+  TWILIO_API_KEY: 'TWILIO_API_KEY',
+  TWILIO_API_TOKEN: 'TWILIO_API_TOKEN',
   TWILIO_PHONE_NUMBER: 'TWILIO_PHONE_NUMBER',
   MEMORY_STORE_ID: 'MEMORY_STORE_ID',
   TRAIT_GROUPS: 'TRAIT_GROUPS',
