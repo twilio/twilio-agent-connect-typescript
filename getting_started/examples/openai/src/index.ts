@@ -61,7 +61,7 @@ function buildMemoryMessage(
     for (const [key, value] of Object.entries(context.profile.traits)) {
       if (value !== null && value !== undefined) {
         traitLines.push(
-          `- ${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`
+          `- ${key}: ${typeof value === 'object' ? JSON.stringify(value) : (value as string | number | boolean)}`
         );
       }
     }

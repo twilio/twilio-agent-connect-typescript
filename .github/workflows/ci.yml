@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.13"
           cache: "npm"
 
       - name: Install dependencies
@@ -49,7 +49,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.13"
           cache: "npm"
 
       - name: Install dependencies
@@ -67,16 +67,16 @@ jobs:
           echo ""
           npm run typecheck
 
-  test-node-20:
-    name: Test - Node 20
+  test-node-24:
+    name: Test - Node 24
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24.x"
           cache: "npm"
 
       - name: Install dependencies
@@ -94,7 +94,7 @@ jobs:
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.13"
           cache: "npm"
 
       - name: Install dependencies
@@ -112,25 +112,41 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.13"
           cache: "npm"
           cache-dependency-path: |
             package-lock.json
             getting_started/examples/openai/package-lock.json
+            getting_started/examples/chat/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install example dependencies
+      - name: Build package
+        run: npm run build
+
+      - name: Install openai example dependencies
         working-directory: getting_started/examples/openai
         run: npm ci
 
-      - name: Lint example
+      - name: Lint openai example
         working-directory: getting_started/examples/openai
         run: npx eslint src/**/*.ts
 
-      - name: Type check example
+      - name: Type check openai example
         working-directory: getting_started/examples/openai
+        run: npx tsc --noEmit
+
+      - name: Install chat example dependencies
+        working-directory: getting_started/examples/chat
+        run: npm ci
+
+      - name: Lint chat example
+        working-directory: getting_started/examples/chat
+        run: npx eslint src/**/*.ts
+
+      - name: Type check chat example
+        working-directory: getting_started/examples/chat
         run: npx tsc --noEmit
 
   build:
@@ -142,7 +158,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.13"
           cache: "npm"
 
       - name: Install dependencies
@@ -167,7 +183,7 @@ jobs:
 
   all-checks:
     name: All Checks Passed
-    needs: [lint, type-check, test-node-20, test-node-22, getting-started-example, build]
+    needs: [lint, type-check, test-node-22, test-node-24, getting-started-example, build]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -175,8 +191,8 @@ jobs:
         run: |
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs['type-check'].result }}" != "success" ] || \
-             [ "${{ needs['test-node-20'].result }}" != "success" ] || \
              [ "${{ needs['test-node-22'].result }}" != "success" ] || \
+             [ "${{ needs['test-node-24'].result }}" != "success" ] || \
              [ "${{ needs['getting-started-example'].result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "One or more checks failed"

@@ -4,7 +4,7 @@ This guide will walk you through setting up and running your first TAC applicati
 
 ## Prerequisites
 
-1. **Node.js 20+** installed
+1. **Node.js 22.13.0+** installed
 2. **Twilio account** with a phone number
 3. **API key** for the SDK you're using (e.g., OpenAI API key)
 4. **ngrok** or similar tunneling tool for local development

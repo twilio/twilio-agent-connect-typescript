@@ -21,7 +21,7 @@ Explore the [getting_started](getting_started) directory to see the SDK in actio
 
 ## Get Started
 
-To get started, set up your Node.js environment (Node.js 20 or newer required).
+To get started, set up your Node.js environment (Node.js 22.13.0 or newer required).
 
 > [!IMPORTANT]
 > TAC packages are not yet published to npm. We recommend building your agent directly in this repository.
@@ -166,7 +166,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](.claude/CLAUDE.md)
 TAC uses npm workspaces for package management. Ensure you have Node.js and npm installed:
 
 ```bash
-node --version  # Should be 20 or newer
+node --version  # Should be 22.13.0 or newer
 npm --version   # Should be 9 or newer
 ```
 

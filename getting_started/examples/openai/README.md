@@ -12,7 +12,7 @@ This example demonstrates how to use OpenAI with Twilio Agent Connect (TAC) to b
 
 ## Prerequisites
 
-1. **Node.js 20+** installed
+1. **Node.js 22.13.0+** installed
 2. **Twilio Account** with a phone number
 3. **OpenAI API Key** for GPT-4o-mini access
 4. **ngrok** or similar tunneling tool for local development
