@@ -1,11 +1,11 @@
 import { ChannelType, ConversationId } from '../types/index';
-import { MessagingChannel } from './messaging';
+import { MessagingChannel, MessagingChannelConfig } from './messaging';
 import type { TAC } from '../lib/tac';
 
 /**
  * Chat channel configuration options
  */
-export interface ChatChannelConfig {
+export interface ChatChannelConfig extends MessagingChannelConfig {
   /** Chat agent identity string (defaults to 'ai-assistant') */
   agentAddress?: string;
 }
@@ -21,7 +21,7 @@ export class ChatChannel extends MessagingChannel {
   private readonly agentAddress: string;
 
   constructor(tac: TAC, config?: ChatChannelConfig) {
-    super(tac);
+    super(tac, config);
     this.agentAddress = config?.agentAddress ?? 'ai-assistant';
   }
 

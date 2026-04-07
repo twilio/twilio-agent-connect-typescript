@@ -39,6 +39,24 @@ describe('SMS Channel', () => {
     it('should start with no active conversations', () => {
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
     });
+
+    it('should reject zero dedupCapacity', () => {
+      expect(() => new SMSChannel(tac, { dedupCapacity: 0 })).toThrow(
+        'dedupCapacity must be a positive integer'
+      );
+    });
+
+    it('should reject negative dedupCapacity', () => {
+      expect(() => new SMSChannel(tac, { dedupCapacity: -1 })).toThrow(
+        'dedupCapacity must be a positive integer'
+      );
+    });
+
+    it('should reject non-integer dedupCapacity', () => {
+      expect(() => new SMSChannel(tac, { dedupCapacity: 1.5 })).toThrow(
+        'dedupCapacity must be a positive integer'
+      );
+    });
   });
 
   describe('webhook processing', () => {
@@ -321,6 +339,146 @@ describe('SMS Channel', () => {
       };
 
       await expect(channel.processWebhook(webhookPayload)).resolves.not.toThrow();
+    });
+  });
+
+  describe('idempotency token deduplication', () => {
+    it('should skip duplicate webhooks with the same idempotency token', async () => {
+      const callback = vi.fn();
+      channel.on('messageReceived', callback);
+
+      const payload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      };
+
+      await channel.processWebhook(payload, 'tok-123');
+      await channel.processWebhook(payload, 'tok-123');
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('should process webhooks with different idempotency tokens', async () => {
+      const callback = vi.fn();
+      channel.on('messageReceived', callback);
+
+      const payload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      };
+
+      await channel.processWebhook(payload, 'tok-1');
+      await channel.processWebhook(payload, 'tok-2');
+
+      expect(callback).toHaveBeenCalledTimes(2);
+    });
+
+    it('should always process webhooks without an idempotency token', async () => {
+      const callback = vi.fn();
+      channel.on('messageReceived', callback);
+
+      const payload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      };
+
+      await channel.processWebhook(payload);
+      await channel.processWebhook(payload);
+
+      expect(callback).toHaveBeenCalledTimes(2);
+    });
+
+    it('should evict oldest tokens when capacity is reached', async () => {
+      const smallChannel = new SMSChannel(tac, { dedupCapacity: 2 });
+      const callback = vi.fn();
+      smallChannel.on('messageReceived', callback);
+
+      const makePayload = (text: string) => ({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      // Fill capacity: [tok-1, tok-2]
+      await smallChannel.processWebhook(makePayload('msg1'), 'tok-1');
+      await smallChannel.processWebhook(makePayload('msg2'), 'tok-2');
+      expect(callback).toHaveBeenCalledTimes(2);
+
+      // tok-1 is still tracked — should be deduped
+      await smallChannel.processWebhook(makePayload('msg1-dup'), 'tok-1');
+      expect(callback).toHaveBeenCalledTimes(2);
+
+      // tok-3 evicts tok-1 (oldest): [tok-2, tok-3]
+      await smallChannel.processWebhook(makePayload('msg3'), 'tok-3');
+      expect(callback).toHaveBeenCalledTimes(3);
+
+      // tok-1 was evicted — should be processed again
+      await smallChannel.processWebhook(makePayload('msg1-again'), 'tok-1');
+      expect(callback).toHaveBeenCalledTimes(4);
+    });
+
+    it('should allow retry when processing fails', async () => {
+      let callCount = 0;
+      channel.on('messageReceived', () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('transient failure');
+        }
+      });
+
+      const payload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      };
+
+      // First attempt — callback throws
+      await channel.processWebhook(payload, 'tok-retry');
+
+      // Retry with same token — should NOT be deduped since first attempt failed
+      await channel.processWebhook(payload, 'tok-retry');
+
+      expect(callCount).toBe(2);
+    });
+
+    it('should block concurrent duplicates while first request is in-flight', async () => {
+      const callback = vi.fn();
+      channel.on('messageReceived', callback);
+
+      const payload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      };
+
+      // Fire both concurrently with the same token
+      await Promise.all([
+        channel.processWebhook(payload, 'tok-concurrent'),
+        channel.processWebhook(payload, 'tok-concurrent'),
+      ]);
+
+      expect(callback).toHaveBeenCalledTimes(1);
     });
   });
 

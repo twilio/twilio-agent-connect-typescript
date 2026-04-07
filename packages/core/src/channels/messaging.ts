@@ -39,6 +39,16 @@ export interface MessagingWebhookPayload {
 }
 
 /**
+ * Messaging channel configuration options
+ */
+export interface MessagingChannelConfig {
+  /** Maximum number of idempotency tokens to track for deduplication (default: 10,000) */
+  dedupCapacity?: number;
+}
+
+const DEFAULT_DEDUP_CAPACITY = 10_000;
+
+/**
  * Messaging channel event callbacks extending base callbacks
  */
 export interface MessagingChannelEvents extends BaseChannelEvents {
@@ -60,10 +70,37 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
  */
 export abstract class MessagingChannel extends BaseChannel {
   protected readonly messagingCallbacks: MessagingChannelEvents;
+  private readonly processedTokens = new Set<string>();
+  private readonly maxTrackedTokens: number;
 
-  constructor(tac: TAC) {
+  constructor(tac: TAC, config?: MessagingChannelConfig) {
     super(tac);
     this.messagingCallbacks = {};
+    const capacity = config?.dedupCapacity ?? DEFAULT_DEDUP_CAPACITY;
+    if (capacity < 1 || !Number.isInteger(capacity)) {
+      throw new Error('dedupCapacity must be a positive integer');
+    }
+    this.maxTrackedTokens = capacity;
+  }
+
+  /**
+   * Check if a webhook has already been processed, and if not, record the token immediately.
+   * This is intentionally a single synchronous check-and-record to prevent race conditions
+   * where a duplicate arrives while the first request is still awaiting async work.
+   * Uses a sliding window with FIFO eviction at capacity.
+   */
+  private isDuplicateWebhook(idempotencyToken: string): boolean {
+    if (this.processedTokens.has(idempotencyToken)) {
+      return true;
+    }
+
+    if (this.processedTokens.size >= this.maxTrackedTokens) {
+      const oldest = this.processedTokens.values().next().value!;
+      this.processedTokens.delete(oldest);
+    }
+
+    this.processedTokens.add(idempotencyToken);
+    return false;
   }
 
   /**
@@ -116,10 +153,15 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Process messaging channel webhook from Twilio Conversations Service
    */
-  public async processWebhook(payload: unknown): Promise<void> {
+  public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
     this.logger.debug({ operation: 'webhook_processing', payload }, 'Processing webhook');
 
     try {
+      if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
+        this.logger.debug({ idempotency_token: idempotencyToken }, 'Skipping duplicate webhook');
+        return;
+      }
+
       if (!this.validateWebhookPayload(payload)) {
         throw new Error('Invalid webhook payload');
       }
@@ -190,6 +232,10 @@ export abstract class MessagingChannel extends BaseChannel {
 
       this.logger.debug({ event_type: eventType }, 'Webhook processing completed');
     } catch (error) {
+      // Remove the token so retries are not blocked
+      if (idempotencyToken) {
+        this.processedTokens.delete(idempotencyToken);
+      }
       this.logger.error(
         { err: error, operation: 'webhook_processing' },
         'Webhook processing error'

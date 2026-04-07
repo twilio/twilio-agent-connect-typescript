@@ -33,7 +33,11 @@ export { BaseChannel } from './channels/base';
 export type { BaseChannelEvents } from './channels/base';
 
 export { MessagingChannel } from './channels/messaging';
-export type { MessagingChannelEvents, MessagingWebhookPayload } from './channels/messaging';
+export type {
+  MessagingChannelConfig,
+  MessagingChannelEvents,
+  MessagingWebhookPayload,
+} from './channels/messaging';
 
 export { SMSChannel } from './channels/sms';
 

@@ -2510,11 +2510,36 @@ var BaseChannel = class {
 };
 
 // packages/core/src/channels/messaging.ts
+var DEFAULT_DEDUP_CAPACITY = 1e4;
 var MessagingChannel = class extends BaseChannel {
   messagingCallbacks;
-  constructor(tac) {
+  processedTokens = /* @__PURE__ */ new Set();
+  maxTrackedTokens;
+  constructor(tac, config) {
     super(tac);
     this.messagingCallbacks = {};
+    const capacity = config?.dedupCapacity ?? DEFAULT_DEDUP_CAPACITY;
+    if (capacity < 1 || !Number.isInteger(capacity)) {
+      throw new Error("dedupCapacity must be a positive integer");
+    }
+    this.maxTrackedTokens = capacity;
+  }
+  /**
+   * Check if a webhook has already been processed, and if not, record the token immediately.
+   * This is intentionally a single synchronous check-and-record to prevent race conditions
+   * where a duplicate arrives while the first request is still awaiting async work.
+   * Uses a sliding window with FIFO eviction at capacity.
+   */
+  isDuplicateWebhook(idempotencyToken) {
+    if (this.processedTokens.has(idempotencyToken)) {
+      return true;
+    }
+    if (this.processedTokens.size >= this.maxTrackedTokens) {
+      const oldest = this.processedTokens.values().next().value;
+      this.processedTokens.delete(oldest);
+    }
+    this.processedTokens.add(idempotencyToken);
+    return false;
   }
   /**
    * Register event callbacks (override for messaging-specific events)
@@ -2551,9 +2576,13 @@ var MessagingChannel = class extends BaseChannel {
   /**
    * Process messaging channel webhook from Twilio Conversations Service
    */
-  async processWebhook(payload) {
+  async processWebhook(payload, idempotencyToken) {
     this.logger.debug({ operation: "webhook_processing", payload }, "Processing webhook");
     try {
+      if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
+        this.logger.debug({ idempotency_token: idempotencyToken }, "Skipping duplicate webhook");
+        return;
+      }
       if (!this.validateWebhookPayload(payload)) {
         throw new Error("Invalid webhook payload");
       }
@@ -2614,6 +2643,9 @@ var MessagingChannel = class extends BaseChannel {
       }
       this.logger.debug({ event_type: eventType }, "Webhook processing completed");
     } catch (error) {
+      if (idempotencyToken) {
+        this.processedTokens.delete(idempotencyToken);
+      }
       this.logger.error(
         { err: error, operation: "webhook_processing" },
         "Webhook processing error"
@@ -2936,7 +2968,7 @@ var SMSChannel = class extends MessagingChannel {
 var ChatChannel = class extends MessagingChannel {
   agentAddress;
   constructor(tac, config) {
-    super(tac);
+    super(tac, config);
     this.agentAddress = config?.agentAddress ?? "ai-assistant";
   }
   get channelType() {
@@ -4030,8 +4062,10 @@ var TACServer = class {
       this.fastify.post(
         this.config.webhookPaths.messaging || "/webhook",
         async (request, reply) => {
+          const rawHeader = request.headers["i-twilio-idempotency-token"];
+          const idempotencyToken = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
           for (const channel of this.messagingChannels) {
-            channel.processWebhook(request.body).catch((err) => {
+            channel.processWebhook(request.body, idempotencyToken).catch((err) => {
               this.fastify.log.error(
                 { err, channel: channel.channelType },
                 "Messaging webhook processing error"

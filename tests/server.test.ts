@@ -285,6 +285,107 @@ describe('TACServer Webhook Validation', () => {
   });
 });
 
+describe('TACServer idempotency token', () => {
+  const getTestConfig = () => ({
+    environment: 'dev' as const,
+    twilioAccountSid: 'ACtest123456789',
+    twilioAuthToken: 'test_token_123',
+    twilioApiKey: 'test_api_key',
+    twilioApiToken: 'test_api_token',
+    twilioPhoneNumber: '+15551234567',
+    conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  let tac: TAC;
+  let server: TACServer;
+  let smsChannel: SMSChannel;
+  let currentPort: number;
+
+  beforeEach(() => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+    mockValidateRequest.mockReturnValue(true);
+
+    currentPort = getNextPort();
+
+    const config = new TACConfig(getTestConfig());
+    tac = new TAC({ config });
+
+    smsChannel = new SMSChannel(tac);
+    const voiceChannel = new VoiceChannel(tac);
+    tac.registerChannel(smsChannel);
+    tac.registerChannel(voiceChannel);
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  it('should pass i-twilio-idempotency-token header to channels', async () => {
+    const processWebhookSpy = vi.spyOn(smsChannel, 'processWebhook');
+
+    server = new TACServer(tac, {
+      development: true,
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'i-twilio-idempotency-token': 'tok-abc-123',
+      },
+      body: JSON.stringify({
+        eventType: 'COMMUNICATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      }),
+    });
+
+    await vi.waitFor(() => {
+      expect(processWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
+        'tok-abc-123'
+      );
+    });
+  });
+
+  it('should pass undefined when no idempotency token header is present', async () => {
+    const processWebhookSpy = vi.spyOn(smsChannel, 'processWebhook');
+
+    server = new TACServer(tac, {
+      development: true,
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        eventType: 'COMMUNICATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      }),
+    });
+
+    await vi.waitFor(() => {
+      expect(processWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
+        undefined
+      );
+    });
+  });
+});
+
 describe('TACServer with conversationRelayConfig', () => {
   const getTestConfig = () => ({
     environment: 'dev' as const,

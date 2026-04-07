@@ -219,8 +219,10 @@ export class TACServer {
       this.fastify.post(
         this.config.webhookPaths.messaging || '/webhook',
         async (request: FastifyRequest, reply: FastifyReply) => {
+          const rawHeader = request.headers['i-twilio-idempotency-token'];
+          const idempotencyToken = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
           for (const channel of this.messagingChannels) {
-            channel.processWebhook(request.body).catch((err: unknown) => {
+            channel.processWebhook(request.body, idempotencyToken).catch((err: unknown) => {
               this.fastify.log.error(
                 { err, channel: channel.channelType },
                 'Messaging webhook processing error'
