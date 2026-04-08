@@ -190,6 +190,40 @@ var ConversationParticipantSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional()
 });
+var StatusTimeoutsSchema = z.object({
+  inactive: z.number().int().gte(1).nullable().optional(),
+  closed: z.number().int().gte(1)
+});
+var CaptureRuleSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  metadata: z.record(z.string()).nullable().optional()
+});
+var ChannelSettingsSchema = z.object({
+  statusTimeouts: StatusTimeoutsSchema.nullable().optional(),
+  captureRules: z.array(CaptureRuleSchema).nullable().optional()
+});
+var StatusCallbackSchema = z.object({
+  url: z.string().url(),
+  method: z.enum(["POST", "GET", "PUT", "DELETE", "PATCH"]).optional().default("POST")
+});
+var ConversationGroupingTypeSchema = z.enum([
+  "GROUP_BY_PARTICIPANT_ADDRESSES",
+  "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"
+]);
+var ConversationConfigurationSchema = z.object({
+  id: z.string(),
+  displayName: z.string().max(32).regex(/^[a-zA-Z0-9-_ ]+$/).nullable().optional(),
+  description: z.string(),
+  conversationGroupingType: ConversationGroupingTypeSchema,
+  memoryStoreId: z.string(),
+  channelSettings: z.record(ChannelSettingsSchema).nullable().optional(),
+  statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
+  intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
+  version: z.number().int().nullable().optional()
+});
 
 // packages/core/src/types/tac.ts
 var TACChannelTypeSchema = z.enum([
@@ -1372,6 +1406,38 @@ var ConversationClient = class {
     }
     const data = await response.json();
     return ConversationResponseSchema.parse(data);
+  }
+  /**
+   * Retrieve the details for a single configuration
+   *
+   * @param configurationId - The configuration ID to retrieve
+   * @returns Promise containing configuration details
+   */
+  async getConfiguration(configurationId) {
+    const url = `${this.baseUrl}/v2/ControlPlane/Configurations/${configurationId}`;
+    const options = {
+      method: "GET",
+      headers: {
+        Authorization: this.getBasicAuthHeader()
+      }
+    };
+    this.logRequest(options.method, url);
+    const response = await fetch(url, options);
+    await this.logResponse(response);
+    if (!response.ok) {
+      const errorBody = await response.clone().text();
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody
+        },
+        "Get configuration failed"
+      );
+      throw new Error(`Failed to get configuration: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return ConversationConfigurationSchema.parse(data);
   }
   /**
    * Get Basic Auth header for HTTP requests
@@ -4297,6 +4363,6 @@ var TACServer = class {
   }
 };
 
-export { AuthorInfoSchema, BaseChannel, BuiltInTools, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { AuthorInfoSchema, BaseChannel, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

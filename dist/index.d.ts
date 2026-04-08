@@ -1521,6 +1521,225 @@ declare const ConversationParticipantSchema: z.ZodObject<{
     }[] | undefined;
 }>;
 type ConversationParticipant = z.infer<typeof ConversationParticipantSchema>;
+/**
+ * Timeout settings for channel status transitions
+ */
+declare const StatusTimeoutsSchema: z.ZodObject<{
+    inactive: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+    closed: z.ZodNumber;
+}, "strip", z.ZodTypeAny, {
+    closed: number;
+    inactive?: number | null | undefined;
+}, {
+    closed: number;
+    inactive?: number | null | undefined;
+}>;
+type StatusTimeouts = z.infer<typeof StatusTimeoutsSchema>;
+/**
+ * Capture rule with from/to addresses and optional metadata
+ */
+declare const CaptureRuleSchema: z.ZodObject<{
+    from: z.ZodString;
+    to: z.ZodString;
+    metadata: z.ZodOptional<z.ZodNullable<z.ZodRecord<z.ZodString, z.ZodString>>>;
+}, "strip", z.ZodTypeAny, {
+    from: string;
+    to: string;
+    metadata?: Record<string, string> | null | undefined;
+}, {
+    from: string;
+    to: string;
+    metadata?: Record<string, string> | null | undefined;
+}>;
+type CaptureRule = z.infer<typeof CaptureRuleSchema>;
+/**
+ * Configuration settings for a specific channel type
+ */
+declare const ChannelSettingsSchema: z.ZodObject<{
+    statusTimeouts: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+        inactive: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+        closed: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        closed: number;
+        inactive?: number | null | undefined;
+    }, {
+        closed: number;
+        inactive?: number | null | undefined;
+    }>>>;
+    captureRules: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+        from: z.ZodString;
+        to: z.ZodString;
+        metadata: z.ZodOptional<z.ZodNullable<z.ZodRecord<z.ZodString, z.ZodString>>>;
+    }, "strip", z.ZodTypeAny, {
+        from: string;
+        to: string;
+        metadata?: Record<string, string> | null | undefined;
+    }, {
+        from: string;
+        to: string;
+        metadata?: Record<string, string> | null | undefined;
+    }>, "many">>>;
+}, "strip", z.ZodTypeAny, {
+    statusTimeouts?: {
+        closed: number;
+        inactive?: number | null | undefined;
+    } | null | undefined;
+    captureRules?: {
+        from: string;
+        to: string;
+        metadata?: Record<string, string> | null | undefined;
+    }[] | null | undefined;
+}, {
+    statusTimeouts?: {
+        closed: number;
+        inactive?: number | null | undefined;
+    } | null | undefined;
+    captureRules?: {
+        from: string;
+        to: string;
+        metadata?: Record<string, string> | null | undefined;
+    }[] | null | undefined;
+}>;
+type ChannelSettings = z.infer<typeof ChannelSettingsSchema>;
+/**
+ * Webhook configuration for status callbacks
+ */
+declare const StatusCallbackSchema: z.ZodObject<{
+    url: z.ZodString;
+    method: z.ZodDefault<z.ZodOptional<z.ZodEnum<["POST", "GET", "PUT", "DELETE", "PATCH"]>>>;
+}, "strip", z.ZodTypeAny, {
+    url: string;
+    method: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
+}, {
+    url: string;
+    method?: "POST" | "GET" | "PUT" | "DELETE" | "PATCH" | undefined;
+}>;
+type StatusCallback = z.infer<typeof StatusCallbackSchema>;
+/**
+ * Conversation grouping type
+ */
+declare const ConversationGroupingTypeSchema: z.ZodEnum<["GROUP_BY_PARTICIPANT_ADDRESSES", "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"]>;
+type ConversationGroupingType = z.infer<typeof ConversationGroupingTypeSchema>;
+/**
+ * Configuration settings for a conversation
+ */
+declare const ConversationConfigurationSchema: z.ZodObject<{
+    id: z.ZodString;
+    displayName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    description: z.ZodString;
+    conversationGroupingType: z.ZodEnum<["GROUP_BY_PARTICIPANT_ADDRESSES", "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"]>;
+    memoryStoreId: z.ZodString;
+    channelSettings: z.ZodOptional<z.ZodNullable<z.ZodRecord<z.ZodString, z.ZodObject<{
+        statusTimeouts: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+            inactive: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+            closed: z.ZodNumber;
+        }, "strip", z.ZodTypeAny, {
+            closed: number;
+            inactive?: number | null | undefined;
+        }, {
+            closed: number;
+            inactive?: number | null | undefined;
+        }>>>;
+        captureRules: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+            from: z.ZodString;
+            to: z.ZodString;
+            metadata: z.ZodOptional<z.ZodNullable<z.ZodRecord<z.ZodString, z.ZodString>>>;
+        }, "strip", z.ZodTypeAny, {
+            from: string;
+            to: string;
+            metadata?: Record<string, string> | null | undefined;
+        }, {
+            from: string;
+            to: string;
+            metadata?: Record<string, string> | null | undefined;
+        }>, "many">>>;
+    }, "strip", z.ZodTypeAny, {
+        statusTimeouts?: {
+            closed: number;
+            inactive?: number | null | undefined;
+        } | null | undefined;
+        captureRules?: {
+            from: string;
+            to: string;
+            metadata?: Record<string, string> | null | undefined;
+        }[] | null | undefined;
+    }, {
+        statusTimeouts?: {
+            closed: number;
+            inactive?: number | null | undefined;
+        } | null | undefined;
+        captureRules?: {
+            from: string;
+            to: string;
+            metadata?: Record<string, string> | null | undefined;
+        }[] | null | undefined;
+    }>>>>;
+    statusCallbacks: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+        url: z.ZodString;
+        method: z.ZodDefault<z.ZodOptional<z.ZodEnum<["POST", "GET", "PUT", "DELETE", "PATCH"]>>>;
+    }, "strip", z.ZodTypeAny, {
+        url: string;
+        method: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
+    }, {
+        url: string;
+        method?: "POST" | "GET" | "PUT" | "DELETE" | "PATCH" | undefined;
+    }>, "many">>>;
+    intelligenceConfigurationIds: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, "many">>>;
+    createdAt: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    updatedAt: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    version: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+}, "strip", z.ZodTypeAny, {
+    memoryStoreId: string;
+    id: string;
+    description: string;
+    conversationGroupingType: "GROUP_BY_PARTICIPANT_ADDRESSES" | "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE";
+    createdAt?: string | null | undefined;
+    updatedAt?: string | null | undefined;
+    displayName?: string | null | undefined;
+    channelSettings?: Record<string, {
+        statusTimeouts?: {
+            closed: number;
+            inactive?: number | null | undefined;
+        } | null | undefined;
+        captureRules?: {
+            from: string;
+            to: string;
+            metadata?: Record<string, string> | null | undefined;
+        }[] | null | undefined;
+    }> | null | undefined;
+    statusCallbacks?: {
+        url: string;
+        method: "POST" | "GET" | "PUT" | "DELETE" | "PATCH";
+    }[] | null | undefined;
+    intelligenceConfigurationIds?: string[] | null | undefined;
+    version?: number | null | undefined;
+}, {
+    memoryStoreId: string;
+    id: string;
+    description: string;
+    conversationGroupingType: "GROUP_BY_PARTICIPANT_ADDRESSES" | "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE";
+    createdAt?: string | null | undefined;
+    updatedAt?: string | null | undefined;
+    displayName?: string | null | undefined;
+    channelSettings?: Record<string, {
+        statusTimeouts?: {
+            closed: number;
+            inactive?: number | null | undefined;
+        } | null | undefined;
+        captureRules?: {
+            from: string;
+            to: string;
+            metadata?: Record<string, string> | null | undefined;
+        }[] | null | undefined;
+    }> | null | undefined;
+    statusCallbacks?: {
+        url: string;
+        method?: "POST" | "GET" | "PUT" | "DELETE" | "PATCH" | undefined;
+    }[] | null | undefined;
+    intelligenceConfigurationIds?: string[] | null | undefined;
+    version?: number | null | undefined;
+}>;
+type ConversationConfiguration = z.infer<typeof ConversationConfigurationSchema>;
 
 /**
  * ConversationRelay API Types
@@ -1715,10 +1934,10 @@ declare const SetupMessageSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     type: "setup";
     direction: string;
-    sessionId: string;
-    callSid: string;
     from: string;
     to: string;
+    sessionId: string;
+    callSid: string;
     callType: string;
     callStatus: string;
     accountSid: string;
@@ -1729,10 +1948,10 @@ declare const SetupMessageSchema: z.ZodObject<{
 }, {
     type: "setup";
     direction: string;
-    sessionId: string;
-    callSid: string;
     from: string;
     to: string;
+    sessionId: string;
+    callSid: string;
     callType: string;
     callStatus: string;
     accountSid: string;
@@ -1802,10 +2021,10 @@ declare const WebSocketMessageSchema: z.ZodUnion<[z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     type: "setup";
     direction: string;
-    sessionId: string;
-    callSid: string;
     from: string;
     to: string;
+    sessionId: string;
+    callSid: string;
     callType: string;
     callStatus: string;
     accountSid: string;
@@ -1816,10 +2035,10 @@ declare const WebSocketMessageSchema: z.ZodUnion<[z.ZodObject<{
 }, {
     type: "setup";
     direction: string;
-    sessionId: string;
-    callSid: string;
     from: string;
     to: string;
+    sessionId: string;
+    callSid: string;
     callType: string;
     callStatus: string;
     accountSid: string;
@@ -1982,18 +2201,18 @@ declare const JSONSchemaSchema: z.ZodObject<{
     description: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     type: "string" | "number" | "boolean" | "object" | "array";
+    description?: string | undefined;
     properties?: Record<string, any> | undefined;
     required?: string[] | undefined;
     items?: any;
     enum?: any[] | undefined;
-    description?: string | undefined;
 }, {
     type: "string" | "number" | "boolean" | "object" | "array";
+    description?: string | undefined;
     properties?: Record<string, any> | undefined;
     required?: string[] | undefined;
     items?: any;
     enum?: any[] | undefined;
-    description?: string | undefined;
 }>;
 type JSONSchema = z.infer<typeof JSONSchemaSchema>;
 /**
@@ -2017,40 +2236,40 @@ declare const OpenAIToolSchema: z.ZodObject<{
             description: z.ZodOptional<z.ZodString>;
         }, "strip", z.ZodTypeAny, {
             type: "string" | "number" | "boolean" | "object" | "array";
+            description?: string | undefined;
             properties?: Record<string, any> | undefined;
             required?: string[] | undefined;
             items?: any;
             enum?: any[] | undefined;
-            description?: string | undefined;
         }, {
             type: "string" | "number" | "boolean" | "object" | "array";
+            description?: string | undefined;
             properties?: Record<string, any> | undefined;
             required?: string[] | undefined;
             items?: any;
             enum?: any[] | undefined;
-            description?: string | undefined;
         }>;
     }, "strip", z.ZodTypeAny, {
         name: string;
         description: string;
         parameters: {
             type: "string" | "number" | "boolean" | "object" | "array";
+            description?: string | undefined;
             properties?: Record<string, any> | undefined;
             required?: string[] | undefined;
             items?: any;
             enum?: any[] | undefined;
-            description?: string | undefined;
         };
     }, {
         name: string;
         description: string;
         parameters: {
             type: "string" | "number" | "boolean" | "object" | "array";
+            description?: string | undefined;
             properties?: Record<string, any> | undefined;
             required?: string[] | undefined;
             items?: any;
             enum?: any[] | undefined;
-            description?: string | undefined;
         };
     }>;
 }, "strip", z.ZodTypeAny, {
@@ -2059,11 +2278,11 @@ declare const OpenAIToolSchema: z.ZodObject<{
         description: string;
         parameters: {
             type: "string" | "number" | "boolean" | "object" | "array";
+            description?: string | undefined;
             properties?: Record<string, any> | undefined;
             required?: string[] | undefined;
             items?: any;
             enum?: any[] | undefined;
-            description?: string | undefined;
         };
     };
     type: "function";
@@ -2073,11 +2292,11 @@ declare const OpenAIToolSchema: z.ZodObject<{
         description: string;
         parameters: {
             type: "string" | "number" | "boolean" | "object" | "array";
+            description?: string | undefined;
             properties?: Record<string, any> | undefined;
             required?: string[] | undefined;
             items?: any;
             enum?: any[] | undefined;
-            description?: string | undefined;
         };
     };
     type: "function";
@@ -2860,16 +3079,16 @@ declare const KnowledgeBaseSchema: z.ZodObject<{
     id: string;
     createdAt: string;
     updatedAt: string;
-    description: string;
     displayName: string;
+    description: string;
     version: number;
 }, {
     status: "FAILED" | "QUEUED" | "PROVISIONING" | "ACTIVE" | "DELETING";
     id: string;
     createdAt: string;
     updatedAt: string;
-    description: string;
     displayName: string;
+    description: string;
     version: number;
 }>;
 type KnowledgeBase = z.infer<typeof KnowledgeBaseSchema>;
@@ -3225,6 +3444,13 @@ declare class ConversationClient {
      * @returns Promise containing updated conversation
      */
     updateConversation(conversationId: string, status: 'ACTIVE' | 'INACTIVE' | 'CLOSED'): Promise<ConversationResponse>;
+    /**
+     * Retrieve the details for a single configuration
+     *
+     * @param configurationId - The configuration ID to retrieve
+     * @returns Promise containing configuration details
+     */
+    getConfiguration(configurationId: string): Promise<ConversationConfiguration>;
     /**
      * Get Basic Auth header for HTTP requests
      */
@@ -4168,4 +4394,4 @@ declare class TACServer {
     stop(): Promise<void>;
 }
 
-export { type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, type BuiltInToolName, BuiltInTools, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationEndedCallback, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, type Environment, EnvironmentSchema, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendCommunicationParticipantAddress, SendCommunicationParticipantAddressSchema, type SendCommunicationRequest, SendCommunicationRequestSchema, type SendCommunicationResponse, SendCommunicationResponseSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, type Environment, EnvironmentSchema, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendCommunicationParticipantAddress, SendCommunicationParticipantAddressSchema, type SendCommunicationRequest, SendCommunicationRequestSchema, type SendCommunicationResponse, SendCommunicationResponseSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };

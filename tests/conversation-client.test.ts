@@ -374,4 +374,120 @@ describe('ConversationClient', () => {
       );
     });
   });
+
+  describe('getConfiguration()', () => {
+    it('should get configuration successfully', async () => {
+      const mockConfiguration = {
+        id: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+        displayName: 'Test Configuration',
+        description: 'A test conversation configuration',
+        conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES',
+        memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
+        channelSettings: {
+          SMS: {
+            statusTimeouts: {
+              inactive: 300,
+              closed: 86400,
+            },
+            captureRules: [
+              {
+                from: '+15551234567',
+                to: '+15559876543',
+                metadata: { team: 'support' },
+              },
+            ],
+          },
+        },
+        statusCallbacks: [
+          {
+            url: 'https://example.com/webhook',
+            method: 'POST',
+          },
+        ],
+        intelligenceConfigurationIds: ['intel_config_123'],
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-02T00:00:00Z',
+        version: 1,
+      };
+
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockConfiguration, { ok: true }));
+
+      const result = await conversationClient.getConfiguration('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
+
+      expect(result.id).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(result.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
+      expect(result.conversationGroupingType).toBe('GROUP_BY_PARTICIPANT_ADDRESSES');
+      expect(result.channelSettings?.SMS).toBeDefined();
+      expect(result.statusCallbacks).toHaveLength(1);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/v2/ControlPlane/Configurations/comms_service_01kbjqhn79f0fvwfsxqzd5nqhd'),
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            Authorization: expect.stringContaining('Basic'),
+          }),
+        })
+      );
+    });
+
+    it('should get minimal configuration successfully', async () => {
+      const mockConfiguration = {
+        id: 'comms_service_minimal',
+        description: 'Minimal configuration',
+        conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE',
+        memoryStoreId: 'mem_service_minimal',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockConfiguration, { ok: true }));
+
+      const result = await conversationClient.getConfiguration('comms_service_minimal');
+
+      expect(result.id).toBe('comms_service_minimal');
+      expect(result.memoryStoreId).toBe('mem_service_minimal');
+      expect(result.displayName).toBeUndefined();
+      expect(result.channelSettings).toBeUndefined();
+    });
+
+    it('should handle API errors', async () => {
+      global.fetch = vi
+        .fn()
+        .mockResolvedValue(createMockResponse(null, { ok: false, status: 404, statusText: 'Not Found' }));
+
+      await expect(conversationClient.getConfiguration('nonexistent_config')).rejects.toThrow(
+        'Failed to get configuration: 404 Not Found'
+      );
+    });
+
+    it('should validate response with schema', async () => {
+      const invalidConfiguration = {
+        id: 'comms_service_invalid',
+        // Missing required fields: description, conversationGroupingType, memoryStoreId
+      };
+
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse(invalidConfiguration, { ok: true }));
+
+      // Should throw Zod validation error
+      await expect(conversationClient.getConfiguration('comms_service_invalid')).rejects.toThrow();
+    });
+
+    it('should validate URL in statusCallbacks', async () => {
+      const configWithInvalidUrl = {
+        id: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+        description: 'Config with invalid URL',
+        conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES',
+        memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
+        statusCallbacks: [
+          {
+            url: 'not-a-valid-url',
+            method: 'POST',
+          },
+        ],
+      };
+
+      global.fetch = vi.fn().mockResolvedValue(createMockResponse(configWithInvalidUrl, { ok: true }));
+
+      // Should throw Zod validation error due to invalid URL
+      await expect(conversationClient.getConfiguration('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd')).rejects.toThrow();
+    });
+  });
 });

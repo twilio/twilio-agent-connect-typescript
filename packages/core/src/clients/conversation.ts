@@ -9,6 +9,8 @@ import {
   SendCommunicationRequest,
   SendCommunicationResponse,
   SendCommunicationResponseSchema,
+  ConversationConfiguration,
+  ConversationConfigurationSchema,
 } from '../types/index';
 import { TACConfig } from '../lib/config';
 import { Logger, createLogger } from '../lib/logger';
@@ -346,6 +348,43 @@ export class ConversationClient {
 
     const data = await response.json();
     return ConversationResponseSchema.parse(data);
+  }
+
+  /**
+   * Retrieve the details for a single configuration
+   *
+   * @param configurationId - The configuration ID to retrieve
+   * @returns Promise containing configuration details
+   */
+  public async getConfiguration(configurationId: string): Promise<ConversationConfiguration> {
+    const url = `${this.baseUrl}/v2/ControlPlane/Configurations/${configurationId}`;
+
+    const options: RequestOptions = {
+      method: 'GET',
+      headers: {
+        Authorization: this.getBasicAuthHeader(),
+      },
+    };
+
+    this.logRequest(options.method, url);
+    const response = await fetch(url, options);
+    await this.logResponse(response);
+
+    if (!response.ok) {
+      const errorBody = await response.clone().text();
+      this.logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody,
+        },
+        'Get configuration failed'
+      );
+      throw new Error(`Failed to get configuration: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return ConversationConfigurationSchema.parse(data);
   }
 
   /**

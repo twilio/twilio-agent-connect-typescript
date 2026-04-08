@@ -242,3 +242,78 @@ export const ConversationParticipantSchema = z.object({
 });
 
 export type ConversationParticipant = z.infer<typeof ConversationParticipantSchema>;
+
+/**
+ * Timeout settings for channel status transitions
+ */
+export const StatusTimeoutsSchema = z.object({
+  inactive: z.number().int().gte(1).nullable().optional(),
+  closed: z.number().int().gte(1),
+});
+
+export type StatusTimeouts = z.infer<typeof StatusTimeoutsSchema>;
+
+/**
+ * Capture rule with from/to addresses and optional metadata
+ */
+export const CaptureRuleSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  metadata: z.record(z.string()).nullable().optional(),
+});
+
+export type CaptureRule = z.infer<typeof CaptureRuleSchema>;
+
+/**
+ * Configuration settings for a specific channel type
+ */
+export const ChannelSettingsSchema = z.object({
+  statusTimeouts: StatusTimeoutsSchema.nullable().optional(),
+  captureRules: z.array(CaptureRuleSchema).nullable().optional(),
+});
+
+export type ChannelSettings = z.infer<typeof ChannelSettingsSchema>;
+
+/**
+ * Webhook configuration for status callbacks
+ */
+export const StatusCallbackSchema = z.object({
+  url: z.string().url(),
+  method: z.enum(['POST', 'GET', 'PUT', 'DELETE', 'PATCH']).optional().default('POST'),
+});
+
+export type StatusCallback = z.infer<typeof StatusCallbackSchema>;
+
+/**
+ * Conversation grouping type
+ */
+export const ConversationGroupingTypeSchema = z.enum([
+  'GROUP_BY_PARTICIPANT_ADDRESSES',
+  'GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE',
+]);
+
+export type ConversationGroupingType = z.infer<typeof ConversationGroupingTypeSchema>;
+
+/**
+ * Configuration settings for a conversation
+ */
+export const ConversationConfigurationSchema = z.object({
+  id: z.string(),
+  displayName: z
+    .string()
+    .max(32)
+    .regex(/^[a-zA-Z0-9-_ ]+$/)
+    .nullable()
+    .optional(),
+  description: z.string(),
+  conversationGroupingType: ConversationGroupingTypeSchema,
+  memoryStoreId: z.string(),
+  channelSettings: z.record(ChannelSettingsSchema).nullable().optional(),
+  statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
+  intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
+  version: z.number().int().nullable().optional(),
+});
+
+export type ConversationConfiguration = z.infer<typeof ConversationConfigurationSchema>;
