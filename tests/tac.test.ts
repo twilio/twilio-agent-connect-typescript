@@ -3,7 +3,6 @@ import { TAC, TACConfig } from '@twilio/tac-core';
 
 describe('TAC Core', () => {
   const getTestConfig = () => ({
-    environment: 'dev' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
     twilioApiKey: 'test_api_key',
@@ -23,7 +22,6 @@ describe('TAC Core', () => {
     it('should initialize TAC without config (from environment)', () => {
       // This will fail without env vars but should instantiate
       const keys = [
-        'ENVIRONMENT',
         'TWILIO_ACCOUNT_SID',
         'TWILIO_AUTH_TOKEN',
         'TWILIO_PHONE_NUMBER',
@@ -32,7 +30,6 @@ describe('TAC Core', () => {
         'VOICE_PUBLIC_DOMAIN',
       ] as const;
       const snapshot: Record<(typeof keys)[number], string | undefined> = {
-        ENVIRONMENT: process.env.ENVIRONMENT,
         TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
         TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
         TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
@@ -64,7 +61,6 @@ describe('TAC Core', () => {
       const tac = new TAC({ config });
 
       const retrievedConfig = tac.getConfig();
-      expect(retrievedConfig.environment).toBe('dev');
       expect(retrievedConfig.twilioAccountSid).toBe('ACtest123456789');
     });
 

@@ -3,7 +3,6 @@ import { TACConfig } from '@twilio/tac-core';
 
 describe('TACConfig', () => {
   const getTestConfigData = () => ({
-    environment: 'prod' as const,
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
     twilioApiKey: 'SKtest123456789',
@@ -18,7 +17,6 @@ describe('TACConfig', () => {
 
   beforeEach(() => {
     originalEnv = {
-      ENVIRONMENT: process.env.ENVIRONMENT,
       TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
       TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
       TWILIO_API_KEY: process.env.TWILIO_API_KEY,
@@ -46,38 +44,11 @@ describe('TACConfig', () => {
       const configData = getTestConfigData();
       const config = new TACConfig(configData);
 
-      expect(config.environment).toBe('prod');
       expect(config.twilioAccountSid).toBe('ACtest123456789');
       expect(config.twilioAuthToken).toBe('test_token_123');
       expect(config.twilioPhoneNumber).toBe('+15551234567');
       expect(config.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
       expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
-    });
-
-    it('should include computed service URLs', () => {
-      const configData = getTestConfigData();
-      const config = new TACConfig(configData);
-
-      expect(config.memoryApiUrl).toBeDefined();
-      expect(config.conversationsApiUrl).toBeDefined();
-      expect(config.memoryApiUrl).toContain('memory.twilio.com');
-      expect(config.conversationsApiUrl).toContain('conversations.twilio.com');
-    });
-
-    it('should handle dev environment URLs', () => {
-      const configData = { ...getTestConfigData(), environment: 'dev' as const };
-      const config = new TACConfig(configData);
-
-      expect(config.memoryApiUrl).toContain('memory.dev-us1.twilio.com');
-      expect(config.conversationsApiUrl).toContain('conversations.dev-us1.twilio.com');
-    });
-
-    it('should handle stage environment URLs', () => {
-      const configData = { ...getTestConfigData(), environment: 'stage' as const };
-      const config = new TACConfig(configData);
-
-      expect(config.memoryApiUrl).toContain('memory.stage-us1.twilio.com');
-      expect(config.conversationsApiUrl).toContain('conversations.stage-us1.twilio.com');
     });
 
     it('should validate required fields', () => {
@@ -121,21 +92,10 @@ describe('TACConfig', () => {
       expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
-    it('should validate environment values', () => {
-      const invalidConfig = {
-        ...getTestConfigData(),
-        environment: 'invalid_env' as any,
-      };
-
-      expect(() => {
-        new TACConfig(invalidConfig);
-      }).toThrow();
-    });
   });
 
   describe('fromEnv', () => {
     const setRequiredEnvVars = () => {
-      process.env.ENVIRONMENT = 'prod';
       process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
       process.env.TWILIO_AUTH_TOKEN = 'test_auth_token';
       process.env.TWILIO_API_KEY = 'SKtest123';
@@ -150,21 +110,11 @@ describe('TACConfig', () => {
 
       const config = TACConfig.fromEnv();
 
-      expect(config.environment).toBe('prod');
       expect(config.twilioAccountSid).toBe('ACtest123');
       expect(config.twilioAuthToken).toBe('test_auth_token');
       expect(config.twilioPhoneNumber).toBe('+1234567890');
       expect(config.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
       expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
-    });
-
-    it('should default to prod environment when ENVIRONMENT is not set', () => {
-      setRequiredEnvVars();
-      delete process.env.ENVIRONMENT;
-
-      const config = TACConfig.fromEnv();
-
-      expect(config.environment).toBe('prod');
     });
 
     it('should include optional voicePublicDomain when set', () => {

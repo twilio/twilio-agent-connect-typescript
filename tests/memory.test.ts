@@ -12,7 +12,7 @@ import {
 
 describe('Memory Functionality', () => {
   const getTestConfigWithoutMemory = () => ({
-    environment: 'prod' as const,
+
     twilioAccountSid: 'ACtest123',
     twilioAuthToken: 'test_token_123',
     twilioApiKey: 'test_api_key',

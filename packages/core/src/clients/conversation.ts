@@ -31,13 +31,12 @@ interface RequestOptions {
  * and manage conversation lifecycle.
  */
 export class ConversationClient {
-  private readonly baseUrl: string;
+  private readonly baseUrl = 'https://conversations.twilio.com';
   private readonly credentials: { username: string; password: string };
   private readonly conversationServiceId: string;
   private readonly logger: Logger;
 
   constructor(config: TACConfig, logger?: Logger) {
-    this.baseUrl = config.conversationsApiUrl;
     this.credentials = {
       username: config.twilioApiKey,
       password: config.twilioApiToken,

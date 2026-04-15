@@ -23,14 +23,11 @@ interface RequestOptions {
  * knowledge bases for relevant content.
  */
 export class KnowledgeClient {
-  private readonly baseUrl: string;
+  private readonly baseUrl = 'https://knowledge.twilio.com';
   private readonly credentials: { username: string; password: string };
   private readonly logger: Logger;
 
   constructor(config: TACConfig, logger?: Logger) {
-    this.baseUrl = config.knowledgeApiUrl;
-
-    // Use Twilio API Key credentials (twilioApiKey / twilioApiToken)
     this.credentials = {
       username: config.twilioApiKey,
       password: config.twilioApiToken,

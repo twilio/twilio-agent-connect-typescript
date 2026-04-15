@@ -13,7 +13,7 @@ describe('SMS Channel', () => {
     vi.restoreAllMocks();
   });
   const getTestConfig = () => ({
-    environment: 'dev' as const,
+
     twilioAccountSid: 'ACtest123456789',
     twilioAuthToken: 'test_token_123',
     twilioApiKey: 'test_api_key',

@@ -31,14 +31,11 @@ interface RequestOptions {
  * summaries, and conversation sessions.
  */
 export class MemoryClient {
-  private readonly baseUrl: string;
+  private readonly baseUrl = 'https://memory.twilio.com';
   private readonly credentials: { username: string; password: string };
   private readonly logger: Logger;
 
   constructor(config: TACConfig, logger?: Logger) {
-    this.baseUrl = config.memoryApiUrl;
-
-    // Use Twilio API Key credentials (twilioApiKey / twilioApiToken)
     this.credentials = {
       username: config.twilioApiKey,
       password: config.twilioApiToken,

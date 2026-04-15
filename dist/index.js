@@ -10,10 +10,8 @@ import gracefulShutdown from 'fastify-graceful-shutdown';
 import twilio from 'twilio';
 
 // packages/core/src/types/tac.ts
-var EnvironmentSchema = z.enum(["dev", "stage", "prod"]).default("prod");
 var ChannelTypeSchema = z.enum(["sms", "voice", "chat"]);
 var TACConfigSchema = z.object({
-  environment: EnvironmentSchema,
   twilioAccountSid: z.string().min(1, "Twilio Account SID is required"),
   twilioAuthToken: z.string().min(1, "Twilio Auth Token is required"),
   twilioApiKey: z.string().min(1, "Twilio API Key is required"),
@@ -31,7 +29,6 @@ var TACConfigSchema = z.object({
   cintelSummaryOperatorSid: z.string().optional()
 });
 var EnvironmentVariables = {
-  ENVIRONMENT: "ENVIRONMENT",
   TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID",
   TWILIO_AUTH_TOKEN: "TWILIO_AUTH_TOKEN",
   TWILIO_API_KEY: "TWILIO_API_KEY",
@@ -45,26 +42,6 @@ var EnvironmentVariables = {
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: "TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID",
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: "TWILIO_TAC_CI_SUMMARY_OPERATOR_SID"
 };
-function computeServiceUrls(environment) {
-  const baseUrls = {
-    dev: {
-      memoryApiUrl: "https://memory.dev-us1.twilio.com",
-      conversationsApiUrl: "https://conversations.dev-us1.twilio.com",
-      knowledgeApiUrl: "https://knowledge.dev.twilio.com"
-    },
-    stage: {
-      memoryApiUrl: "https://memory.stage-us1.twilio.com",
-      conversationsApiUrl: "https://conversations.stage-us1.twilio.com",
-      knowledgeApiUrl: "https://knowledge.stage.twilio.com"
-    },
-    prod: {
-      memoryApiUrl: "https://memory.twilio.com",
-      conversationsApiUrl: "https://conversations.twilio.com",
-      knowledgeApiUrl: "https://knowledge.twilio.com"
-    }
-  };
-  return baseUrls[environment];
-}
 var VoiceServerConfigSchema = z.object({
   host: z.string().default("0.0.0.0"),
   port: z.number().int().positive().default(3e3)
@@ -741,7 +718,6 @@ var KnowledgeSearchResponseSchema = z.object({
 
 // packages/core/src/lib/config.ts
 var TACConfig = class _TACConfig {
-  environment;
   twilioAccountSid;
   twilioAuthToken;
   twilioApiKey;
@@ -754,13 +730,8 @@ var TACConfig = class _TACConfig {
   cintelConfigurationId;
   cintelObservationOperatorSid;
   cintelSummaryOperatorSid;
-  memoryApiUrl;
-  conversationsApiUrl;
-  knowledgeApiUrl;
   constructor(data) {
     const validatedConfig = TACConfigSchema.parse(data);
-    const serviceUrls = computeServiceUrls(validatedConfig.environment);
-    this.environment = validatedConfig.environment;
     this.twilioAccountSid = validatedConfig.twilioAccountSid;
     this.twilioAuthToken = validatedConfig.twilioAuthToken;
     this.twilioApiKey = validatedConfig.twilioApiKey;
@@ -785,15 +756,11 @@ var TACConfig = class _TACConfig {
     if (validatedConfig.cintelSummaryOperatorSid) {
       this.cintelSummaryOperatorSid = validatedConfig.cintelSummaryOperatorSid;
     }
-    this.memoryApiUrl = serviceUrls.memoryApiUrl;
-    this.conversationsApiUrl = serviceUrls.conversationsApiUrl;
-    this.knowledgeApiUrl = serviceUrls.knowledgeApiUrl;
   }
   /**
    * Create TACConfig from environment variables.
    *
    * Loads configuration from the following environment variables:
-   * - ENVIRONMENT: TAC environment (dev, stage, or prod) - defaults to 'prod'
    * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
    * - TWILIO_API_KEY: Twilio API Key (required)
@@ -830,7 +797,6 @@ var TACConfig = class _TACConfig {
       }
     }
     const rawConfig = {
-      environment: process.env[EnvironmentVariables.ENVIRONMENT] ?? "prod",
       twilioAccountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID],
       twilioAuthToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN],
       twilioApiKey: process.env[EnvironmentVariables.TWILIO_API_KEY],
@@ -878,11 +844,10 @@ function createLogger(options) {
 
 // packages/core/src/clients/memory.ts
 var MemoryClient = class {
-  baseUrl;
+  baseUrl = "https://memory.twilio.com";
   credentials;
   logger;
   constructor(config, logger2) {
-    this.baseUrl = config.memoryApiUrl;
     this.credentials = {
       username: config.twilioApiKey,
       password: config.twilioApiToken
@@ -1166,12 +1131,11 @@ var MemoryClient = class {
 
 // packages/core/src/clients/conversation.ts
 var ConversationClient = class {
-  baseUrl;
+  baseUrl = "https://conversations.twilio.com";
   credentials;
   conversationServiceId;
   logger;
   constructor(config, logger2) {
-    this.baseUrl = config.conversationsApiUrl;
     this.credentials = {
       username: config.twilioApiKey,
       password: config.twilioApiToken
@@ -1482,11 +1446,10 @@ var ConversationClient = class {
 
 // packages/core/src/clients/knowledge.ts
 var KnowledgeClient = class {
-  baseUrl;
+  baseUrl = "https://knowledge.twilio.com";
   credentials;
   logger;
   constructor(config, logger2) {
-    this.baseUrl = config.knowledgeApiUrl;
     this.credentials = {
       username: config.twilioApiKey,
       password: config.twilioApiToken
@@ -4375,6 +4338,6 @@ var TACServer = class {
   }
 };
 
-export { AuthorInfoSchema, BaseChannel, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentSchema, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, computeServiceUrls, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { AuthorInfoSchema, BaseChannel, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

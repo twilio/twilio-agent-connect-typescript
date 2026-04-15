@@ -1,10 +1,4 @@
-import {
-  TACConfigData,
-  TACConfigSchema,
-  EnvironmentVariables,
-  computeServiceUrls,
-  Environment,
-} from '../types/index';
+import { TACConfigData, TACConfigSchema, EnvironmentVariables } from '../types/index';
 
 /**
  * TAC Configuration class with Python-like static factory methods
@@ -16,14 +10,12 @@ import {
  *
  * // Or create manually
  * const config = new TACConfig({
- *   environment: 'prod',
  *   twilioAccountSid: 'ACxxxx',
  *   // ...
  * });
  * ```
  */
 export class TACConfig {
-  public readonly environment: Environment;
   public readonly twilioAccountSid: string;
   public readonly twilioAuthToken: string;
   public readonly twilioApiKey: string;
@@ -36,19 +28,11 @@ export class TACConfig {
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
   public readonly cintelSummaryOperatorSid?: string;
-  public readonly memoryApiUrl: string;
-  public readonly conversationsApiUrl: string;
-  public readonly knowledgeApiUrl: string;
-
   constructor(data: TACConfigData) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
 
-    // Compute service URLs based on environment
-    const serviceUrls = computeServiceUrls(validatedConfig.environment);
-
     // Assign all properties
-    this.environment = validatedConfig.environment;
     this.twilioAccountSid = validatedConfig.twilioAccountSid;
     this.twilioAuthToken = validatedConfig.twilioAuthToken;
     this.twilioApiKey = validatedConfig.twilioApiKey;
@@ -73,16 +57,12 @@ export class TACConfig {
     if (validatedConfig.cintelSummaryOperatorSid) {
       this.cintelSummaryOperatorSid = validatedConfig.cintelSummaryOperatorSid;
     }
-    this.memoryApiUrl = serviceUrls.memoryApiUrl;
-    this.conversationsApiUrl = serviceUrls.conversationsApiUrl;
-    this.knowledgeApiUrl = serviceUrls.knowledgeApiUrl;
   }
 
   /**
    * Create TACConfig from environment variables.
    *
    * Loads configuration from the following environment variables:
-   * - ENVIRONMENT: TAC environment (dev, stage, or prod) - defaults to 'prod'
    * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
    * - TWILIO_API_KEY: Twilio API Key (required)
@@ -123,7 +103,6 @@ export class TACConfig {
     }
 
     const rawConfig: TACConfigData = {
-      environment: (process.env[EnvironmentVariables.ENVIRONMENT] ?? 'prod') as Environment,
       twilioAccountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
       twilioAuthToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
       twilioApiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,

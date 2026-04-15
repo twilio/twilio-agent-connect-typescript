@@ -88,8 +88,6 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 - `VOICE_PUBLIC_DOMAIN`: Your ngrok domain (required for voice)
 
-**Note**: The `ENVIRONMENT` variable is optional and defaults to `prod`. You can omit it for production use.
-
 ## Other Examples
 
 - **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel

@@ -167,7 +167,7 @@ describe('Conversation Intelligence Types', () => {
 
 describe('OperatorResultProcessor', () => {
   const getTestConfig = () => ({
-    environment: 'dev' as const,
+
     twilioAccountSid: 'ACtest123',
     twilioAuthToken: 'test_token_123',
     twilioApiKey: 'test_api_key',
@@ -504,7 +504,7 @@ describe('OperatorResultProcessor', () => {
 
 describe('Memory Client Write Methods', () => {
   const getTestConfig = () => ({
-    environment: 'dev' as const,
+
     twilioAccountSid: 'ACtest123',
     twilioAuthToken: 'test_token_123',
     twilioApiKey: 'test_api_key',
