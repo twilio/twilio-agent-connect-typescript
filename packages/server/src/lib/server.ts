@@ -246,23 +246,15 @@ export class TACServer {
 
           const voiceChannel = this.voiceChannel;
 
-          // Extract form data from POST body
-          const formData = request.body as Record<string, string>;
-          const fromNumber = formData['From'] || '';
-          const toNumber = formData['To'] || '';
-          const callSid = formData['CallSid'] || '';
-
           // Generate WebSocket URL
           const protocol = (request.headers['x-forwarded-proto'] as string) || 'http';
           const host = request.headers.host as string;
           const websocketUrl = `${protocol === 'https' ? 'wss' : 'ws'}://${host}${this.config.webhookPaths.ws || '/ws'}`;
           const callbackUrl = `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
 
-          // Use handleIncomingCall to create conversation and generate TwiML
-          const twiml = await voiceChannel.handleIncomingCall({
-            toNumber,
-            fromNumber,
-            callSid,
+          // Generate TwiML to connect to ConversationRelay
+          // ConversationRelay will create the conversation automatically
+          const twiml = voiceChannel.handleIncomingCall({
             actionUrl: callbackUrl,
             conversationRelayConfig: {
               url: websocketUrl,

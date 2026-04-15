@@ -46,6 +46,7 @@ getting_started/  # Example apps (OpenAI integration)
 
 - **TAC class** (`packages/core/src/lib/tac.ts`): Central orchestrator managing config, channels, callbacks, and API clients
 - **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by `SMSChannel` (webhooks/TwiML) and `VoiceChannel` (WebSocket)
+- **Voice channel initialization**: VoiceChannel waits for the first prompt message to initialize the conversation (fetches from ConversationRelay using `callSid`, extracts `profileId` from participants, then starts local session)
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onHandoff`, `onConversationEnded`) instead of EventEmitter
 - **Tool system** (`packages/tools/src/lib/builder.ts`): `defineTool()` with JSON schema; supports conversion to OpenAI and Anthropic formats
 - **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars; environment-aware API URL computation (dev/stage/prod)

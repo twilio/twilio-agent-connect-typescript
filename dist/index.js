@@ -184,7 +184,7 @@ var ConversationParticipantSchema = z.object({
   conversationId: z.string(),
   accountId: z.string(),
   name: z.string().optional(),
-  type: z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]).optional(),
+  type: z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT", "AGENT", "UNKNOWN"]).optional(),
   profileId: z.string().nullable().optional(),
   addresses: z.array(ConversationAddressSchema).default([]),
   createdAt: z.string().optional(),
@@ -548,14 +548,12 @@ var ConversationRelayAttributesSchema = z.object({
   debug: z.string().optional(),
   // Intelligence service
   /** Conversational Intelligence Service ID or unique name */
-  intelligenceService: z.string().optional()
+  intelligenceService: z.string().optional(),
+  // Conversation orchestrator
+  /** Twilio Conversation Orchestrator configuration ID */
+  conversationConfiguration: z.string().optional()
 });
-var CustomParametersSchema = z.object({
-  conversation_id: z.string().optional(),
-  profile_id: z.string().optional(),
-  customer_participant_id: z.string().optional(),
-  ai_agent_participant_id: z.string().optional()
-});
+var CustomParametersSchema = z.record(z.unknown());
 var SetupMessageSchema = z.object({
   type: z.literal("setup"),
   sessionId: z.string(),
@@ -2438,7 +2436,7 @@ var BaseChannel = class {
     this.tac = tac;
     this.config = tac.getConfig();
     this.logger = tac.logger.child({ component: "channel" });
-    this.conversationClient = new ConversationClient(this.config);
+    this.conversationClient = tac.getConversationClient();
     this.activeConversations = /* @__PURE__ */ new Map();
     this.callbacks = {};
   }
@@ -2980,7 +2978,9 @@ var SMSChannel = class extends MessagingChannel {
           (addr) => addr.channel === "SMS" && addr.address === this.config.twilioPhoneNumber
         )
       );
-      const agentParticipant = smsParticipants.find((p) => p.type === "AI_AGENT" || p.type === "HUMAN_AGENT") ?? smsParticipants[0];
+      const agentParticipant = smsParticipants.find(
+        (p) => p.type === "AI_AGENT" || p.type === "HUMAN_AGENT" || p.type === "AGENT"
+      ) ?? smsParticipants[0];
       if (!agentParticipant) {
         throw new Error(
           `Agent participant not found for conversation ${conversationId} with phone ${this.config.twilioPhoneNumber}`
@@ -3076,7 +3076,7 @@ var ChatChannel = class extends MessagingChannel {
       }
       const recipientAddress = session.authorInfo.address;
       const participants = await this.conversationClient.listParticipants(conversationId);
-      let agentParticipant = participants.find((p) => p.type === "AI_AGENT");
+      let agentParticipant = participants.find((p) => p.type === "AI_AGENT" || p.type === "AGENT");
       if (!agentParticipant) {
         this.logger.debug(
           {
@@ -3107,7 +3107,9 @@ var ChatChannel = class extends MessagingChannel {
             "Failed to create AI_AGENT participant, attempting to list participants again"
           );
           const retriedParticipants = await this.conversationClient.listParticipants(conversationId);
-          agentParticipant = retriedParticipants.find((p) => p.type === "AI_AGENT");
+          agentParticipant = retriedParticipants.find(
+            (p) => p.type === "AI_AGENT" || p.type === "AGENT"
+          );
           if (!agentParticipant) {
             throw new Error(
               `Failed to create or find AI_AGENT participant for conversation ${conversationId}`
@@ -3162,17 +3164,18 @@ var ChatChannel = class extends MessagingChannel {
 };
 var VoiceChannel = class extends BaseChannel {
   webSocketConnections;
-  callSidToConversationId;
   voiceCallbacks;
   streamTasks;
   promptQueues;
+  initializationRetries;
+  MAX_INITIALIZATION_RETRIES = 3;
   constructor(tac) {
     super(tac);
     this.webSocketConnections = /* @__PURE__ */ new Map();
-    this.callSidToConversationId = /* @__PURE__ */ new Map();
     this.voiceCallbacks = {};
     this.streamTasks = /* @__PURE__ */ new Map();
     this.promptQueues = /* @__PURE__ */ new Map();
+    this.initializationRetries = /* @__PURE__ */ new Map();
   }
   get channelType() {
     return "voice";
@@ -3222,55 +3225,144 @@ var VoiceChannel = class extends BaseChannel {
    */
   handleWebSocketConnection(ws) {
     let conversationId = null;
+    let callSid = null;
+    let fromNumber = null;
+    let initializationFailed = false;
     ws.on("message", (data) => {
-      try {
-        const messageText = data.toString();
-        const messageData = JSON.parse(messageText);
-        this.logger.debug({ raw_message: messageData }, "Received WebSocket message");
-        const validatedMessage = WebSocketMessageSchema.safeParse(messageData);
-        if (!validatedMessage.success) {
-          this.logger.error(
-            { validation_errors: validatedMessage.error.errors, raw_message: messageData },
-            "Invalid WebSocket message"
-          );
-          return;
-        }
-        const message = validatedMessage.data;
-        switch (message.type) {
-          case "setup":
-            conversationId = this.handleSetupMessage(ws, message);
-            break;
-          case "prompt":
-            if (conversationId) {
-              const currentConversationId = conversationId;
-              const previousPrompt = this.promptQueues.get(currentConversationId) ?? Promise.resolve();
-              const currentPrompt = previousPrompt.then(() => this.handlePromptMessage(currentConversationId, message)).catch((err) => {
-                this.logger.error(
-                  { err, conversation_id: currentConversationId },
-                  "Failed to handle prompt message"
-                );
-              });
-              this.promptQueues.set(currentConversationId, currentPrompt);
-            }
-            break;
-          case "interrupt":
-            if (conversationId) {
-              this.handleInterruptMessage(conversationId, message);
-            }
-            break;
-          default:
-            this.logger.warn(
-              { conversation_id: conversationId, message: messageData },
-              "Unhandled WebSocket event type"
+      (async () => {
+        try {
+          const messageData = JSON.parse(data.toString());
+          const result = WebSocketMessageSchema.safeParse(messageData);
+          if (!result.success) {
+            this.logger.debug(
+              {
+                raw_message: messageData,
+                validation_errors: result.error.errors.map((error) => ({
+                  path: error.path.join("."),
+                  message: error.message
+                }))
+              },
+              "Invalid or unrecognized WebSocket message, skipping"
             );
-            break;
+            return;
+          }
+          const message = result.data;
+          switch (message.type) {
+            case "setup":
+              callSid = message.callSid;
+              fromNumber = message.from;
+              if (this.voiceCallbacks.onSetup) {
+                this.voiceCallbacks.onSetup({
+                  callSid,
+                  from: message.from,
+                  to: message.to,
+                  customParameters: message.customParameters
+                });
+              }
+              break;
+            case "prompt":
+              if (!conversationId && callSid) {
+                const retryCount = this.initializationRetries.get(callSid) ?? 0;
+                if (retryCount >= this.MAX_INITIALIZATION_RETRIES) {
+                  throw new Error(
+                    `Cannot process prompt - conversation initialization failed after ${retryCount} attempts for callSid ${callSid}`
+                  );
+                }
+                try {
+                  if (initializationFailed) {
+                    this.logger.info(
+                      { call_sid: callSid, retry_count: retryCount },
+                      "Retrying conversation initialization after previous failure"
+                    );
+                  }
+                  const conversations = await this.conversationClient.listConversations({
+                    channelId: callSid
+                  });
+                  if (conversations.length !== 1) {
+                    throw new Error(
+                      `Expected exactly 1 conversation for callSid ${callSid}, but found ${conversations.length}`
+                    );
+                  }
+                  const conversation = conversations[0];
+                  conversationId = conversation.id;
+                  const participants = await this.conversationClient.listParticipants(conversationId);
+                  let profileId;
+                  if (fromNumber) {
+                    for (const participant of participants) {
+                      if (participant.addresses) {
+                        for (const address of participant.addresses) {
+                          if (address.channel === "VOICE" && address.address === fromNumber && participant.profileId) {
+                            profileId = participant.profileId;
+                            break;
+                          }
+                        }
+                      }
+                      if (profileId) {
+                        break;
+                      }
+                    }
+                  }
+                  this.webSocketConnections.set(conversationId, ws);
+                  const session = this.startConversation(conversationId, profileId);
+                  if (fromNumber) {
+                    session.authorInfo = {
+                      address: fromNumber
+                    };
+                  }
+                  if (this.voiceCallbacks.onWebSocketConnected) {
+                    this.voiceCallbacks.onWebSocketConnected({ conversationId });
+                  }
+                  initializationFailed = false;
+                  this.initializationRetries.delete(callSid);
+                  this.logger.info(
+                    { conversation_id: conversationId, call_sid: callSid },
+                    "Conversation initialization succeeded"
+                  );
+                } catch (err) {
+                  initializationFailed = true;
+                  this.initializationRetries.set(callSid, retryCount + 1);
+                  this.logger.error(
+                    { err, call_sid: callSid, retry_count: retryCount + 1 },
+                    "Conversation initialization failed"
+                  );
+                  throw err;
+                }
+              }
+              if (conversationId) {
+                const previousPrompt = this.promptQueues.get(conversationId) ?? Promise.resolve();
+                const currentPrompt = previousPrompt.then(() => this.handlePromptMessage(conversationId, message)).catch((err) => {
+                  this.handleError(err instanceof Error ? err : new Error(String(err)), {
+                    conversationId,
+                    message: data.toString()
+                  });
+                });
+                this.promptQueues.set(conversationId, currentPrompt);
+              } else {
+                this.logger.warn("Received prompt before conversation initialized");
+              }
+              break;
+            case "interrupt":
+              if (conversationId) {
+                this.handleInterruptMessage(conversationId, message);
+              }
+              break;
+            default:
+              this.logger.debug(
+                { conversation_id: conversationId, message: messageData },
+                "Unhandled WebSocket event type"
+              );
+              break;
+          }
+        } catch (error) {
+          this.handleError(error instanceof Error ? error : new Error(String(error)), {
+            conversationId,
+            callSid,
+            message: data.toString()
+          });
         }
-      } catch (error) {
-        this.handleError(error instanceof Error ? error : new Error(String(error)), {
-          conversationId,
-          message: data.toString()
-        });
-      }
+      })().catch((err) => {
+        this.logger.error({ err }, "Unhandled error in WebSocket message handler");
+      });
     });
     ws.on("close", () => {
       if (conversationId) {
@@ -3281,46 +3373,13 @@ var VoiceChannel = class extends BaseChannel {
           );
         });
       }
+      if (callSid) {
+        this.initializationRetries.delete(callSid);
+      }
     });
     ws.on("error", (error) => {
       this.handleError(error, { conversationId });
     });
-  }
-  /**
-   * Handle WebSocket setup message
-   */
-  handleSetupMessage(ws, message) {
-    const { callSid, from, to, customParameters } = message;
-    let conversationId;
-    let profileId;
-    if (customParameters?.conversation_id && typeof customParameters.conversation_id === "string" && isConversationId(customParameters.conversation_id)) {
-      conversationId = customParameters.conversation_id;
-    } else {
-      conversationId = callSid;
-    }
-    if (customParameters?.profile_id && typeof customParameters.profile_id === "string" && isProfileId(customParameters.profile_id)) {
-      profileId = customParameters.profile_id;
-    }
-    this.webSocketConnections.set(conversationId, ws);
-    this.callSidToConversationId.set(callSid, conversationId);
-    const session = this.startConversation(conversationId, profileId);
-    session.authorInfo = {
-      address: from
-    };
-    if (this.voiceCallbacks.onSetup) {
-      this.voiceCallbacks.onSetup({
-        conversationId,
-        profileId: profileId ?? void 0,
-        callSid,
-        from,
-        to,
-        customParameters: customParameters ?? void 0
-      });
-    }
-    if (this.voiceCallbacks.onWebSocketConnected) {
-      this.voiceCallbacks.onWebSocketConnected({ conversationId });
-    }
-    return conversationId;
   }
   /**
    * Handle WebSocket prompt message (user speech)
@@ -3376,12 +3435,6 @@ var VoiceChannel = class extends BaseChannel {
   async handleWebSocketDisconnect(conversationId) {
     this.webSocketConnections.delete(conversationId);
     this.promptQueues.delete(conversationId);
-    for (const [callSid, cId] of this.callSidToConversationId.entries()) {
-      if (cId === conversationId) {
-        this.callSidToConversationId.delete(callSid);
-        break;
-      }
-    }
     if (this.voiceCallbacks.onWebSocketDisconnected) {
       this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
@@ -3413,45 +3466,23 @@ var VoiceChannel = class extends BaseChannel {
     }
   }
   // =========================================================================
-  // Incoming Call Handling (with conversation creation)
+  // Incoming Call Handling
   // =========================================================================
   /**
-   * Handle incoming voice call - create conversation, add participants, generate TwiML
+   * Handle incoming voice call - generate TwiML to connect to ConversationRelay
+   *
+   * ConversationRelay will create the conversation automatically. The conversation
+   * will be initialized on the first prompt using the callSid.
    *
    * @param options - Options for handling the incoming call
    * @returns TwiML XML string with ConversationRelay configuration
    */
-  async handleIncomingCall(options) {
-    const { toNumber, fromNumber, callSid, actionUrl, conversationRelayConfig } = options;
-    const timestamp = (/* @__PURE__ */ new Date()).toISOString().replaceAll(/[-:.]/g, "").slice(0, 15) + "Z";
-    const conversationName = `tac-voice-${fromNumber}-${timestamp}`;
-    const conversationClient = this.tac.getConversationClient();
-    const conversation = await conversationClient.createConversation(conversationName);
-    const conversationId = conversation.id;
-    this.logger.debug(
-      { conversation_id: conversationId, call_sid: callSid },
-      "Created conversation for voice call"
-    );
-    const customerParticipant = await conversationClient.addParticipant(
-      conversationId,
-      [{ channel: "VOICE", address: fromNumber, channelId: callSid }],
-      "CUSTOMER"
-    );
-    const profileId = customerParticipant.profileId || "";
-    const customerParticipantId = customerParticipant.id;
-    const aiAgentParticipant = await conversationClient.addParticipant(
-      conversationId,
-      [{ channel: "VOICE", address: toNumber, channelId: callSid }],
-      "AI_AGENT"
-    );
-    const aiAgentParticipantId = aiAgentParticipant.id;
+  handleIncomingCall(options) {
+    const { actionUrl, conversationRelayConfig } = options;
     return this.connectConversationRelay(
-      conversationRelayConfig,
       {
-        conversation_id: conversationId,
-        profile_id: profileId,
-        customer_participant_id: customerParticipantId,
-        ai_agent_participant_id: aiAgentParticipantId
+        ...conversationRelayConfig,
+        conversationConfiguration: conversationRelayConfig.conversationConfiguration ?? this.config.conversationServiceId
       },
       actionUrl ? { actionUrl } : void 0
     );
@@ -3573,12 +3604,11 @@ var VoiceChannel = class extends BaseChannel {
    * Validates configuration with Zod before generating TwiML.
    *
    * @param config - ConversationRelay configuration (url, transcription, TTS, etc.)
-   * @param parameters - Optional custom parameters to pass via TwiML <Parameter> elements
    * @param options - Optional settings for the Connect verb (e.g., actionUrl)
    * @returns TwiML XML string
    * @throws {Error} if config validation fails
    */
-  connectConversationRelay(config, parameters, options) {
+  connectConversationRelay(config, options) {
     const validationResult = ConversationRelayConfigSchema.safeParse(config);
     if (!validationResult.success) {
       const errorMessage = validationResult.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
@@ -3594,17 +3624,6 @@ var VoiceChannel = class extends BaseChannel {
       for (const lang of languages) {
         const filteredLang = this.filterUnsetValues(lang);
         relay.language(filteredLang);
-      }
-    }
-    if (parameters) {
-      const paramResult = CustomParametersSchema.safeParse(parameters);
-      if (!paramResult.success) {
-        throw new Error(`Invalid custom parameters: ${paramResult.error.message}`);
-      }
-      for (const [name, value] of Object.entries(paramResult.data)) {
-        if (value !== void 0) {
-          relay.parameter({ name, value });
-        }
       }
     }
     return response.toString();
@@ -3643,8 +3662,8 @@ var VoiceChannel = class extends BaseChannel {
   shutdown() {
     this.streamTasks.clear();
     this.webSocketConnections.clear();
-    this.callSidToConversationId.clear();
     this.promptQueues.clear();
+    this.initializationRetries.clear();
     super.shutdown();
   }
 };
@@ -4151,18 +4170,11 @@ var TACServer = class {
             return;
           }
           const voiceChannel = this.voiceChannel;
-          const formData = request.body;
-          const fromNumber = formData["From"] || "";
-          const toNumber = formData["To"] || "";
-          const callSid = formData["CallSid"] || "";
           const protocol = request.headers["x-forwarded-proto"] || "http";
           const host = request.headers.host;
           const websocketUrl = `${protocol === "https" ? "wss" : "ws"}://${host}${this.config.webhookPaths.ws || "/ws"}`;
           const callbackUrl = `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || "/conversation-relay-callback"}`;
-          const twiml = await voiceChannel.handleIncomingCall({
-            toNumber,
-            fromNumber,
-            callSid,
+          const twiml = voiceChannel.handleIncomingCall({
             actionUrl: callbackUrl,
             conversationRelayConfig: {
               url: websocketUrl,

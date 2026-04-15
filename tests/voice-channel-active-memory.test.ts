@@ -70,20 +70,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         on: vi.fn(),
       } as unknown as WebSocket;
 
-      // Simulate setup message to create session
-      const setupMessage = {
-        type: 'setup' as const,
-        callSid: 'CA123',
-        from: '+15551234567',
-        to: '+15555555555',
-        customParameters: {
-          conversation_id: 'conv123',
-          profile_id: 'prof123',
-        },
-      };
-
-      // Access private method for testing
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       // Set up prompt callback spy
       const promptCallbackSpy = vi.fn();
@@ -144,7 +133,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         },
       };
 
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptCallbackSpy = vi.fn();
       voiceChannel.on('prompt', promptCallbackSpy);
@@ -197,7 +188,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         },
       };
 
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptCallbackSpy = vi.fn();
       voiceChannel.on('prompt', promptCallbackSpy);
@@ -256,7 +249,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         },
       };
 
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptMessage: PromptMessage = {
         type: 'prompt',
@@ -300,7 +295,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         },
       };
 
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptMessage: PromptMessage = {
         type: 'prompt',
@@ -359,7 +356,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         },
       };
 
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptMessage: PromptMessage = {
         type: 'prompt',
@@ -421,7 +420,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         },
       };
 
-      (voiceChannel as any).handleSetupMessage(mockWs, setupMessage);
+      // Manually set up conversation state (simulating what happens after first prompt)
+      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).startConversation('conv123', 'prof123');
 
       // Send 3 prompts in quick succession
       const promptMessage1: PromptMessage = { type: 'prompt', voicePrompt: 'prompt 1' };

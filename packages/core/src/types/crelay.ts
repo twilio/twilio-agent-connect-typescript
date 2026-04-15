@@ -95,6 +95,10 @@ export const ConversationRelayAttributesSchema = z.object({
   // Intelligence service
   /** Conversational Intelligence Service ID or unique name */
   intelligenceService: z.string().optional(),
+
+  // Conversation orchestrator
+  /** Twilio Conversation Orchestrator configuration ID */
+  conversationConfiguration: z.string().optional(),
 });
 
 export type ConversationRelayAttributes = z.infer<typeof ConversationRelayAttributesSchema>;
@@ -118,13 +122,9 @@ export type _SDKDriftGuards = {
 
 /**
  * Custom parameters passed via TwiML
+ * Can contain any key-value pairs with unknown values
  */
-export const CustomParametersSchema = z.object({
-  conversation_id: z.string().optional(),
-  profile_id: z.string().optional(),
-  customer_participant_id: z.string().optional(),
-  ai_agent_participant_id: z.string().optional(),
-});
+export const CustomParametersSchema = z.record(z.unknown());
 
 export type CustomParameters = z.infer<typeof CustomParametersSchema>;
 

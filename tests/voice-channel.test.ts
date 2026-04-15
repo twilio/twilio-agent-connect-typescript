@@ -40,24 +40,6 @@ describe('VoiceChannel', () => {
       expect(twiml).toContain('welcomeGreeting="Hello! How can I help you today?"');
     });
 
-    it('should include custom parameters in TwiML', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
-      const voiceChannel = new VoiceChannel(tac);
-
-      const twiml = voiceChannel.connectConversationRelay(
-        {
-          url: 'wss://example.com/conversation-relay',
-        },
-        {
-          conversation_id: 'CH123',
-          profile_id: 'mem_profile_123',
-        }
-      );
-
-      expect(twiml).toContain('name="conversation_id" value="CH123"');
-      expect(twiml).toContain('name="profile_id" value="mem_profile_123"');
-    });
 
     it('should handle undefined welcomeGreeting', () => {
       const config = new TACConfig(getTestConfig());
@@ -318,42 +300,15 @@ describe('VoiceChannel', () => {
       }).toThrow('Invalid ConversationRelay configuration');
     });
 
-    it('should throw error for invalid custom parameters', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
-      const voiceChannel = new VoiceChannel(tac);
-
-      expect(() => {
-        voiceChannel.connectConversationRelay(
-          {
-            url: 'wss://example.com/conversation-relay',
-          },
-          {
-            conversation_id: 123, // Should be string, not number
-          } as any
-        );
-      }).toThrow('Invalid custom parameters');
-    });
   });
 
   describe('handleIncomingCall with conversationRelayConfig', () => {
-    it('should apply conversationRelayConfig to generated TwiML', async () => {
+    it('should apply conversationRelayConfig to generated TwiML', () => {
       const config = new TACConfig(getTestConfig());
       const tac = new TAC({ config });
       const voiceChannel = new VoiceChannel(tac);
 
-      // Mock conversation creation
-      vi.spyOn(tac.getConversationClient(), 'createConversation').mockResolvedValue({
-        id: 'CH_test',
-      } as any);
-      vi.spyOn(tac.getConversationClient(), 'addParticipant').mockResolvedValue({
-        id: 'PA_test',
-        profileId: 'mem_test',
-      } as any);
-
-      const twiml = await voiceChannel.handleIncomingCall({
-        toNumber: '+15559876543',
-        fromNumber: '+15551234567',
+      const twiml = voiceChannel.handleIncomingCall({
         conversationRelayConfig: {
           url: 'wss://example.com/conversation-relay',
           transcriptionProvider: 'Deepgram',
@@ -367,23 +322,12 @@ describe('VoiceChannel', () => {
       expect(twiml).toContain('hints="technical support, billing"');
     });
 
-    it('should apply multi-language config to handleIncomingCall', async () => {
+    it('should apply multi-language config to handleIncomingCall', () => {
       const config = new TACConfig(getTestConfig());
       const tac = new TAC({ config });
       const voiceChannel = new VoiceChannel(tac);
 
-      // Mock conversation creation
-      vi.spyOn(tac.getConversationClient(), 'createConversation').mockResolvedValue({
-        id: 'CH_test',
-      } as any);
-      vi.spyOn(tac.getConversationClient(), 'addParticipant').mockResolvedValue({
-        id: 'PA_test',
-        profileId: 'mem_test',
-      } as any);
-
-      const twiml = await voiceChannel.handleIncomingCall({
-        toNumber: '+15559876543',
-        fromNumber: '+15551234567',
+      const twiml = voiceChannel.handleIncomingCall({
         conversationRelayConfig: {
           url: 'wss://example.com/conversation-relay',
           language: 'en-US',
@@ -407,23 +351,12 @@ describe('VoiceChannel', () => {
       expect(twiml).toContain('<Language code="es-ES"');
     });
 
-    it('should include welcomeGreeting in TwiML', async () => {
+    it('should include welcomeGreeting in TwiML', () => {
       const config = new TACConfig(getTestConfig());
       const tac = new TAC({ config });
       const voiceChannel = new VoiceChannel(tac);
 
-      // Mock conversation creation
-      vi.spyOn(tac.getConversationClient(), 'createConversation').mockResolvedValue({
-        id: 'CH_test',
-      } as any);
-      vi.spyOn(tac.getConversationClient(), 'addParticipant').mockResolvedValue({
-        id: 'PA_test',
-        profileId: 'mem_test',
-      } as any);
-
-      const twiml = await voiceChannel.handleIncomingCall({
-        toNumber: '+15559876543',
-        fromNumber: '+15551234567',
+      const twiml = voiceChannel.handleIncomingCall({
         conversationRelayConfig: {
           url: 'wss://example.com/conversation-relay',
           welcomeGreeting: 'Hello! How can I help you today?',
@@ -471,11 +404,29 @@ describe('VoiceChannel', () => {
       },
     });
 
+    const promptMessage = JSON.stringify({
+      type: 'prompt',
+      voicePrompt: 'Hello',
+      lang: 'en-US',
+      last: true,
+    });
+
     it('should fire onConversationEnded on WebSocket disconnect', async () => {
       const config = new TACConfig(getTestConfig());
       const tac = new TAC({ config });
       const voiceChannel = new VoiceChannel(tac);
       const captured: ConversationSession[] = [];
+
+      // Mock conversation client methods for initialization
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
 
       const ended = new Promise<void>(resolve => {
         tac.onConversationEnded(({ session }) => {
@@ -490,6 +441,13 @@ describe('VoiceChannel', () => {
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
+
+      // Trigger first prompt (initializes conversation)
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 10));
+
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
       // Trigger close and wait for callback
@@ -506,6 +464,17 @@ describe('VoiceChannel', () => {
       const tac = new TAC({ config });
       const voiceChannel = new VoiceChannel(tac);
 
+      // Mock conversation client methods for initialization
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+
       const ended = new Promise<void>(resolve => {
         tac.onConversationEnded(() => {
           resolve();
@@ -516,7 +485,14 @@ describe('VoiceChannel', () => {
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 10));
+
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
       mockWs._emit('close');
@@ -533,6 +509,17 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const captured: ConversationSession[] = [];
 
+      // Mock conversation client methods for initialization
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+
       const ended = new Promise<void>(resolve => {
         tac.onConversationEnded(async ({ session }) => {
           captured.push(session);
@@ -543,7 +530,13 @@ describe('VoiceChannel', () => {
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       mockWs._emit('close');
       await ended;
@@ -557,9 +550,27 @@ describe('VoiceChannel', () => {
       const tac = new TAC({ config });
       const voiceChannel = new VoiceChannel(tac);
 
+      // Mock conversation client methods for initialization
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 10));
+
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
       mockWs._emit('close');
@@ -567,6 +578,305 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
 
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+    });
+
+    it('should call onError when initialization fails and not close WebSocket', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const errorsCaptured: Array<{ error: Error; context?: Record<string, unknown> }> = [];
+
+      // Mock listConversations to fail
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockRejectedValue(
+        new Error('API 500 Server Error')
+      );
+
+      tac.registerChannel(voiceChannel);
+
+      // Set onError callback AFTER registerChannel to avoid it being overwritten
+      voiceChannel.on('error', ({ error, context }) => {
+        errorsCaptured.push({ error, context });
+      });
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup
+      mockWs._emit('message', Buffer.from(setupMessage));
+
+      // Trigger first prompt (should fail initialization)
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async error handling
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Should have captured the initialization error
+      expect(errorsCaptured).toHaveLength(1);
+      expect(errorsCaptured[0].error.message).toContain('API 500 Server Error');
+      expect(errorsCaptured[0].context).toMatchObject({
+        callSid: 'CA_cb_test',
+      });
+
+      // WebSocket should NOT be closed
+      expect(mockWs.close).not.toHaveBeenCalled();
+    });
+
+    it('should retry initialization on subsequent prompts after initial failure', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const errorsCaptured: Array<{ error: Error; context?: Record<string, unknown> }> = [];
+
+      // Mock listConversations to fail first, then succeed
+      let callCount = 0;
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject(new Error('API 500 Server Error'));
+        }
+        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
+      });
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+
+      tac.registerChannel(voiceChannel);
+
+      voiceChannel.on('error', ({ error, context }) => {
+        errorsCaptured.push({ error, context });
+      });
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup
+      mockWs._emit('message', Buffer.from(setupMessage));
+
+      // Trigger first prompt (should fail initialization)
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async error handling
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(errorsCaptured).toHaveLength(1);
+      expect(errorsCaptured[0].error.message).toContain('API 500 Server Error');
+
+      // Trigger second prompt (should retry and succeed)
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async initialization
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should have captured only the first error, second attempt succeeded
+      expect(errorsCaptured).toHaveLength(1);
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+
+      // WebSocket should NOT be closed
+      expect(mockWs.close).not.toHaveBeenCalled();
+    });
+
+    it('should throw error after exhausting retry limit', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const errorsCaptured: Array<{ error: Error; context?: Record<string, unknown> }> = [];
+
+      // Mock listConversations to always fail
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockRejectedValue(
+        new Error('API 500 Server Error')
+      );
+
+      tac.registerChannel(voiceChannel);
+
+      voiceChannel.on('error', ({ error, context }) => {
+        errorsCaptured.push({ error, context });
+      });
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup
+      mockWs._emit('message', Buffer.from(setupMessage));
+
+      // Attempt 1
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(errorsCaptured).toHaveLength(1);
+
+      // Attempt 2
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(errorsCaptured).toHaveLength(2);
+
+      // Attempt 3
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(errorsCaptured).toHaveLength(3);
+
+      // Attempt 4 (should hit retry limit)
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Last error should mention retry limit
+      expect(errorsCaptured).toHaveLength(4);
+      expect(errorsCaptured[3].error.message).toContain('failed after 3 attempts');
+
+      // WebSocket should still NOT be closed
+      expect(mockWs.close).not.toHaveBeenCalled();
+    });
+
+    it('should clear retry counter on successful initialization', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const errorsCaptured: Array<{ error: Error; context?: Record<string, unknown> }> = [];
+
+      // Mock listConversations to fail once, then succeed
+      let callCount = 0;
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject(new Error('Temporary failure'));
+        }
+        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
+      });
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+
+      tac.registerChannel(voiceChannel);
+
+      voiceChannel.on('error', ({ error, context }) => {
+        errorsCaptured.push({ error, context });
+      });
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup
+      mockWs._emit('message', Buffer.from(setupMessage));
+
+      // First prompt fails
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(errorsCaptured).toHaveLength(1);
+
+      // Second prompt succeeds
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(errorsCaptured).toHaveLength(1); // No new errors
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+
+      // Verify subsequent prompts work fine (retry counter was cleared)
+      const capturedPrompts: string[] = [];
+      voiceChannel.on('prompt', ({ transcript }) => {
+        capturedPrompts.push(transcript);
+      });
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'prompt',
+        voicePrompt: 'Test prompt after success',
+        lang: 'en-US',
+        last: true,
+      })));
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(capturedPrompts).toContain('Test prompt after success');
+      expect(errorsCaptured).toHaveLength(1); // Still only one error
+    });
+
+    it('should clear retry counter on WebSocket disconnect', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+
+      // Mock listConversations to fail
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockRejectedValue(
+        new Error('API Error')
+      );
+
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup and failed prompt
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Trigger disconnect (should clean up retry counter)
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Create a new WebSocket connection with same callSid
+      const mockWs2 = createMockWebSocket();
+
+      // This time make it succeed immediately
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          profileId: 'mem_profile_cb_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+
+      voiceChannel.handleWebSocketConnection(mockWs2 as any);
+      mockWs2._emit('message', Buffer.from(setupMessage));
+      mockWs2._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should succeed because retry counter was cleared on disconnect
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+    });
+
+    it('should call onError when listParticipants fails and not close WebSocket', async () => {
+      const config = new TACConfig(getTestConfig());
+      const tac = new TAC({ config });
+      const voiceChannel = new VoiceChannel(tac);
+      const errorsCaptured: Array<{ error: Error; context?: Record<string, unknown> }> = [];
+
+      // Mock listConversations to succeed but listParticipants to fail
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockRejectedValue(
+        new Error('Failed to list participants: 500 Server Error')
+      );
+
+      tac.registerChannel(voiceChannel);
+
+      voiceChannel.on('error', ({ error, context }) => {
+        errorsCaptured.push({ error, context });
+      });
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Trigger setup and first prompt
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      // Wait for async error handling
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Should have captured the error
+      expect(errorsCaptured).toHaveLength(1);
+      expect(errorsCaptured[0].error.message).toContain('Failed to list participants');
+      expect(errorsCaptured[0].context).toMatchObject({
+        callSid: 'CA_cb_test',
+      });
+
+      // WebSocket should NOT be closed
+      expect(mockWs.close).not.toHaveBeenCalled();
     });
 
   });

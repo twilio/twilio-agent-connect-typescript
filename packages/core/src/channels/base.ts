@@ -31,7 +31,7 @@ export abstract class BaseChannel {
     this.tac = tac;
     this.config = tac.getConfig();
     this.logger = tac.logger.child({ component: 'channel' });
-    this.conversationClient = new ConversationClient(this.config);
+    this.conversationClient = tac.getConversationClient();
     this.activeConversations = new Map();
     this.callbacks = {};
   }

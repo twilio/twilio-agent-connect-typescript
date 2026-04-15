@@ -234,7 +234,7 @@ export const ConversationParticipantSchema = z.object({
   conversationId: z.string(),
   accountId: z.string(),
   name: z.string().optional(),
-  type: z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT']).optional(),
+  type: z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT', 'UNKNOWN']).optional(),
   profileId: z.string().nullable().optional(),
   addresses: z.array(ConversationAddressSchema).default([]),
   createdAt: z.string().optional(),

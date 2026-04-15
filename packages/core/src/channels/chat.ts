@@ -82,7 +82,7 @@ export class ChatChannel extends MessagingChannel {
       const participants = await this.conversationClient.listParticipants(conversationId);
 
       // Find AI_AGENT participant (may not exist yet for chat)
-      let agentParticipant = participants.find(p => p.type === 'AI_AGENT');
+      let agentParticipant = participants.find(p => p.type === 'AI_AGENT' || p.type === 'AGENT');
 
       // If no AI_AGENT participant exists, create one (lazy creation)
       if (!agentParticipant) {
@@ -122,7 +122,9 @@ export class ChatChannel extends MessagingChannel {
           // Retry listing to see if it was created by another process
           const retriedParticipants =
             await this.conversationClient.listParticipants(conversationId);
-          agentParticipant = retriedParticipants.find(p => p.type === 'AI_AGENT');
+          agentParticipant = retriedParticipants.find(
+            p => p.type === 'AI_AGENT' || p.type === 'AGENT'
+          );
 
           if (!agentParticipant) {
             throw new Error(

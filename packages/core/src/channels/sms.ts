@@ -65,8 +65,9 @@ export class SMSChannel extends MessagingChannel {
 
       // Prefer AI/HUMAN agent participants when available, but fall back to any SMS participant
       const agentParticipant =
-        smsParticipants.find(p => p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT') ??
-        smsParticipants[0];
+        smsParticipants.find(
+          p => p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT' || p.type === 'AGENT'
+        ) ?? smsParticipants[0];
 
       if (!agentParticipant) {
         throw new Error(

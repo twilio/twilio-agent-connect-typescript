@@ -1474,7 +1474,7 @@ declare const ConversationParticipantSchema: z.ZodObject<{
     conversationId: z.ZodString;
     accountId: z.ZodString;
     name: z.ZodOptional<z.ZodString>;
-    type: z.ZodOptional<z.ZodEnum<["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]>>;
+    type: z.ZodOptional<z.ZodEnum<["HUMAN_AGENT", "CUSTOMER", "AI_AGENT", "AGENT", "UNKNOWN"]>>;
     profileId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     addresses: z.ZodDefault<z.ZodArray<z.ZodObject<{
         channel: z.ZodEnum<["VOICE", "SMS", "RCS", "EMAIL", "WHATSAPP", "CHAT", "API", "SYSTEM"]>;
@@ -1500,7 +1500,7 @@ declare const ConversationParticipantSchema: z.ZodObject<{
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         channelId?: string | null | undefined;
     }[];
-    type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
+    type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | "AGENT" | "UNKNOWN" | undefined;
     name?: string | undefined;
     createdAt?: string | undefined;
     updatedAt?: string | undefined;
@@ -1509,7 +1509,7 @@ declare const ConversationParticipantSchema: z.ZodObject<{
     id: string;
     conversationId: string;
     accountId: string;
-    type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
+    type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | "AGENT" | "UNKNOWN" | undefined;
     name?: string | undefined;
     createdAt?: string | undefined;
     updatedAt?: string | undefined;
@@ -1836,6 +1836,8 @@ declare const ConversationRelayAttributesSchema: z.ZodObject<{
     debug: z.ZodOptional<z.ZodString>;
     /** Conversational Intelligence Service ID or unique name */
     intelligenceService: z.ZodOptional<z.ZodString>;
+    /** Twilio Conversation Orchestrator configuration ID */
+    conversationConfiguration: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     url: string;
     voice?: string | undefined;
@@ -1858,6 +1860,7 @@ declare const ConversationRelayAttributesSchema: z.ZodObject<{
     language?: string | undefined;
     debug?: string | undefined;
     intelligenceService?: string | undefined;
+    conversationConfiguration?: string | undefined;
 }, {
     url: string;
     voice?: string | undefined;
@@ -1880,6 +1883,7 @@ declare const ConversationRelayAttributesSchema: z.ZodObject<{
     language?: string | undefined;
     debug?: string | undefined;
     intelligenceService?: string | undefined;
+    conversationConfiguration?: string | undefined;
 }>;
 type ConversationRelayAttributes = z.infer<typeof ConversationRelayAttributesSchema>;
 /**
@@ -1896,23 +1900,9 @@ type _SDKDriftGuards = {
 };
 /**
  * Custom parameters passed via TwiML
+ * Can contain any key-value pairs with unknown values
  */
-declare const CustomParametersSchema: z.ZodObject<{
-    conversation_id: z.ZodOptional<z.ZodString>;
-    profile_id: z.ZodOptional<z.ZodString>;
-    customer_participant_id: z.ZodOptional<z.ZodString>;
-    ai_agent_participant_id: z.ZodOptional<z.ZodString>;
-}, "strip", z.ZodTypeAny, {
-    profile_id?: string | undefined;
-    conversation_id?: string | undefined;
-    customer_participant_id?: string | undefined;
-    ai_agent_participant_id?: string | undefined;
-}, {
-    profile_id?: string | undefined;
-    conversation_id?: string | undefined;
-    customer_participant_id?: string | undefined;
-    ai_agent_participant_id?: string | undefined;
-}>;
+declare const CustomParametersSchema: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 type CustomParameters = z.infer<typeof CustomParametersSchema>;
 /**
  * WebSocket setup message from ConversationRelay
@@ -3933,8 +3923,6 @@ declare class ChatChannel extends MessagingChannel {
  */
 interface VoiceChannelEvents extends BaseChannelEvents {
     onSetup?: (data: {
-        conversationId: ConversationId;
-        profileId: ProfileId | undefined;
         callSid: string;
         from: string;
         to: string;
@@ -3966,10 +3954,11 @@ interface VoiceChannelEvents extends BaseChannelEvents {
  */
 declare class VoiceChannel extends BaseChannel {
     private readonly webSocketConnections;
-    private readonly callSidToConversationId;
     private readonly voiceCallbacks;
     private readonly streamTasks;
     private readonly promptQueues;
+    private readonly initializationRetries;
+    private readonly MAX_INITIALIZATION_RETRIES;
     constructor(tac: TAC);
     get channelType(): ChannelType;
     /**
@@ -3990,10 +3979,6 @@ declare class VoiceChannel extends BaseChannel {
      */
     handleWebSocketConnection(ws: WebSocket): void;
     /**
-     * Handle WebSocket setup message
-     */
-    private handleSetupMessage;
-    /**
      * Handle WebSocket prompt message (user speech)
      */
     private handlePromptMessage;
@@ -4010,18 +3995,18 @@ declare class VoiceChannel extends BaseChannel {
      */
     sendResponse(conversationId: ConversationId, message: string, metadata?: Record<string, unknown>): Promise<void>;
     /**
-     * Handle incoming voice call - create conversation, add participants, generate TwiML
+     * Handle incoming voice call - generate TwiML to connect to ConversationRelay
+     *
+     * ConversationRelay will create the conversation automatically. The conversation
+     * will be initialized on the first prompt using the callSid.
      *
      * @param options - Options for handling the incoming call
      * @returns TwiML XML string with ConversationRelay configuration
      */
     handleIncomingCall(options: {
-        toNumber: string;
-        fromNumber: string;
-        callSid?: string;
         actionUrl?: string;
         conversationRelayConfig: ConversationRelayConfig;
-    }): Promise<string>;
+    }): string;
     /**
      * Handle ConversationRelay callback from Twilio
      *
@@ -4070,12 +4055,11 @@ declare class VoiceChannel extends BaseChannel {
      * Validates configuration with Zod before generating TwiML.
      *
      * @param config - ConversationRelay configuration (url, transcription, TTS, etc.)
-     * @param parameters - Optional custom parameters to pass via TwiML <Parameter> elements
      * @param options - Optional settings for the Connect verb (e.g., actionUrl)
      * @returns TwiML XML string
      * @throws {Error} if config validation fails
      */
-    connectConversationRelay(config: ConversationRelayConfig, parameters?: CustomParameters, options?: {
+    connectConversationRelay(config: ConversationRelayConfig, options?: {
         actionUrl?: string;
     }): string;
     /**
