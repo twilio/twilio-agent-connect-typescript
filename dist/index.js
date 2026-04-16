@@ -19,10 +19,7 @@ var TACConfigSchema = z.object({
   twilioPhoneNumber: z.string().min(1, "Twilio Phone Number is required"),
   memoryStoreId: z.string().regex(/^mem_(service|store)_[0-9a-z]{26}$/, "Invalid Memory Store ID format").optional(),
   traitGroups: z.array(z.string()).optional(),
-  conversationServiceId: z.string().regex(
-    /^(comms_service|conv_configuration)_[0-9a-z]{26}$/,
-    "Invalid Conversation Configuration ID format"
-  ),
+  conversationServiceId: z.string().regex(/^conv_configuration_[0-9a-z]{26}$/, "Invalid Conversation Configuration ID format"),
   voicePublicDomain: z.string().url().optional(),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),

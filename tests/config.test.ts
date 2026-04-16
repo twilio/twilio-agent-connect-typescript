@@ -9,7 +9,7 @@ describe('TACConfig', () => {
     twilioApiToken: 'test_api_token_123',
     twilioPhoneNumber: '+15551234567',
     memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-    conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   // Store original env vars
@@ -48,7 +48,7 @@ describe('TACConfig', () => {
       expect(config.twilioAuthToken).toBe('test_token_123');
       expect(config.twilioPhoneNumber).toBe('+15551234567');
       expect(config.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
-      expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
     it('should validate required fields', () => {
@@ -67,6 +67,17 @@ describe('TACConfig', () => {
       expect(() => {
         new TACConfig(invalidConfig);
       }).toThrow();
+    });
+
+    it('should reject legacy comms_service format', () => {
+      const legacyConfig = {
+        ...getTestConfigData(),
+        conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+      };
+
+      expect(() => {
+        new TACConfig(legacyConfig);
+      }).toThrow('Invalid Conversation Configuration ID format');
     });
 
     it('should validate memory store ID format when provided', () => {
@@ -89,7 +100,7 @@ describe('TACConfig', () => {
       const config = new TACConfig(configWithoutMemory);
 
       expect(config.memoryStoreId).toBeUndefined();
-      expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
   });
@@ -102,7 +113,7 @@ describe('TACConfig', () => {
       process.env.TWILIO_API_TOKEN = 'test_api_token';
       process.env.TWILIO_PHONE_NUMBER = '+1234567890';
       process.env.MEMORY_STORE_ID = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg';
-      process.env.CONVERSATION_SERVICE_ID = 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd';
+      process.env.CONVERSATION_SERVICE_ID = 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd';
     };
 
     it('should create config when all required env vars are set', () => {
@@ -114,7 +125,7 @@ describe('TACConfig', () => {
       expect(config.twilioAuthToken).toBe('test_auth_token');
       expect(config.twilioPhoneNumber).toBe('+1234567890');
       expect(config.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
-      expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
     it('should include optional voicePublicDomain when set', () => {
@@ -178,7 +189,7 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.memoryStoreId).toBeUndefined();
-      expect(config.conversationServiceId).toBe('comms_service_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
     it('should throw error when CONVERSATION_SERVICE_ID is missing', () => {

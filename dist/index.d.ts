@@ -11,7 +11,7 @@ import { FastifyServerOptions } from 'fastify';
 declare const ChannelTypeSchema: z.ZodEnum<["sms", "voice", "chat"]>;
 type ChannelType = z.infer<typeof ChannelTypeSchema>;
 /**
- * TAC Configuration schema with environment-aware URL computation
+ * TAC configuration schema
  */
 declare const TACConfigSchema: z.ZodObject<{
     twilioAccountSid: z.ZodString;

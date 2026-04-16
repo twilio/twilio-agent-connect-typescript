@@ -32,7 +32,7 @@ describe('KnowledgeClient', () => {
     twilioApiToken: 'test_api_token',
     twilioPhoneNumber: '+15551234567',
     memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-    conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   let knowledgeClient: KnowledgeClient;

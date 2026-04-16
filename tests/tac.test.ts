@@ -8,7 +8,7 @@ describe('TAC Core', () => {
     twilioApiKey: 'test_api_key',
     twilioApiToken: 'test_api_token',
     twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd'
+    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
   });
 
   describe('initialization', () => {
