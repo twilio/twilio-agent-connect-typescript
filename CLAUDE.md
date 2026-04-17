@@ -50,7 +50,19 @@ getting_started/  # Example apps (OpenAI integration)
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onHandoff`, `onConversationEnded`) instead of EventEmitter
 - **Tool system** (`packages/tools/src/lib/builder.ts`): `defineTool()` with JSON schema; supports conversion to OpenAI and Anthropic formats
 - **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars
-- **API credentials consolidated** at `TACConfig` level (twilioApiKey/twilioApiToken shared across Memory, Conversation, Knowledge clients)
+- **API client architecture** (`packages/core/src/clients/`):
+  - `BaseClient` abstract class provides common HTTP functionality using **axios**
+  - All API clients (Memory, Conversation, Knowledge) inherit from BaseClient
+  - **HTTP client**: axios with axios-retry for resilience
+  - **Automatic retry**: 3 retries with exponential backoff; retries idempotent methods on 5xx responses and non-idempotent methods only on network/no-response failures
+  - **Timeout**: Fixed 30-second timeout for all requests
+  - **Authentication**: Automatic Basic Auth using Twilio API credentials
+  - **User-Agent**: Automatic header injection (`twilio-agent-connect-typescript/{version}`)
+  - **JSON handling**: Automatic serialization/deserialization
+  - **Type safety**: Generic type parameters on `makeRequest<T>()` for better IDE support
+  - **Validation**: Zod schemas validate all responses at runtime
+  - **Error logging**: Logs 4xx client errors as warnings, 5xx/network failures as errors via interceptors
+  - Credentials consolidated at `TACConfig` level (twilioApiKey/twilioApiToken shared across clients)
 - **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server with default `welcomeGreeting` for voice calls; customizable via `conversationRelayConfig`
 
 ## Dependencies

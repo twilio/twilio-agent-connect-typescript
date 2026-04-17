@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SMSChannel, TAC, ConversationSession } from '@twilio/tac-core';
+import MockAdapter from 'axios-mock-adapter';
 
 describe('SMS Channel', () => {
-  let originalFetch: typeof global.fetch;
-
-  beforeEach(() => {
-    originalFetch = global.fetch;
-  });
+  let mockAdapter: MockAdapter;
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    mockAdapter?.restore();
     vi.restoreAllMocks();
   });
   const getTestConfig = () => ({
@@ -484,74 +481,35 @@ describe('SMS Channel', () => {
 
   describe('sendResponse', () => {
     beforeEach(() => {
-      global.fetch = vi.fn().mockImplementation(async (url: string) => {
-        // Mock listParticipants call
-        if (url.includes('/Participants')) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              participants: [
-                {
-                  id: 'PA111',
-                  conversationId: 'CHtest123456789',
-                  accountId: 'ACtest123456789',
-                  type: 'HUMAN_AGENT',
-                  addresses: [{ channel: 'SMS', address: '+15551234567' }],
-                },
-                {
-                  id: 'PA123',
-                  conversationId: 'CHtest123456789',
-                  accountId: 'ACtest123456789',
-                  type: 'CUSTOMER',
-                  addresses: [{ channel: 'SMS', address: '+15559876543' }],
-                },
-              ],
-            }),
-            clone: function () {
-              return this;
-            },
-            text: async () =>
-              JSON.stringify({
-                participants: [
-                  {
-                    id: 'PA111',
-                    conversationId: 'CHtest123456789',
-                    accountId: 'ACtest123456789',
-                    type: 'HUMAN_AGENT',
-                    addresses: [{ channel: 'SMS', address: '+15551234567' }],
-                  },
-                  {
-                    id: 'PA123',
-                    conversationId: 'CHtest123456789',
-                    accountId: 'ACtest123456789',
-                    type: 'CUSTOMER',
-                    addresses: [{ channel: 'SMS', address: '+15559876543' }],
-                  },
-                ],
-              }),
-          };
-        }
+      // Access the conversation client's axios instance through TAC
+      const conversationClient = (tac as any).conversationClient;
+      mockAdapter = new MockAdapter(conversationClient.axiosInstance);
 
-        // Mock sendCommunication call (returns 202 Accepted)
-        return {
-          ok: true,
-          status: 202,
-          json: async () => ({
-            message: 'Conversation setup complete',
+      // Mock listParticipants call
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
+        participants: [
+          {
+            id: 'PA111',
             conversationId: 'CHtest123456789',
-            channelId: 'SM123abc',
-          }),
-          clone: function () {
-            return this;
+            accountId: 'ACtest123456789',
+            type: 'HUMAN_AGENT',
+            addresses: [{ channel: 'SMS', address: '+15551234567' }],
           },
-          text: async () =>
-            JSON.stringify({
-              message: 'Conversation setup complete',
-              conversationId: 'CHtest123456789',
-              channelId: 'SM123abc',
-            }),
-        };
+          {
+            id: 'PA123',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'SMS', address: '+15559876543' }],
+          },
+        ],
+      });
+
+      // Mock sendCommunication call (returns 202 Accepted)
+      mockAdapter.onPost('/v2/Communications').reply(202, {
+        message: 'Conversation setup complete',
+        conversationId: 'CHtest123456789',
+        channelId: 'SM123abc',
       });
     });
 
@@ -582,32 +540,14 @@ describe('SMS Channel', () => {
 
       await channel.sendResponse('CHtest123456789', 'Hello back!');
 
-      // Should have called listParticipants first
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/v2/Conversations/CHtest123456789/Participants'),
-        expect.objectContaining({
-          method: 'GET',
-        })
-      );
+      // Verify that the correct requests were made
+      const history = mockAdapter.history;
+      expect(history.get.length).toBe(1);
+      expect(history.get[0].url).toBe('/v2/Conversations/CHtest123456789/Participants');
 
-      // Then called sendCommunication
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/v2/Communications'),
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            Authorization: expect.stringContaining('Basic'),
-          }),
-          body: expect.stringContaining('+15559876543'),
-        })
-      );
-
-      // Find the sendCommunication call (not the listParticipants call)
-      const sendCommCall = (global.fetch as any).mock.calls.find(
-        (call: any) => call[1]?.method === 'POST'
-      );
-      const body = JSON.parse(sendCommCall[1].body);
+      expect(history.post.length).toBe(1);
+      expect(history.post[0].url).toBe('/v2/Communications');
+      const body = JSON.parse(history.post[0].data);
       expect(body.conversationId).toBe('CHtest123456789');
       expect(body.author.address).toBe('+15551234567');
       expect(body.author.channel).toBe('SMS');

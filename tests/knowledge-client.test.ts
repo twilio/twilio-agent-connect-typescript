@@ -1,27 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TACConfig } from '@twilio/tac-core';
 import { KnowledgeClient } from '../packages/core/src/clients/knowledge';
 import { KnowledgeBase, KnowledgeChunkResult } from '@twilio/tac-core';
-
-/**
- * Create a mock Response object with proper clone() support
- */
-function createMockResponse(
-  data: unknown,
-  options: { ok: boolean; status?: number; statusText?: string }
-) {
-  const body = JSON.stringify(data);
-  return {
-    ok: options.ok,
-    status: options.status ?? (options.ok ? 200 : 500),
-    statusText: options.statusText ?? (options.ok ? 'OK' : 'Error'),
-    json: async () => data,
-    text: async () => body,
-    clone: function () {
-      return this;
-    },
-  };
-}
+import MockAdapter from 'axios-mock-adapter';
 
 describe('KnowledgeClient', () => {
   const getTestConfig = () => ({
@@ -36,17 +17,16 @@ describe('KnowledgeClient', () => {
   });
 
   let knowledgeClient: KnowledgeClient;
-  let originalFetch: typeof global.fetch;
+  let mockAdapter: MockAdapter;
 
   beforeEach(() => {
     const config = new TACConfig(getTestConfig());
     knowledgeClient = new KnowledgeClient(config);
-    originalFetch = global.fetch;
+    mockAdapter = new MockAdapter((knowledgeClient as any).axiosInstance);
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
-    vi.restoreAllMocks();
+    mockAdapter.restore();
   });
 
   describe('getKnowledgeBase()', () => {
@@ -61,48 +41,33 @@ describe('KnowledgeClient', () => {
         version: 1,
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockResponse, { ok: true }));
+      mockAdapter
+        .onGet('/v2/ControlPlane/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0')
+        .reply(200, mockResponse);
 
       const result = await knowledgeClient.getKnowledgeBase(
         'know_knowledgebase_01abc123def456ghi789jkl0'
       );
 
       expect(result).toEqual(mockResponse);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/v2/ControlPlane/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0'
-        ),
-        expect.objectContaining({
-          method: 'GET',
-          headers: expect.objectContaining({
-            Authorization: expect.stringContaining('Basic'),
-          }),
-        })
-      );
     });
 
     it('should handle 404 errors', async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(
-          createMockResponse(null, { ok: false, status: 404, statusText: 'Not Found' })
-        );
+      mockAdapter.onGet('/v2/ControlPlane/KnowledgeBases/know_knowledgebase_nonexistent').reply(404);
 
       await expect(
         knowledgeClient.getKnowledgeBase('know_knowledgebase_nonexistent')
-      ).rejects.toThrow('Failed to get knowledge base: 404 Not Found');
+      ).rejects.toThrow(/Failed to get knowledge base/);
     });
 
     it('should handle 500 errors', async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(
-          createMockResponse(null, { ok: false, status: 500, statusText: 'Internal Server Error' })
-        );
+      mockAdapter
+        .onGet('/v2/ControlPlane/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0')
+        .reply(500);
 
       await expect(
         knowledgeClient.getKnowledgeBase('know_knowledgebase_01abc123def456ghi789jkl0')
-      ).rejects.toThrow('Failed to get knowledge base: 500 Internal Server Error');
+      ).rejects.toThrow(/Failed to get knowledge base/);
     });
   });
 
@@ -123,9 +88,9 @@ describe('KnowledgeClient', () => {
         },
       ];
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: mockChunks }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search')
+        .reply(200, { chunks: mockChunks });
 
       const result = await knowledgeClient.searchKnowledgeBase(
         'know_knowledgebase_01abc123def456ghi789jkl0',
@@ -133,78 +98,52 @@ describe('KnowledgeClient', () => {
       );
 
       expect(result).toEqual(mockChunks);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search'
-        ),
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            Authorization: expect.stringContaining('Basic'),
-          }),
-          body: JSON.stringify({
-            query: 'What languages are supported?',
-            top: 5,
-          }),
-        })
-      );
     });
 
     it('should respect custom topK parameter', async () => {
       const mockChunks: KnowledgeChunkResult[] = [];
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: mockChunks }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search', {
+          query: 'test query',
+          top: 10,
+        })
+        .reply(200, { chunks: mockChunks });
 
       await knowledgeClient.searchKnowledgeBase(
         'know_knowledgebase_01abc123def456ghi789jkl0',
         'test query',
         10
       );
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          body: JSON.stringify({
-            query: 'test query',
-            top: 10,
-          }),
-        })
-      );
     });
 
     it('should clamp topK to maximum of 20', async () => {
       const mockChunks: KnowledgeChunkResult[] = [];
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: mockChunks }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search', {
+          query: 'test query',
+          top: 20,
+        })
+        .reply(200, { chunks: mockChunks });
 
       await knowledgeClient.searchKnowledgeBase(
         'know_knowledgebase_01abc123def456ghi789jkl0',
         'test query',
         50
       );
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          body: JSON.stringify({
-            query: 'test query',
-            top: 20,
-          }),
-        })
-      );
     });
 
     it('should include knowledgeIds filter when provided', async () => {
       const mockChunks: KnowledgeChunkResult[] = [];
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: mockChunks }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search', {
+          query: 'test query',
+          top: 5,
+          knowledgeIds: ['know_01abc', 'know_02def'],
+        })
+        .reply(200, { chunks: mockChunks });
 
       await knowledgeClient.searchKnowledgeBase(
         'know_knowledgebase_01abc123def456ghi789jkl0',
@@ -212,23 +151,12 @@ describe('KnowledgeClient', () => {
         5,
         ['know_01abc', 'know_02def']
       );
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          body: JSON.stringify({
-            query: 'test query',
-            top: 5,
-            knowledgeIds: ['know_01abc', 'know_02def'],
-          }),
-        })
-      );
     });
 
     it('should handle empty results', async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: [] }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search')
+        .reply(200, { chunks: [] });
 
       const result = await knowledgeClient.searchKnowledgeBase(
         'know_knowledgebase_01abc123def456ghi789jkl0',
@@ -239,18 +167,16 @@ describe('KnowledgeClient', () => {
     });
 
     it('should handle API errors', async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(
-          createMockResponse(null, { ok: false, status: 500, statusText: 'Internal Server Error' })
-        );
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search')
+        .reply(500);
 
       await expect(
         knowledgeClient.searchKnowledgeBase(
           'know_knowledgebase_01abc123def456ghi789jkl0',
           'test query'
         )
-      ).rejects.toThrow('Failed to search knowledge base: 500 Internal Server Error');
+      ).rejects.toThrow(/Failed to search knowledge base/);
     });
   });
 

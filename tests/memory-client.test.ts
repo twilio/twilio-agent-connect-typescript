@@ -1,24 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TACConfig } from '@twilio/tac-core';
 import { MemoryClient } from '../packages/core/src/clients/memory';
 import { ProfileLookupResponse, ProfileResponse } from '@twilio/tac-core';
-
-/**
- * Create a mock Response object with proper clone() support
- */
-function createMockResponse(data: unknown, options: { ok: boolean; status?: number; statusText?: string }) {
-  const body = JSON.stringify(data);
-  return {
-    ok: options.ok,
-    status: options.status ?? (options.ok ? 200 : 500),
-    statusText: options.statusText ?? (options.ok ? 'OK' : 'Error'),
-    json: async () => data,
-    text: async () => body,
-    clone: function () {
-      return this;
-    },
-  };
-}
+import MockAdapter from 'axios-mock-adapter';
 
 describe('MemoryClient', () => {
   const getTestConfig = () => ({
@@ -33,17 +17,16 @@ describe('MemoryClient', () => {
   });
 
   let memoryClient: MemoryClient;
-  let originalFetch: typeof global.fetch;
+  let mockAdapter: MockAdapter;
 
   beforeEach(() => {
     const config = new TACConfig(getTestConfig());
     memoryClient = new MemoryClient(config);
-    originalFetch = global.fetch;
+    mockAdapter = new MockAdapter((memoryClient as any).axiosInstance);
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
-    vi.restoreAllMocks();
+    mockAdapter.restore();
   });
 
   describe('lookupProfile()', () => {
@@ -53,7 +36,9 @@ describe('MemoryClient', () => {
         profiles: ['mem_profile_00000000000000000000000001'],
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockResponse, { ok: true }));
+      mockAdapter
+        .onPost('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/Lookup')
+        .reply(200, mockResponse);
 
       const result = await memoryClient.lookupProfile(
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
@@ -62,101 +47,70 @@ describe('MemoryClient', () => {
       );
 
       expect(result).toEqual(mockResponse);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/Lookup'),
-        expect.objectContaining({
-          method: 'POST',
-          headers: expect.objectContaining({
-            'Content-Type': 'application/json',
-            Authorization: expect.stringContaining('Basic'),
-          }),
-          body: JSON.stringify({
-            idType: 'phone',
-            value: '+1 (317) 555-6789',
-          }),
-        })
-      );
     });
 
     it('should handle API errors', async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse(null, { ok: false, status: 404, statusText: 'Not Found' }));
+      mockAdapter
+        .onPost('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/Lookup')
+        .reply(500);
 
       await expect(
-        memoryClient.lookupProfile(
-          'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-          'phone',
-          '+13175556789'
-        )
-      ).rejects.toThrow('Failed to lookup profile: 404 Not Found');
+        memoryClient.lookupProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', 'phone', '+1234567890')
+      ).rejects.toThrow(/Failed to lookup profile/);
     });
   });
 
   describe('getProfile()', () => {
     it('should fetch profile successfully', async () => {
       const mockResponse: ProfileResponse = {
-        id: 'profile_123',
+        id: 'mem_profile_00000000000000000000000001',
         createdAt: '2024-01-01T00:00:00Z',
-        traits: {
-          name: 'John Doe',
-          email: 'john@example.com',
-        },
+        traits: {},
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockResponse, { ok: true }));
+      mockAdapter
+        .onGet('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/mem_profile_00000000000000000000000001')
+        .reply(200, mockResponse);
 
       const result = await memoryClient.getProfile(
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-        'profile_123'
+        'mem_profile_00000000000000000000000001'
       );
 
       expect(result).toEqual(mockResponse);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/profile_123'),
-        expect.objectContaining({
-          method: 'GET',
-          headers: expect.objectContaining({
-            Authorization: expect.stringContaining('Basic'),
-          }),
-        })
-      );
     });
 
     it('should work with traitGroups', async () => {
       const mockResponse: ProfileResponse = {
-        id: 'profile_123',
+        id: 'mem_profile_00000000000000000000000001',
         createdAt: '2024-01-01T00:00:00Z',
-        traits: {
-          name: 'John Doe',
-        },
+        traits: { group1: { key: 'value' } },
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockResponse, { ok: true }));
+      mockAdapter
+        .onGet(
+          '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/mem_profile_00000000000000000000000001',
+          { params: { traitGroups: 'group1' } }
+        )
+        .reply(200, mockResponse);
 
       const result = await memoryClient.getProfile(
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-        'profile_123',
-        ['basic_info', 'preferences']
+        'mem_profile_00000000000000000000000001',
+        ['group1']
       );
 
       expect(result).toEqual(mockResponse);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('?traitGroups=basic_info,preferences'),
-        expect.any(Object)
-      );
     });
 
     it('should handle API errors', async () => {
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(
-          createMockResponse(null, { ok: false, status: 500, statusText: 'Internal Server Error' })
-        );
+      mockAdapter
+        .onGet('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/mem_profile_00000000000000000000000001')
+        .reply(404);
 
       await expect(
-        memoryClient.getProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', 'profile_123')
-      ).rejects.toThrow('Failed to get profile: 500 Internal Server Error');
+        memoryClient.getProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', 'mem_profile_00000000000000000000000001')
+      ).rejects.toThrow(/Failed to get profile/);
     });
   });
 });

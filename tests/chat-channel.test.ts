@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatChannel, TAC, ConversationSession } from '@twilio/tac-core';
+import MockAdapter from 'axios-mock-adapter';
 
 describe('Chat Channel', () => {
-  let originalFetch: typeof global.fetch;
-
-  beforeEach(() => {
-    originalFetch = global.fetch;
-  });
+  let mockAdapter: MockAdapter;
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    mockAdapter?.restore();
     vi.restoreAllMocks();
   });
 
@@ -233,8 +230,9 @@ describe('Chat Channel', () => {
 
   describe('send response', () => {
     beforeEach(() => {
-      // Mock fetch globally
-      global.fetch = vi.fn();
+      // Access the conversation client's axios instance through TAC
+      const conversationClient = (tac as any).conversationClient;
+      mockAdapter = new MockAdapter(conversationClient.axiosInstance);
     });
 
     it('should send response via Send API with existing AI_AGENT', async () => {
@@ -254,7 +252,7 @@ describe('Chat Channel', () => {
       });
 
       // Mock listParticipants (AI_AGENT exists)
-      const listParticipantsResponse = {
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
         participants: [
           {
             id: 'PA_agent_123',
@@ -271,39 +269,23 @@ describe('Chat Channel', () => {
             addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
           },
         ],
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => listParticipantsResponse,
-        clone: () => ({
-          text: async () => JSON.stringify(listParticipantsResponse),
-        }),
       });
 
       // Mock sendCommunication
-      const sendResponse = {
+      mockAdapter.onPost('/v2/Communications').reply(202, {
         message: 'Communication queued',
         conversationId: 'CHtest123456789',
         channelId: 'CH00000000000000000000000000000000',
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 202,
-        json: async () => sendResponse,
-        clone: () => ({
-          text: async () => JSON.stringify(sendResponse),
-        }),
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-
-      // Verify sendCommunication call
-      const sendCall = (global.fetch as any).mock.calls[1];
-      expect(sendCall[0]).toContain('/v2/Communications');
-      const sendBody = JSON.parse(sendCall[1].body);
+      // Verify requests
+      const history = mockAdapter.history;
+      expect(history.get.length).toBe(1);
+      expect(history.post.length).toBe(1);
+      expect(history.post[0].url).toBe('/v2/Communications');
+      const sendBody = JSON.parse(history.post[0].data);
       expect(sendBody).toMatchObject({
         conversationId: 'CHtest123456789',
         author: {
@@ -343,7 +325,7 @@ describe('Chat Channel', () => {
       });
 
       // Mock listParticipants (no AI_AGENT)
-      const listResponse = {
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
         participants: [
           {
             id: 'PA_customer_123',
@@ -353,56 +335,35 @@ describe('Chat Channel', () => {
             addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
           },
         ],
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => listResponse,
-        clone: () => ({
-          text: async () => JSON.stringify(listResponse),
-        }),
       });
 
       // Mock addParticipant
-      const addResponse = {
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(201, {
         id: 'PA_agent_123',
         conversationId: 'CHtest123456789',
         accountId: 'ACtest123456789',
         type: 'AI_AGENT',
         addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => addResponse,
-        clone: () => ({
-          text: async () => JSON.stringify(addResponse),
-        }),
       });
 
       // Mock sendCommunication
-      const sendResp = {
+      mockAdapter.onPost('/v2/Communications').reply(202, {
         message: 'Communication queued',
         conversationId: 'CHtest123456789',
         channelId: null,
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 202,
-        json: async () => sendResp,
-        clone: () => ({
-          text: async () => JSON.stringify(sendResp),
-        }),
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      expect(global.fetch).toHaveBeenCalledTimes(3);
+      // Verify requests
+      const history = mockAdapter.history;
+      expect(history.get.length).toBe(1);
+      expect(history.post.length).toBe(2); // addParticipant + sendCommunication
 
       // Verify addParticipant call
-      const addCall = (global.fetch as any).mock.calls[1];
-      expect(addCall[0]).toContain('/Participants');
-      const addBody = JSON.parse(addCall[1].body);
+      const addCall = history.post[0];
+      expect(addCall.url).toBe('/v2/Conversations/CHtest123456789/Participants');
+      const addBody = JSON.parse(addCall.data);
       expect(addBody).toMatchObject({
         type: 'AI_AGENT',
         addresses: [
@@ -431,84 +392,58 @@ describe('Chat Channel', () => {
         },
       });
 
-      // Mock listParticipants (no AI_AGENT initially)
-      const initialList = {
-        participants: [
-          {
-            id: 'PA_customer_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-          },
-        ],
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => initialList,
-        clone: () => ({
-          text: async () => JSON.stringify(initialList),
-        }),
-      });
+      // Mock listParticipants - first call returns no AI_AGENT, second call returns AI_AGENT
+      mockAdapter
+        .onGet('/v2/Conversations/CHtest123456789/Participants')
+        .replyOnce(200, {
+          participants: [
+            {
+              id: 'PA_customer_123',
+              conversationId: 'CHtest123456789',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
+            },
+          ],
+        })
+        .onGet('/v2/Conversations/CHtest123456789/Participants')
+        .replyOnce(200, {
+          participants: [
+            {
+              id: 'PA_agent_123',
+              conversationId: 'CHtest123456789',
+              accountId: 'ACtest123456789',
+              type: 'AI_AGENT',
+              addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
+            },
+            {
+              id: 'PA_customer_123',
+              conversationId: 'CHtest123456789',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
+            },
+          ],
+        });
 
       // Mock addParticipant failure (already exists)
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: false,
-        status: 409,
-        statusText: 'Conflict',
-        json: async () => ({ error: 'Participant already exists' }),
-        clone: () => ({
-          text: async () => '{"error":"Participant already exists"}',
-        }),
-      });
-
-      // Mock retry listParticipants (AI_AGENT now exists)
-      const retryList = {
-        participants: [
-          {
-            id: 'PA_agent_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'AI_AGENT',
-            addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
-          },
-          {
-            id: 'PA_customer_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-          },
-        ],
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => retryList,
-        clone: () => ({
-          text: async () => JSON.stringify(retryList),
-        }),
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(409, {
+        error: 'Participant already exists',
       });
 
       // Mock sendCommunication
-      const finalSend = {
+      mockAdapter.onPost('/v2/Communications').reply(202, {
         message: 'Communication queued',
         conversationId: 'CHtest123456789',
         channelId: null,
-      };
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        status: 202,
-        json: async () => finalSend,
-        clone: () => ({
-          text: async () => JSON.stringify(finalSend),
-        }),
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      expect(global.fetch).toHaveBeenCalledTimes(4);
+      // Verify requests: 2 GET (list participants), 1 POST (add participant), 1 POST (send)
+      const history = mockAdapter.history;
+      expect(history.get.length).toBe(2);
+      expect(history.post.length).toBe(2);
     });
 
     it('should throw error if no active session', async () => {

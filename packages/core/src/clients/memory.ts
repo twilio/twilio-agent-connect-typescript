@@ -11,37 +11,17 @@ import {
   CreateObservationResponseSchema,
   CreateConversationSummariesResponse,
   CreateConversationSummariesResponseSchema,
-} from '../types/index';
+} from '../types';
 import { TACConfig } from '../lib/config';
-import { Logger, createLogger } from '../lib/logger';
-
-/**
- * HTTP client options
- */
-interface RequestOptions {
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}
+import { Logger } from '../lib/logger';
+import { BaseClient } from './base';
 
 /**
  * Memory client for interacting with Twilio Memory Service
- *
- * Provides functionality to retrieve user memories including observations,
- * summaries, and conversation sessions.
  */
-export class MemoryClient {
-  private readonly baseUrl = 'https://memory.twilio.com';
-  private readonly credentials: { username: string; password: string };
-  private readonly logger: Logger;
-
+export class MemoryClient extends BaseClient {
   constructor(config: TACConfig, logger?: Logger) {
-    this.credentials = {
-      username: config.twilioApiKey,
-      password: config.twilioApiToken,
-    };
-    const baseLogger = logger || createLogger({ name: 'tac-memory' });
-    this.logger = baseLogger.child({ client: 'memory' });
+    super('https://memory.twilio.com', config, logger);
   }
 
   /**
@@ -58,7 +38,7 @@ export class MemoryClient {
     request: Partial<MemoryRetrievalRequest> = {}
   ): Promise<MemoryRetrievalResponse> {
     try {
-      const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}/Recall`;
+      const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/Recall`;
 
       this.logger.debug(
         {
@@ -83,33 +63,7 @@ export class MemoryClient {
         Object.entries(requestBody).filter(([_, value]) => value !== undefined)
       );
 
-      const options: RequestOptions = {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: this.getBasicAuthHeader(),
-        },
-        body: JSON.stringify(cleanedBody),
-      };
-
-      this.logRequest(options.method, url, options.body);
-      const response = await fetch(url, options);
-      await this.logResponse(response);
-
-      if (!response.ok) {
-        this.logger.warn(
-          {
-            http_status: response.status,
-            status_text: response.statusText,
-            profile_id: profileId,
-            memory_store_id: serviceSid,
-          },
-          'Memory retrieval failed'
-        );
-        return EMPTY_MEMORY_RESPONSE;
-      }
-
-      const data = await response.json();
+      const data = await this.makeRequest<MemoryRetrievalResponse>(url, 'POST', cleanedBody);
 
       this.logger.debug(
         {
@@ -148,7 +102,7 @@ export class MemoryClient {
     } catch (error) {
       this.logger.warn(
         {
-          err: error,
+          error: error instanceof Error ? error.message : String(error),
           profile_id: profileId,
           memory_store_id: serviceSid,
         },
@@ -171,32 +125,22 @@ export class MemoryClient {
     idType: string,
     value: string
   ): Promise<ProfileLookupResponse> {
-    const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/Lookup`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/Lookup`;
 
     const requestBody = {
       idType,
       value,
     };
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to lookup profile: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<ProfileLookupResponse>(url, 'POST', requestBody);
+      return ProfileLookupResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to lookup profile: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return ProfileLookupResponseSchema.parse(data);
   }
 
   /**
@@ -212,29 +156,27 @@ export class MemoryClient {
     profileId: string,
     traitGroups?: string[]
   ): Promise<ProfileResponse> {
-    let url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}`;
 
+    const params: Record<string, string> = {};
     if (traitGroups && traitGroups.length > 0) {
-      url += `?traitGroups=${traitGroups.join(',')}`;
+      params.traitGroups = traitGroups.join(',');
     }
 
-    const options: RequestOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: this.getBasicAuthHeader(),
-      },
-    };
-
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to get profile: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<ProfileResponse>(
+        url,
+        'GET',
+        undefined,
+        Object.keys(params).length > 0 ? params : undefined
+      );
+      return ProfileResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to get profile: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return ProfileResponseSchema.parse(data);
   }
 
   /**
@@ -256,7 +198,7 @@ export class MemoryClient {
     conversationIds?: string[],
     occurredAt?: string
   ): Promise<CreateObservationResponse> {
-    const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}/Observations`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/Observations`;
 
     const requestBody: Record<string, unknown> = {
       content,
@@ -271,25 +213,15 @@ export class MemoryClient {
       requestBody.occurredAt = occurredAt;
     }
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to create observation: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<CreateObservationResponse>(url, 'POST', requestBody);
+      return CreateObservationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to create observation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return CreateObservationResponseSchema.parse(data);
   }
 
   /**
@@ -310,7 +242,7 @@ export class MemoryClient {
       source?: string;
     }>
   ): Promise<CreateConversationSummariesResponse> {
-    const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}/ConversationSummaries`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/ConversationSummaries`;
 
     const requestBody = {
       summaries: summaries.map(s => ({
@@ -321,71 +253,18 @@ export class MemoryClient {
       })),
     };
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
+    try {
+      const data = await this.makeRequest<CreateConversationSummariesResponse>(
+        url,
+        'POST',
+        requestBody
+      );
+      return CreateConversationSummariesResponseSchema.parse(data);
+    } catch (error) {
       throw new Error(
-        `Failed to create conversation summaries: ${response.status} ${response.statusText}`
+        `Failed to create conversation summaries: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-
-    const data = await response.json();
-    return CreateConversationSummariesResponseSchema.parse(data);
-  }
-
-  /**
-   * Get Basic Auth header for HTTP requests
-   */
-  private getBasicAuthHeader(): string {
-    const credentials = `${this.credentials.username}:${this.credentials.password}`;
-    const encoded = Buffer.from(credentials).toString('base64');
-    return `Basic ${encoded}`;
-  }
-
-  /**
-   * Log HTTP request details
-   */
-  private logRequest(method: string, url: string, body?: string): void {
-    this.logger.debug(
-      {
-        http_method: method,
-        http_url: url,
-        http_body: body ? JSON.parse(body) : undefined,
-      },
-      'Memory HTTP request'
-    );
-  }
-
-  /**
-   * Log HTTP response details
-   */
-  private async logResponse(response: Response): Promise<void> {
-    const bodyText = await response.clone().text();
-    let bodyJson: unknown;
-    try {
-      bodyJson = bodyText ? JSON.parse(bodyText) : undefined;
-    } catch {
-      bodyJson = bodyText;
-    }
-
-    this.logger.debug(
-      {
-        http_status: response.status,
-        http_status_text: response.statusText,
-        http_body: bodyJson,
-      },
-      'HTTP response'
-    );
   }
 }

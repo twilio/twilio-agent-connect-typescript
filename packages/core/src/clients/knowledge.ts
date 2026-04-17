@@ -2,38 +2,19 @@ import {
   KnowledgeBase,
   KnowledgeBaseSchema,
   KnowledgeChunkResult,
+  KnowledgeSearchResponse,
   KnowledgeSearchResponseSchema,
-} from '../types/index';
+} from '../types';
 import { TACConfig } from '../lib/config';
-import { Logger, createLogger } from '../lib/logger';
-
-/**
- * HTTP client options
- */
-interface RequestOptions {
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}
+import { Logger } from '../lib/logger';
+import { BaseClient } from './base';
 
 /**
  * Knowledge client for interacting with Twilio Knowledge Service
- *
- * Provides functionality to retrieve knowledge base metadata and search
- * knowledge bases for relevant content.
  */
-export class KnowledgeClient {
-  private readonly baseUrl = 'https://knowledge.twilio.com';
-  private readonly credentials: { username: string; password: string };
-  private readonly logger: Logger;
-
+export class KnowledgeClient extends BaseClient {
   constructor(config: TACConfig, logger?: Logger) {
-    this.credentials = {
-      username: config.twilioApiKey,
-      password: config.twilioApiToken,
-    };
-    const baseLogger = logger || createLogger({ name: 'tac-knowledge' });
-    this.logger = baseLogger.child({ client: 'knowledge' });
+    super('https://knowledge.twilio.com', config, logger);
   }
 
   /**
@@ -43,25 +24,17 @@ export class KnowledgeClient {
    * @returns Promise containing knowledge base metadata
    */
   public async getKnowledgeBase(knowledgeBaseId: string): Promise<KnowledgeBase> {
-    const url = `${this.baseUrl}/v2/ControlPlane/KnowledgeBases/${knowledgeBaseId}`;
+    const url = `/v2/ControlPlane/KnowledgeBases/${knowledgeBaseId}`;
 
-    const options: RequestOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: this.getBasicAuthHeader(),
-      },
-    };
-
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to get knowledge base: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<KnowledgeBase>(url, 'GET');
+      return KnowledgeBaseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to get knowledge base: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return KnowledgeBaseSchema.parse(data);
   }
 
   /**
@@ -79,7 +52,7 @@ export class KnowledgeClient {
     topK: number = 5,
     knowledgeIds?: string[]
   ): Promise<KnowledgeChunkResult[]> {
-    const url = `${this.baseUrl}/v2/KnowledgeBases/${knowledgeBaseId}/Search`;
+    const url = `/v2/KnowledgeBases/${knowledgeBaseId}/Search`;
 
     const requestBody: Record<string, unknown> = {
       query,
@@ -90,70 +63,15 @@ export class KnowledgeClient {
       requestBody.knowledgeIds = knowledgeIds;
     }
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to search knowledge base: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const validated = KnowledgeSearchResponseSchema.parse(data);
-    return validated.chunks;
-  }
-
-  /**
-   * Get Basic Auth header for HTTP requests
-   */
-  private getBasicAuthHeader(): string {
-    const credentials = `${this.credentials.username}:${this.credentials.password}`;
-    const encoded = Buffer.from(credentials).toString('base64');
-    return `Basic ${encoded}`;
-  }
-
-  /**
-   * Log HTTP request details
-   */
-  private logRequest(method: string, url: string, body?: string): void {
-    this.logger.debug(
-      {
-        http_method: method,
-        http_url: url,
-        http_body: body ? JSON.parse(body) : undefined,
-      },
-      'Knowledge HTTP request'
-    );
-  }
-
-  /**
-   * Log HTTP response details
-   */
-  private async logResponse(response: Response): Promise<void> {
-    const bodyText = await response.clone().text();
-    let bodyJson: unknown;
     try {
-      bodyJson = bodyText ? JSON.parse(bodyText) : undefined;
-    } catch {
-      bodyJson = bodyText;
+      const data = await this.makeRequest<KnowledgeSearchResponse>(url, 'POST', requestBody);
+      const validated = KnowledgeSearchResponseSchema.parse(data);
+      return validated.chunks;
+    } catch (error) {
+      throw new Error(
+        `Failed to search knowledge base: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    this.logger.debug(
-      {
-        http_status: response.status,
-        http_status_text: response.statusText,
-        http_body: bodyJson,
-      },
-      'HTTP response'
-    );
   }
 }

@@ -24,6 +24,7 @@ export { createLogger } from './lib/logger';
 export type { Logger } from './lib/logger';
 
 // API clients
+export { BaseClient } from './clients/base';
 export { MemoryClient } from './clients/memory';
 export { ConversationClient } from './clients/conversation';
 export { KnowledgeClient } from './clients/knowledge';

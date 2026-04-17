@@ -1,6 +1,8 @@
 import { z } from 'zod';
 export { z } from 'zod';
 import pino from 'pino';
+import axios from 'axios';
+import axiosRetry from 'axios-retry';
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
 import Fastify from 'fastify';
@@ -94,6 +96,9 @@ var CommunicationSchema = z.object({
   updatedAt: z.string().nullable().optional(),
   occurredAt: z.string().nullable().optional()
 });
+var ListCommunicationsResponseSchema = z.object({
+  communications: z.array(CommunicationSchema)
+});
 var SendCommunicationParticipantAddressSchema = z.object({
   address: z.string().min(1, "Address is required").max(254),
   channel: ParticipantAddressTypeSchema,
@@ -147,6 +152,9 @@ var ConversationResponseSchema = z.object({
   createdAt: z.string().optional(),
   updatedAt: z.string().optional()
 });
+var ListConversationsResponseSchema = z.object({
+  conversations: z.array(ConversationResponseSchema)
+});
 var ConversationAddressSchema = z.object({
   channel: ParticipantAddressTypeSchema,
   address: z.string(),
@@ -163,6 +171,9 @@ var ConversationParticipantSchema = z.object({
   addresses: z.array(ConversationAddressSchema).default([]),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional()
+});
+var ListParticipantsResponseSchema = z.object({
+  participants: z.array(ConversationParticipantSchema)
 });
 var StatusTimeoutsSchema = z.object({
   inactive: z.number().int().gte(1).nullable().optional(),
@@ -839,18 +850,83 @@ function createLogger(options) {
   return pino(pinoOptions);
 }
 
-// packages/core/src/clients/memory.ts
-var MemoryClient = class {
-  baseUrl = "https://memory.twilio.com";
-  credentials;
+// package.json
+var package_default = {
+  version: "1.0.0"};
+function buildUserAgent() {
+  return `twilio-agent-connect-typescript/${package_default.version}`;
+}
+var BaseClient = class {
+  baseUrl;
   logger;
+  axiosInstance;
+  constructor(baseUrl, config, logger2) {
+    this.baseUrl = baseUrl;
+    this.logger = logger2 || createLogger({ name: this.constructor.name });
+    this.axiosInstance = axios.create({
+      baseURL: baseUrl,
+      timeout: 3e4,
+      auth: {
+        username: config.twilioApiKey,
+        password: config.twilioApiToken
+      },
+      headers: {
+        "User-Agent": buildUserAgent()
+      }
+    });
+    axiosRetry(this.axiosInstance, {
+      retries: 3,
+      retryDelay: (retryCount) => axiosRetry.exponentialDelay(retryCount),
+      retryCondition: (error) => {
+        return axiosRetry.isNetworkOrIdempotentRequestError(error);
+      }
+    });
+    this.axiosInstance.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (axios.isAxiosError(error)) {
+          const status = error.response?.status;
+          const logContext = {
+            error: error.message,
+            method: error.config?.method,
+            url: error.config?.url,
+            status
+          };
+          if (status !== void 0 && status >= 400 && status < 500) {
+            this.logger.warn(logContext, "HTTP request client error");
+          } else {
+            this.logger.error(logContext, "HTTP request error");
+          }
+        }
+        throw error;
+      }
+    );
+  }
+  /**
+   * Make an HTTP request with automatic header injection and error handling
+   *
+   * @param url - The URL path (relative to baseURL)
+   * @param method - HTTP method (GET, POST, etc.)
+   * @param data - Optional request body (will be automatically serialized to JSON)
+   * @param params - Optional query string parameters
+   * @returns Promise resolving to the response data (already parsed from JSON)
+   * @throws Error on timeout, HTTP errors, or network failures
+   */
+  async makeRequest(url, method, data, params) {
+    const response = await this.axiosInstance.request({
+      url,
+      method,
+      data,
+      params
+    });
+    return response.data;
+  }
+};
+
+// packages/core/src/clients/memory.ts
+var MemoryClient = class extends BaseClient {
   constructor(config, logger2) {
-    this.credentials = {
-      username: config.twilioApiKey,
-      password: config.twilioApiToken
-    };
-    const baseLogger = logger2 || createLogger({ name: "tac-memory" });
-    this.logger = baseLogger.child({ client: "memory" });
+    super("https://memory.twilio.com", config, logger2);
   }
   /**
    * Retrieve memories for a specific profile
@@ -862,7 +938,7 @@ var MemoryClient = class {
    */
   async retrieveMemories(serviceSid, profileId, request = {}) {
     try {
-      const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}/Recall`;
+      const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/Recall`;
       this.logger.debug(
         {
           memory_store_id: serviceSid,
@@ -882,30 +958,7 @@ var MemoryClient = class {
       const cleanedBody = Object.fromEntries(
         Object.entries(requestBody).filter(([_, value]) => value !== void 0)
       );
-      const options = {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: this.getBasicAuthHeader()
-        },
-        body: JSON.stringify(cleanedBody)
-      };
-      this.logRequest(options.method, url, options.body);
-      const response = await fetch(url, options);
-      await this.logResponse(response);
-      if (!response.ok) {
-        this.logger.warn(
-          {
-            http_status: response.status,
-            status_text: response.statusText,
-            profile_id: profileId,
-            memory_store_id: serviceSid
-          },
-          "Memory retrieval failed"
-        );
-        return EMPTY_MEMORY_RESPONSE;
-      }
-      const data = await response.json();
+      const data = await this.makeRequest(url, "POST", cleanedBody);
       this.logger.debug(
         {
           memory_store_id: serviceSid,
@@ -938,7 +991,7 @@ var MemoryClient = class {
     } catch (error) {
       this.logger.warn(
         {
-          err: error,
+          error: error instanceof Error ? error.message : String(error),
           profile_id: profileId,
           memory_store_id: serviceSid
         },
@@ -956,27 +1009,20 @@ var MemoryClient = class {
    * @returns Promise containing profile lookup response with normalized value and matching profile IDs
    */
   async lookupProfile(serviceSid, idType, value) {
-    const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/Lookup`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/Lookup`;
     const requestBody = {
       idType,
       value
     };
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to lookup profile: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest(url, "POST", requestBody);
+      return ProfileLookupResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to lookup profile: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return ProfileLookupResponseSchema.parse(data);
   }
   /**
    * Fetch profile information with traits
@@ -987,24 +1033,25 @@ var MemoryClient = class {
    * @returns Promise containing profile response with ID, created timestamp, and traits
    */
   async getProfile(serviceSid, profileId, traitGroups) {
-    let url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}`;
+    const params = {};
     if (traitGroups && traitGroups.length > 0) {
-      url += `?traitGroups=${traitGroups.join(",")}`;
+      params.traitGroups = traitGroups.join(",");
     }
-    const options = {
-      method: "GET",
-      headers: {
-        Authorization: this.getBasicAuthHeader()
-      }
-    };
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to get profile: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest(
+        url,
+        "GET",
+        void 0,
+        Object.keys(params).length > 0 ? params : void 0
+      );
+      return ProfileResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to get profile: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return ProfileResponseSchema.parse(data);
   }
   /**
    * Create an observation for a profile
@@ -1018,7 +1065,7 @@ var MemoryClient = class {
    * @returns Promise containing the created observation
    */
   async createObservation(serviceSid, profileId, content, source = "conversation-intelligence", conversationIds, occurredAt) {
-    const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}/Observations`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/Observations`;
     const requestBody = {
       content,
       source
@@ -1029,22 +1076,15 @@ var MemoryClient = class {
     if (occurredAt) {
       requestBody.occurredAt = occurredAt;
     }
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to create observation: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest(url, "POST", requestBody);
+      return CreateObservationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to create observation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return CreateObservationResponseSchema.parse(data);
   }
   /**
    * Create conversation summaries for a profile
@@ -1055,7 +1095,7 @@ var MemoryClient = class {
    * @returns Promise containing a success message for the created conversation summaries
    */
   async createConversationSummaries(serviceSid, profileId, summaries) {
-    const url = `${this.baseUrl}/v1/Stores/${serviceSid}/Profiles/${profileId}/ConversationSummaries`;
+    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/ConversationSummaries`;
     const requestBody = {
       summaries: summaries.map((s) => ({
         content: s.content,
@@ -1064,82 +1104,28 @@ var MemoryClient = class {
         source: s.source ?? "conversation-intelligence"
       }))
     };
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
+    try {
+      const data = await this.makeRequest(
+        url,
+        "POST",
+        requestBody
+      );
+      return CreateConversationSummariesResponseSchema.parse(data);
+    } catch (error) {
       throw new Error(
-        `Failed to create conversation summaries: ${response.status} ${response.statusText}`
+        `Failed to create conversation summaries: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-    const data = await response.json();
-    return CreateConversationSummariesResponseSchema.parse(data);
-  }
-  /**
-   * Get Basic Auth header for HTTP requests
-   */
-  getBasicAuthHeader() {
-    const credentials = `${this.credentials.username}:${this.credentials.password}`;
-    const encoded = Buffer.from(credentials).toString("base64");
-    return `Basic ${encoded}`;
-  }
-  /**
-   * Log HTTP request details
-   */
-  logRequest(method, url, body) {
-    this.logger.debug(
-      {
-        http_method: method,
-        http_url: url,
-        http_body: body ? JSON.parse(body) : void 0
-      },
-      "Memory HTTP request"
-    );
-  }
-  /**
-   * Log HTTP response details
-   */
-  async logResponse(response) {
-    const bodyText = await response.clone().text();
-    let bodyJson;
-    try {
-      bodyJson = bodyText ? JSON.parse(bodyText) : void 0;
-    } catch {
-      bodyJson = bodyText;
-    }
-    this.logger.debug(
-      {
-        http_status: response.status,
-        http_status_text: response.statusText,
-        http_body: bodyJson
-      },
-      "HTTP response"
-    );
   }
 };
 
 // packages/core/src/clients/conversation.ts
-var ConversationClient = class {
-  baseUrl = "https://conversations.twilio.com";
-  credentials;
+var ConversationClient = class extends BaseClient {
   conversationServiceId;
-  logger;
   constructor(config, logger2) {
-    this.credentials = {
-      username: config.twilioApiKey,
-      password: config.twilioApiToken
-    };
+    super("https://conversations.twilio.com", config, logger2);
     this.conversationServiceId = config.conversationServiceId;
-    const baseLogger = logger2 || createLogger({ name: "tac-conversations" });
-    this.logger = baseLogger.child({ client: "conversations" });
   }
   /**
    * Send a communication using the Conversation Orchestrator Send API
@@ -1149,43 +1135,20 @@ var ConversationClient = class {
    * @returns Promise containing communication response
    */
   async sendCommunication(conversationId, request) {
-    const url = `${this.baseUrl}/v2/Communications`;
+    const url = `/v2/Communications`;
     const requestBody = {
       conversationId,
       ...request
     };
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      const errorBody = await response.clone().text();
-      this.logger.error(
-        {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody,
-          requestBody: options.body
-        },
-        "Send communication failed"
-      );
-      throw new Error(`Failed to send communication: ${response.status} ${response.statusText}`);
-    }
-    if (response.status !== 202) {
-      this.logger.warn(
-        { status: response.status, expected: 202 },
-        "Send API returned unexpected success status (expected 202 Accepted)"
+    try {
+      const data = await this.makeRequest(url, "POST", requestBody);
+      return SendCommunicationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to send communication: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-    const data = await response.json();
-    return SendCommunicationResponseSchema.parse(data);
   }
   /**
    * List communications for a conversation
@@ -1194,26 +1157,17 @@ var ConversationClient = class {
    * @returns Promise containing array of communications
    */
   async listCommunications(conversationId) {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}/Communications`;
-    const options = {
-      method: "GET",
-      headers: {
-        Authorization: this.getBasicAuthHeader()
-      }
-    };
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to list communications: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    if (typeof data === "object" && data !== null && "communications" in data && Array.isArray(data.communications)) {
-      return data.communications.map(
-        (comm) => CommunicationSchema.parse(comm)
+    const url = `/v2/Conversations/${conversationId}/Communications`;
+    try {
+      const data = await this.makeRequest(url, "GET");
+      const validated = ListCommunicationsResponseSchema.parse(data);
+      return validated.communications;
+    } catch (error) {
+      throw new Error(
+        `Failed to list communications: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-    return [];
   }
   /**
    * Create a new conversation
@@ -1222,29 +1176,22 @@ var ConversationClient = class {
    * @returns Promise containing conversation response
    */
   async createConversation(name) {
-    const url = `${this.baseUrl}/v2/Conversations`;
+    const url = `/v2/Conversations`;
     const requestBody = {
       configurationId: this.conversationServiceId
     };
     if (name) {
       requestBody.name = name;
     }
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to create conversation: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest(url, "POST", requestBody);
+      return ConversationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to create conversation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return ConversationResponseSchema.parse(data);
   }
   /**
    * Add a participant to a conversation
@@ -1255,27 +1202,20 @@ var ConversationClient = class {
    * @returns Promise containing participant response
    */
   async addParticipant(conversationId, addresses, participantType) {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}/Participants`;
+    const url = `/v2/Conversations/${conversationId}/Participants`;
     const requestBody = {
       type: participantType,
       addresses
     };
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to add participant: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest(url, "POST", requestBody);
+      return ConversationParticipantSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to add participant: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return ConversationParticipantSchema.parse(data);
   }
   /**
    * List participants in a conversation
@@ -1284,26 +1224,17 @@ var ConversationClient = class {
    * @returns Promise containing array of participants
    */
   async listParticipants(conversationId) {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}/Participants`;
-    const options = {
-      method: "GET",
-      headers: {
-        Authorization: this.getBasicAuthHeader()
-      }
-    };
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to list participants: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    if (typeof data === "object" && data !== null && "participants" in data && Array.isArray(data.participants)) {
-      return data.participants.map(
-        (participant) => ConversationParticipantSchema.parse(participant)
+    const url = `/v2/Conversations/${conversationId}/Participants`;
+    try {
+      const data = await this.makeRequest(url, "GET");
+      const validated = ListParticipantsResponseSchema.parse(data);
+      return validated.participants;
+    } catch (error) {
+      throw new Error(
+        `Failed to list participants: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-    return [];
   }
   /**
    * List conversations with optional filters
@@ -1312,32 +1243,29 @@ var ConversationClient = class {
    * @returns Promise containing array of conversations
    */
   async listConversations(filters) {
-    const urlObj = new URL(`${this.baseUrl}/v2/Conversations`);
+    const url = `/v2/Conversations`;
+    const params = {};
     if (filters?.channelId) {
-      urlObj.searchParams.set("channelId", filters.channelId);
+      params.channelId = filters.channelId;
     }
     if (filters?.status && filters.status.length > 0) {
-      urlObj.searchParams.set("status", filters.status.join(","));
+      params.status = filters.status.join(",");
     }
-    const options = {
-      method: "GET",
-      headers: {
-        Authorization: this.getBasicAuthHeader()
-      }
-    };
-    this.logRequest(options.method, urlObj.toString());
-    const response = await fetch(urlObj.toString(), options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to list conversations: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    if (typeof data === "object" && data !== null && "conversations" in data && Array.isArray(data.conversations)) {
-      return data.conversations.map(
-        (c) => ConversationResponseSchema.parse(c)
+    try {
+      const data = await this.makeRequest(
+        url,
+        "GET",
+        void 0,
+        Object.keys(params).length > 0 ? params : void 0
+      );
+      const validated = ListConversationsResponseSchema.parse(data);
+      return validated.conversations;
+    } catch (error) {
+      throw new Error(
+        `Failed to list conversations: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-    return [];
   }
   /**
    * Update conversation status
@@ -1347,24 +1275,17 @@ var ConversationClient = class {
    * @returns Promise containing updated conversation
    */
   async updateConversation(conversationId, status) {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}`;
+    const url = `/v2/Conversations/${conversationId}`;
     const requestBody = { status };
-    const options = {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to update conversation: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest(url, "PUT", requestBody);
+      return ConversationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to update conversation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return ConversationResponseSchema.parse(data);
   }
   /**
    * Retrieve the details for a single configuration
@@ -1373,86 +1294,23 @@ var ConversationClient = class {
    * @returns Promise containing configuration details
    */
   async getConfiguration(configurationId) {
-    const url = `${this.baseUrl}/v2/ControlPlane/Configurations/${configurationId}`;
-    const options = {
-      method: "GET",
-      headers: {
-        Authorization: this.getBasicAuthHeader()
-      }
-    };
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      const errorBody = await response.clone().text();
-      this.logger.error(
-        {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody
-        },
-        "Get configuration failed"
-      );
-      throw new Error(`Failed to get configuration: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    return ConversationConfigurationSchema.parse(data);
-  }
-  /**
-   * Get Basic Auth header for HTTP requests
-   */
-  getBasicAuthHeader() {
-    const credentials = `${this.credentials.username}:${this.credentials.password}`;
-    const encoded = Buffer.from(credentials).toString("base64");
-    return `Basic ${encoded}`;
-  }
-  /**
-   * Log HTTP request details
-   */
-  logRequest(method, url, body) {
-    this.logger.debug(
-      {
-        http_method: method,
-        http_url: url,
-        http_body: body ? JSON.parse(body) : void 0
-      },
-      "Conversations Service HTTP request"
-    );
-  }
-  /**
-   * Log HTTP response details
-   */
-  async logResponse(response) {
-    const bodyText = await response.clone().text();
-    let bodyJson;
+    const url = `/v2/ControlPlane/Configurations/${configurationId}`;
     try {
-      bodyJson = bodyText ? JSON.parse(bodyText) : void 0;
-    } catch {
-      bodyJson = bodyText;
+      const data = await this.makeRequest(url, "GET");
+      return ConversationConfigurationSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to get configuration: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    this.logger.debug(
-      {
-        http_status: response.status,
-        http_status_text: response.statusText,
-        http_body: bodyJson
-      },
-      "HTTP response"
-    );
   }
 };
 
 // packages/core/src/clients/knowledge.ts
-var KnowledgeClient = class {
-  baseUrl = "https://knowledge.twilio.com";
-  credentials;
-  logger;
+var KnowledgeClient = class extends BaseClient {
   constructor(config, logger2) {
-    this.credentials = {
-      username: config.twilioApiKey,
-      password: config.twilioApiToken
-    };
-    const baseLogger = logger2 || createLogger({ name: "tac-knowledge" });
-    this.logger = baseLogger.child({ client: "knowledge" });
+    super("https://knowledge.twilio.com", config, logger2);
   }
   /**
    * Get knowledge base metadata
@@ -1461,21 +1319,16 @@ var KnowledgeClient = class {
    * @returns Promise containing knowledge base metadata
    */
   async getKnowledgeBase(knowledgeBaseId) {
-    const url = `${this.baseUrl}/v2/ControlPlane/KnowledgeBases/${knowledgeBaseId}`;
-    const options = {
-      method: "GET",
-      headers: {
-        Authorization: this.getBasicAuthHeader()
-      }
-    };
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to get knowledge base: ${response.status} ${response.statusText}`);
+    const url = `/v2/ControlPlane/KnowledgeBases/${knowledgeBaseId}`;
+    try {
+      const data = await this.makeRequest(url, "GET");
+      return KnowledgeBaseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to get knowledge base: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    const data = await response.json();
-    return KnowledgeBaseSchema.parse(data);
   }
   /**
    * Search knowledge base for relevant content
@@ -1487,7 +1340,7 @@ var KnowledgeClient = class {
    * @returns Promise containing array of search result chunks
    */
   async searchKnowledgeBase(knowledgeBaseId, query, topK = 5, knowledgeIds) {
-    const url = `${this.baseUrl}/v2/KnowledgeBases/${knowledgeBaseId}/Search`;
+    const url = `/v2/KnowledgeBases/${knowledgeBaseId}/Search`;
     const requestBody = {
       query,
       top: Math.min(Math.max(topK, 1), 20)
@@ -1496,64 +1349,16 @@ var KnowledgeClient = class {
     if (knowledgeIds && knowledgeIds.length > 0) {
       requestBody.knowledgeIds = knowledgeIds;
     }
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.getBasicAuthHeader()
-      },
-      body: JSON.stringify(requestBody)
-    };
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-    if (!response.ok) {
-      throw new Error(`Failed to search knowledge base: ${response.status} ${response.statusText}`);
-    }
-    const data = await response.json();
-    const validated = KnowledgeSearchResponseSchema.parse(data);
-    return validated.chunks;
-  }
-  /**
-   * Get Basic Auth header for HTTP requests
-   */
-  getBasicAuthHeader() {
-    const credentials = `${this.credentials.username}:${this.credentials.password}`;
-    const encoded = Buffer.from(credentials).toString("base64");
-    return `Basic ${encoded}`;
-  }
-  /**
-   * Log HTTP request details
-   */
-  logRequest(method, url, body) {
-    this.logger.debug(
-      {
-        http_method: method,
-        http_url: url,
-        http_body: body ? JSON.parse(body) : void 0
-      },
-      "Knowledge HTTP request"
-    );
-  }
-  /**
-   * Log HTTP response details
-   */
-  async logResponse(response) {
-    const bodyText = await response.clone().text();
-    let bodyJson;
     try {
-      bodyJson = bodyText ? JSON.parse(bodyText) : void 0;
-    } catch {
-      bodyJson = bodyText;
+      const data = await this.makeRequest(url, "POST", requestBody);
+      const validated = KnowledgeSearchResponseSchema.parse(data);
+      return validated.chunks;
+    } catch (error) {
+      throw new Error(
+        `Failed to search knowledge base: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-    this.logger.debug(
-      {
-        http_status: response.status,
-        http_status_text: response.statusText,
-        http_body: bodyJson
-      },
-      "HTTP response"
-    );
   }
 };
 
@@ -4335,6 +4140,6 @@ var TACServer = class {
   }
 };
 
-export { AuthorInfoSchema, BaseChannel, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

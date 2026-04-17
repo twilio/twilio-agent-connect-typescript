@@ -1,6 +1,5 @@
 import {
   Communication,
-  CommunicationSchema,
   ConversationResponse,
   ConversationResponseSchema,
   ConversationAddress,
@@ -11,39 +10,26 @@ import {
   SendCommunicationResponseSchema,
   ConversationConfiguration,
   ConversationConfigurationSchema,
-} from '../types/index';
+  ListCommunicationsResponse,
+  ListCommunicationsResponseSchema,
+  ListParticipantsResponse,
+  ListParticipantsResponseSchema,
+  ListConversationsResponse,
+  ListConversationsResponseSchema,
+} from '../types';
 import { TACConfig } from '../lib/config';
-import { Logger, createLogger } from '../lib/logger';
-
-/**
- * HTTP client options
- */
-interface RequestOptions {
-  method: string;
-  headers: Record<string, string>;
-  body?: string;
-}
+import { Logger } from '../lib/logger';
+import { BaseClient } from './base';
 
 /**
  * Conversation client for interacting with Twilio Conversations Service
- *
- * Provides functionality to create conversations, add participants,
- * and manage conversation lifecycle.
  */
-export class ConversationClient {
-  private readonly baseUrl = 'https://conversations.twilio.com';
-  private readonly credentials: { username: string; password: string };
+export class ConversationClient extends BaseClient {
   private readonly conversationServiceId: string;
-  private readonly logger: Logger;
 
   constructor(config: TACConfig, logger?: Logger) {
-    this.credentials = {
-      username: config.twilioApiKey,
-      password: config.twilioApiToken,
-    };
+    super('https://conversations.twilio.com', config, logger);
     this.conversationServiceId = config.conversationServiceId;
-    const baseLogger = logger || createLogger({ name: 'tac-conversations' });
-    this.logger = baseLogger.child({ client: 'conversations' });
   }
 
   /**
@@ -57,50 +43,22 @@ export class ConversationClient {
     conversationId: string,
     request: SendCommunicationRequest
   ): Promise<SendCommunicationResponse> {
-    const url = `${this.baseUrl}/v2/Communications`;
+    const url = `/v2/Communications`;
 
     const requestBody = {
       conversationId,
       ...request,
     };
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      const errorBody = await response.clone().text();
-      this.logger.error(
-        {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody,
-          requestBody: options.body,
-        },
-        'Send communication failed'
-      );
-      throw new Error(`Failed to send communication: ${response.status} ${response.statusText}`);
-    }
-
-    // Log if we get an unexpected 2xx status (expected 202 Accepted)
-    if (response.status !== 202) {
-      this.logger.warn(
-        { status: response.status, expected: 202 },
-        'Send API returned unexpected success status (expected 202 Accepted)'
+    try {
+      const data = await this.makeRequest<SendCommunicationResponse>(url, 'POST', requestBody);
+      return SendCommunicationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to send communication: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-
-    const data = await response.json();
-    return SendCommunicationResponseSchema.parse(data);
   }
 
   /**
@@ -110,38 +68,18 @@ export class ConversationClient {
    * @returns Promise containing array of communications
    */
   public async listCommunications(conversationId: string): Promise<Communication[]> {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}/Communications`;
+    const url = `/v2/Conversations/${conversationId}/Communications`;
 
-    const options: RequestOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: this.getBasicAuthHeader(),
-      },
-    };
-
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to list communications: ${response.status} ${response.statusText}`);
-    }
-
-    const data: unknown = await response.json();
-
-    // API returns { communications: [...] }
-    if (
-      typeof data === 'object' &&
-      data !== null &&
-      'communications' in data &&
-      Array.isArray((data as { communications: unknown }).communications)
-    ) {
-      return (data as { communications: unknown[] }).communications.map((comm: unknown) =>
-        CommunicationSchema.parse(comm)
+    try {
+      const data = await this.makeRequest<ListCommunicationsResponse>(url, 'GET');
+      const validated = ListCommunicationsResponseSchema.parse(data);
+      return validated.communications;
+    } catch (error) {
+      throw new Error(
+        `Failed to list communications: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-
-    return [];
   }
 
   /**
@@ -151,7 +89,7 @@ export class ConversationClient {
    * @returns Promise containing conversation response
    */
   public async createConversation(name?: string): Promise<ConversationResponse> {
-    const url = `${this.baseUrl}/v2/Conversations`;
+    const url = `/v2/Conversations`;
 
     const requestBody: Record<string, string> = {
       configurationId: this.conversationServiceId,
@@ -161,25 +99,15 @@ export class ConversationClient {
       requestBody.name = name;
     }
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to create conversation: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<ConversationResponse>(url, 'POST', requestBody);
+      return ConversationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to create conversation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return ConversationResponseSchema.parse(data);
   }
 
   /**
@@ -195,32 +123,22 @@ export class ConversationClient {
     addresses: ConversationAddress[],
     participantType: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT'
   ): Promise<ConversationParticipant> {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}/Participants`;
+    const url = `/v2/Conversations/${conversationId}/Participants`;
 
     const requestBody = {
       type: participantType,
       addresses,
     };
 
-    const options: RequestOptions = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to add participant: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<ConversationParticipant>(url, 'POST', requestBody);
+      return ConversationParticipantSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to add participant: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return ConversationParticipantSchema.parse(data);
   }
 
   /**
@@ -230,37 +148,18 @@ export class ConversationClient {
    * @returns Promise containing array of participants
    */
   public async listParticipants(conversationId: string): Promise<ConversationParticipant[]> {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}/Participants`;
+    const url = `/v2/Conversations/${conversationId}/Participants`;
 
-    const options: RequestOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: this.getBasicAuthHeader(),
-      },
-    };
-
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to list participants: ${response.status} ${response.statusText}`);
-    }
-
-    const data: unknown = await response.json();
-
-    if (
-      typeof data === 'object' &&
-      data !== null &&
-      'participants' in data &&
-      Array.isArray((data as { participants: unknown }).participants)
-    ) {
-      return (data as { participants: unknown[] }).participants.map((participant: unknown) =>
-        ConversationParticipantSchema.parse(participant)
+    try {
+      const data = await this.makeRequest<ListParticipantsResponse>(url, 'GET');
+      const validated = ListParticipantsResponseSchema.parse(data);
+      return validated.participants;
+    } catch (error) {
+      throw new Error(
+        `Failed to list participants: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-
-    return [];
   }
 
   /**
@@ -273,44 +172,31 @@ export class ConversationClient {
     channelId?: string;
     status?: string[];
   }): Promise<ConversationResponse[]> {
-    const urlObj = new URL(`${this.baseUrl}/v2/Conversations`);
+    const url = `/v2/Conversations`;
 
+    const params: Record<string, string> = {};
     if (filters?.channelId) {
-      urlObj.searchParams.set('channelId', filters.channelId);
+      params.channelId = filters.channelId;
     }
     if (filters?.status && filters.status.length > 0) {
-      urlObj.searchParams.set('status', filters.status.join(','));
+      params.status = filters.status.join(',');
     }
 
-    const options: RequestOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: this.getBasicAuthHeader(),
-      },
-    };
-
-    this.logRequest(options.method, urlObj.toString());
-    const response = await fetch(urlObj.toString(), options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to list conversations: ${response.status} ${response.statusText}`);
-    }
-
-    const data: unknown = await response.json();
-
-    if (
-      typeof data === 'object' &&
-      data !== null &&
-      'conversations' in data &&
-      Array.isArray((data as { conversations: unknown }).conversations)
-    ) {
-      return (data as { conversations: unknown[] }).conversations.map((c: unknown) =>
-        ConversationResponseSchema.parse(c)
+    try {
+      const data = await this.makeRequest<ListConversationsResponse>(
+        url,
+        'GET',
+        undefined,
+        Object.keys(params).length > 0 ? params : undefined
+      );
+      const validated = ListConversationsResponseSchema.parse(data);
+      return validated.conversations;
+    } catch (error) {
+      throw new Error(
+        `Failed to list conversations: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
       );
     }
-
-    return [];
   }
 
   /**
@@ -324,29 +210,19 @@ export class ConversationClient {
     conversationId: string,
     status: 'ACTIVE' | 'INACTIVE' | 'CLOSED'
   ): Promise<ConversationResponse> {
-    const url = `${this.baseUrl}/v2/Conversations/${conversationId}`;
+    const url = `/v2/Conversations/${conversationId}`;
 
     const requestBody = { status };
 
-    const options: RequestOptions = {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: this.getBasicAuthHeader(),
-      },
-      body: JSON.stringify(requestBody),
-    };
-
-    this.logRequest(options.method, url, options.body);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      throw new Error(`Failed to update conversation: ${response.status} ${response.statusText}`);
+    try {
+      const data = await this.makeRequest<ConversationResponse>(url, 'PUT', requestBody);
+      return ConversationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to update conversation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    const data = await response.json();
-    return ConversationResponseSchema.parse(data);
   }
 
   /**
@@ -356,78 +232,16 @@ export class ConversationClient {
    * @returns Promise containing configuration details
    */
   public async getConfiguration(configurationId: string): Promise<ConversationConfiguration> {
-    const url = `${this.baseUrl}/v2/ControlPlane/Configurations/${configurationId}`;
+    const url = `/v2/ControlPlane/Configurations/${configurationId}`;
 
-    const options: RequestOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: this.getBasicAuthHeader(),
-      },
-    };
-
-    this.logRequest(options.method, url);
-    const response = await fetch(url, options);
-    await this.logResponse(response);
-
-    if (!response.ok) {
-      const errorBody = await response.clone().text();
-      this.logger.error(
-        {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody,
-        },
-        'Get configuration failed'
-      );
-      throw new Error(`Failed to get configuration: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return ConversationConfigurationSchema.parse(data);
-  }
-
-  /**
-   * Get Basic Auth header for HTTP requests
-   */
-  private getBasicAuthHeader(): string {
-    const credentials = `${this.credentials.username}:${this.credentials.password}`;
-    const encoded = Buffer.from(credentials).toString('base64');
-    return `Basic ${encoded}`;
-  }
-
-  /**
-   * Log HTTP request details
-   */
-  private logRequest(method: string, url: string, body?: string): void {
-    this.logger.debug(
-      {
-        http_method: method,
-        http_url: url,
-        http_body: body ? JSON.parse(body) : undefined,
-      },
-      'Conversations Service HTTP request'
-    );
-  }
-
-  /**
-   * Log HTTP response details
-   */
-  private async logResponse(response: Response): Promise<void> {
-    const bodyText = await response.clone().text();
-    let bodyJson: unknown;
     try {
-      bodyJson = bodyText ? JSON.parse(bodyText) : undefined;
-    } catch {
-      bodyJson = bodyText;
+      const data = await this.makeRequest<ConversationConfiguration>(url, 'GET');
+      return ConversationConfigurationSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to get configuration: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
-
-    this.logger.debug(
-      {
-        http_status: response.status,
-        http_status_text: response.statusText,
-        http_body: bodyJson,
-      },
-      'HTTP response'
-    );
   }
 }

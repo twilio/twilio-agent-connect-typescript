@@ -1,30 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { TACConfig, KnowledgeClient, KnowledgeBase, KnowledgeChunkResult } from '@twilio/tac-core';
 import {
   createKnowledgeSearchTool,
   createKnowledgeSearchToolAsync,
   createKnowledgeTools,
 } from '@twilio/tac-tools';
-
-/**
- * Create a mock Response object with proper clone() support
- */
-function createMockResponse(
-  data: unknown,
-  options: { ok: boolean; status?: number; statusText?: string }
-) {
-  const body = JSON.stringify(data);
-  return {
-    ok: options.ok,
-    status: options.status ?? (options.ok ? 200 : 500),
-    statusText: options.statusText ?? (options.ok ? 'OK' : 'Error'),
-    json: async () => data,
-    text: async () => body,
-    clone: function () {
-      return this;
-    },
-  };
-}
+import MockAdapter from 'axios-mock-adapter';
 
 describe('Knowledge Tools', () => {
   const getTestConfig = () => ({
@@ -39,17 +20,16 @@ describe('Knowledge Tools', () => {
   });
 
   let knowledgeClient: KnowledgeClient;
-  let originalFetch: typeof global.fetch;
+  let mockAdapter: MockAdapter;
 
   beforeEach(() => {
     const config = new TACConfig(getTestConfig());
     knowledgeClient = new KnowledgeClient(config);
-    originalFetch = global.fetch;
+    mockAdapter = new MockAdapter((knowledgeClient as any).axiosInstance);
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
-    vi.restoreAllMocks();
+    mockAdapter.restore();
   });
 
   describe('createKnowledgeSearchTool()', () => {
@@ -93,9 +73,9 @@ describe('Knowledge Tools', () => {
         },
       ];
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: mockChunks }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search')
+        .reply(200, { chunks: mockChunks });
 
       const tool = createKnowledgeSearchTool(
         knowledgeClient,
@@ -114,9 +94,13 @@ describe('Knowledge Tools', () => {
     it('should use custom topK when provided', async () => {
       const mockChunks: KnowledgeChunkResult[] = [];
 
-      global.fetch = vi
-        .fn()
-        .mockResolvedValue(createMockResponse({ chunks: mockChunks }, { ok: true }));
+      mockAdapter
+        .onPost('/v2/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0/Search')
+        .reply(config => {
+          const body = JSON.parse(config.data);
+          expect(body.top).toBe(10);
+          return [200, { chunks: mockChunks }];
+        });
 
       const tool = createKnowledgeSearchTool(
         knowledgeClient,
@@ -129,13 +113,6 @@ describe('Knowledge Tools', () => {
       );
 
       await tool.implementation({ query: 'test' });
-
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          body: expect.stringContaining('"top":10'),
-        })
-      );
     });
 
     it('should convert to OpenAI format correctly', () => {
@@ -186,7 +163,9 @@ describe('Knowledge Tools', () => {
         version: 1,
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockKB, { ok: true }));
+      mockAdapter
+        .onGet('/v2/ControlPlane/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0')
+        .reply(200, mockKB);
 
       const tool = await createKnowledgeSearchToolAsync(
         knowledgeClient,
@@ -198,8 +177,6 @@ describe('Knowledge Tools', () => {
     });
 
     it('should use provided name/description over auto-generated', async () => {
-      global.fetch = vi.fn();
-
       const tool = await createKnowledgeSearchToolAsync(
         knowledgeClient,
         'know_knowledgebase_01abc123def456ghi789jkl0',
@@ -211,7 +188,6 @@ describe('Knowledge Tools', () => {
 
       expect(tool.name).toBe('custom_name');
       expect(tool.description).toBe('Custom description');
-      expect(global.fetch).not.toHaveBeenCalled();
     });
 
     it('should generate fallback description when KB has empty description', async () => {
@@ -225,7 +201,9 @@ describe('Knowledge Tools', () => {
         version: 1,
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockKB, { ok: true }));
+      mockAdapter
+        .onGet('/v2/ControlPlane/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0')
+        .reply(200, mockKB);
 
       const tool = await createKnowledgeSearchToolAsync(
         knowledgeClient,
@@ -260,7 +238,9 @@ describe('Knowledge Tools', () => {
         version: 1,
       };
 
-      global.fetch = vi.fn().mockResolvedValue(createMockResponse(mockKB, { ok: true }));
+      mockAdapter
+        .onGet('/v2/ControlPlane/KnowledgeBases/know_knowledgebase_01abc123def456ghi789jkl0')
+        .reply(200, mockKB);
 
       const factory = createKnowledgeTools(knowledgeClient);
       const tool = await factory.forKnowledgeBaseAsync(
