@@ -359,4 +359,17 @@ describe('ConversationClient', () => {
       await expect(conversationClient.getConfiguration('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd')).rejects.toThrow();
     });
   });
+
+  describe('region support', () => {
+    it('should use region in base URL when configured', () => {
+      const config = new TACConfig({ ...getTestConfig(), twilioRegion: 'test-region' });
+      const regionClient = new ConversationClient(config);
+
+      expect((regionClient as any).baseUrl).toBe('https://conversations.test-region.twilio.com');
+    });
+
+    it('should use default base URL when region is not configured', () => {
+      expect((conversationClient as any).baseUrl).toBe('https://conversations.twilio.com');
+    });
+  });
 });

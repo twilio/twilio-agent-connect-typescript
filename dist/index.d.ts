@@ -27,6 +27,7 @@ declare const TACConfigSchema: z.ZodObject<{
     cintelConfigurationId: z.ZodOptional<z.ZodString>;
     cintelObservationOperatorSid: z.ZodOptional<z.ZodString>;
     cintelSummaryOperatorSid: z.ZodOptional<z.ZodString>;
+    twilioRegion: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     twilioAccountSid: string;
     twilioAuthToken: string;
@@ -40,6 +41,7 @@ declare const TACConfigSchema: z.ZodObject<{
     cintelConfigurationId?: string | undefined;
     cintelObservationOperatorSid?: string | undefined;
     cintelSummaryOperatorSid?: string | undefined;
+    twilioRegion?: string | undefined;
 }, {
     twilioAccountSid: string;
     twilioAuthToken: string;
@@ -53,6 +55,7 @@ declare const TACConfigSchema: z.ZodObject<{
     cintelConfigurationId?: string | undefined;
     cintelObservationOperatorSid?: string | undefined;
     cintelSummaryOperatorSid?: string | undefined;
+    twilioRegion?: string | undefined;
 }>;
 type TACConfigData = z.infer<typeof TACConfigSchema>;
 /**
@@ -71,6 +74,7 @@ declare const EnvironmentVariables: {
     readonly TWILIO_TAC_CI_CONFIGURATION_ID: "TWILIO_TAC_CI_CONFIGURATION_ID";
     readonly TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: "TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID";
     readonly TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: "TWILIO_TAC_CI_SUMMARY_OPERATOR_SID";
+    readonly TWILIO_REGION: "TWILIO_REGION";
 };
 /**
  * Server configuration for built-in Fastify setup
@@ -3607,6 +3611,8 @@ declare class TACConfig {
     readonly cintelConfigurationId?: string;
     readonly cintelObservationOperatorSid?: string;
     readonly cintelSummaryOperatorSid?: string;
+    /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
+    readonly twilioRegion?: string;
     constructor(data: TACConfigData);
     /**
      * Create TACConfig from environment variables.
@@ -3621,6 +3627,7 @@ declare class TACConfig {
      * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
      * - CONVERSATION_SERVICE_ID: Twilio Conversation Configuration ID (required)
      * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
+     * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
      *
      * @throws Error if required environment variables are not set or invalid
      *

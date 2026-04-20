@@ -25,6 +25,7 @@ describe('TACConfig', () => {
       MEMORY_STORE_ID: process.env.MEMORY_STORE_ID,
       CONVERSATION_SERVICE_ID: process.env.CONVERSATION_SERVICE_ID,
       VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
+      TWILIO_REGION: process.env.TWILIO_REGION,
     };
   });
 
@@ -101,6 +102,45 @@ describe('TACConfig', () => {
 
       expect(config.memoryStoreId).toBeUndefined();
       expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+    });
+
+    it('should store twilioRegion when provided', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        twilioRegion: 'test-region',
+      });
+
+      expect(config.twilioRegion).toBe('test-region');
+    });
+
+    it('should leave twilioRegion undefined when not provided', () => {
+      const config = new TACConfig(getTestConfigData());
+
+      expect(config.twilioRegion).toBeUndefined();
+    });
+
+    it('should accept single-character twilioRegion', () => {
+      const config = new TACConfig({ ...getTestConfigData(), twilioRegion: 'a' });
+
+      expect(config.twilioRegion).toBe('a');
+    });
+
+    it('should reject invalid twilioRegion values', () => {
+      const invalidRegions = [
+        'has spaces',
+        'has/slash',
+        'has:colon',
+        'UPPERCASE',
+        '-leading-dash',
+        'trailing-dash-',
+        'a'.repeat(64),
+      ];
+
+      for (const region of invalidRegions) {
+        expect(() => {
+          new TACConfig({ ...getTestConfigData(), twilioRegion: region });
+        }).toThrow('Invalid Twilio region format');
+      }
     });
 
   });
@@ -209,6 +249,24 @@ describe('TACConfig', () => {
       expect(() => {
         TACConfig.fromEnv();
       }).toThrow('Missing required environment variable');
+    });
+
+    it('should read TWILIO_REGION from environment', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_REGION = 'test-region';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.twilioRegion).toBe('test-region');
+    });
+
+    it('should leave twilioRegion undefined when TWILIO_REGION is not set', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_REGION;
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.twilioRegion).toBeUndefined();
     });
   });
 

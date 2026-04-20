@@ -88,6 +88,10 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 - `VOICE_PUBLIC_DOMAIN`: Your ngrok domain (required for voice)
 
+### Optional (Region)
+
+- `TWILIO_REGION`: Twilio region subdomain for API routing
+
 ## Other Examples
 
 - **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel

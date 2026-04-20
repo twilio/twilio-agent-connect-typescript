@@ -187,4 +187,17 @@ describe('KnowledgeClient', () => {
       expect(() => new KnowledgeClient(config)).not.toThrow();
     });
   });
+
+  describe('region support', () => {
+    it('should use region in base URL when configured', () => {
+      const config = new TACConfig({ ...getTestConfig(), twilioRegion: 'test-region' });
+      const regionClient = new KnowledgeClient(config);
+
+      expect((regionClient as any).baseUrl).toBe('https://knowledge.test-region.twilio.com');
+    });
+
+    it('should use default base URL when region is not configured', () => {
+      expect((knowledgeClient as any).baseUrl).toBe('https://knowledge.twilio.com');
+    });
+  });
 });

@@ -28,6 +28,8 @@ export class TACConfig {
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
   public readonly cintelSummaryOperatorSid?: string;
+  /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
+  public readonly twilioRegion?: string;
   constructor(data: TACConfigData) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
@@ -57,6 +59,9 @@ export class TACConfig {
     if (validatedConfig.cintelSummaryOperatorSid) {
       this.cintelSummaryOperatorSid = validatedConfig.cintelSummaryOperatorSid;
     }
+    if (validatedConfig.twilioRegion) {
+      this.twilioRegion = validatedConfig.twilioRegion;
+    }
   }
 
   /**
@@ -72,6 +77,7 @@ export class TACConfig {
    * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
    * - CONVERSATION_SERVICE_ID: Twilio Conversation Configuration ID (required)
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
+   * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    *
    * @throws Error if required environment variables are not set or invalid
    *
@@ -117,6 +123,7 @@ export class TACConfig {
         process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],
       cintelSummaryOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
+      twilioRegion: process.env[EnvironmentVariables.TWILIO_REGION],
     };
 
     return new TACConfig(rawConfig);

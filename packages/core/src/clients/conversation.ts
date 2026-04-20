@@ -28,7 +28,10 @@ export class ConversationClient extends BaseClient {
   private readonly conversationServiceId: string;
 
   constructor(config: TACConfig, logger?: Logger) {
-    super('https://conversations.twilio.com', config, logger);
+    const baseUrl = config.twilioRegion
+      ? `https://conversations.${config.twilioRegion}.twilio.com`
+      : 'https://conversations.twilio.com';
+    super(baseUrl, config, logger);
     this.conversationServiceId = config.conversationServiceId;
   }
 

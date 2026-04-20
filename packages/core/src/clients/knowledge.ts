@@ -14,7 +14,10 @@ import { BaseClient } from './base';
  */
 export class KnowledgeClient extends BaseClient {
   constructor(config: TACConfig, logger?: Logger) {
-    super('https://knowledge.twilio.com', config, logger);
+    const baseUrl = config.twilioRegion
+      ? `https://knowledge.${config.twilioRegion}.twilio.com`
+      : 'https://knowledge.twilio.com';
+    super(baseUrl, config, logger);
   }
 
   /**

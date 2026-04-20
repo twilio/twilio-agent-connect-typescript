@@ -113,4 +113,17 @@ describe('MemoryClient', () => {
       ).rejects.toThrow(/Failed to get profile/);
     });
   });
+
+  describe('region support', () => {
+    it('should use region in base URL when configured', () => {
+      const config = new TACConfig({ ...getTestConfig(), twilioRegion: 'test-region' });
+      const regionClient = new MemoryClient(config);
+
+      expect((regionClient as any).baseUrl).toBe('https://memory.test-region.twilio.com');
+    });
+
+    it('should use default base URL when region is not configured', () => {
+      expect((memoryClient as any).baseUrl).toBe('https://memory.twilio.com');
+    });
+  });
 });

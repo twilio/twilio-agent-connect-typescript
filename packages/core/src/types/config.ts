@@ -27,6 +27,14 @@ export const TACConfigSchema = z.object({
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
+  twilioRegion: z
+    .string()
+    .max(63, 'Invalid Twilio region format (must be a valid DNS label)')
+    .regex(
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+      'Invalid Twilio region format (must be a valid DNS label)'
+    )
+    .optional(),
 });
 
 export type TACConfigData = z.infer<typeof TACConfigSchema>;
@@ -47,6 +55,7 @@ export const EnvironmentVariables = {
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',
+  TWILIO_REGION: 'TWILIO_REGION',
 } as const;
 
 /**
