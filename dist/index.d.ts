@@ -4,7 +4,7 @@ import pino from 'pino';
 import { AxiosInstance } from 'axios';
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
-import { FastifyServerOptions } from 'fastify';
+import { FastifyInstance, FastifyServerOptions } from 'fastify';
 
 /**
  * Channel types supported by the framework
@@ -4663,8 +4663,17 @@ declare function createKnowledgeTools(knowledgeClient: KnowledgeClient): {
  * Server configuration options
  */
 interface TACServerConfig {
-    /** Fastify server options */
+    /** Fastify server options (ignored if `fastifyInstance` is provided) */
     fastify?: FastifyServerOptions;
+    /**
+     * Pre-configured Fastify instance to mount TAC routes onto.
+     *
+     * Use this to control construction-time settings (logger, `trustProxy`,
+     * schema, ...) or to register your own plugins/hooks before TAC's
+     * routes are set up. If provided, the `fastify` options field is
+     * ignored.
+     */
+    fastifyInstance?: FastifyInstance;
     /** Voice server configuration */
     voice?: Partial<VoiceServerConfig>;
     /** Custom webhook paths */
@@ -4694,9 +4703,26 @@ interface TACServerConfig {
  *
  * Provides out-of-the-box setup for SMS and Voice channels with
  * proper webhook handling, WebSocket support, and production-ready defaults.
+ *
+ * Customization:
+ *   - Pass your own Fastify instance via `config.fastifyInstance` to control
+ *     construction-time settings (logger, `trustProxy`, schema, ...) and to
+ *     register plugins/hooks before TAC's routes are set up.
+ *   - Or mutate `server.fastify` after construction to add routes,
+ *     decorators, or hooks — before calling `start()`.
+ *
+ * Example:
+ *   import Fastify from 'fastify';
+ *
+ *   const app = Fastify({ logger: true, trustProxy: true });
+ *   const server = new TACServer(tac, { fastifyInstance: app });
+ *
+ *   server.fastify.get('/health', async () => ({ status: 'ok' }));
+ *
+ *   await server.start();
  */
 declare class TACServer {
-    private readonly fastify;
+    readonly fastify: FastifyInstance;
     private readonly tac;
     private readonly config;
     /** All enabled messaging channels — webhooks are fanned out to each one */

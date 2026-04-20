@@ -134,6 +134,27 @@ await server.start();
 
 For configuration details and environment variables, see the [getting started guide](getting_started/README.md).
 
+### Customizing the Server
+
+`TACServer` exposes its underlying Fastify instance as `server.fastify` so you can add hooks, plugins, or extra routes (e.g. a health check for your load balancer):
+
+```typescript
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import { TACServer } from 'twilio-agent-connect';
+
+// Optional: pass your own Fastify instance to customize logger, trustProxy, etc.
+const app = Fastify({ logger: true, trustProxy: true });
+await app.register(cors, { origin: '*' });
+
+const server = new TACServer(tac, { fastifyInstance: app });
+
+// Add routes alongside TAC's voice/messaging/CI webhooks
+server.fastify.get('/health', async () => ({ status: 'ok' }));
+
+await server.start();
+```
+
 ## How It Works
 
 TAC simplifies building AI agents by handling the integration between Twilio's communication channels and your LLM:

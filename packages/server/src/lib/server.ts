@@ -23,8 +23,18 @@ import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
  * Server configuration options
  */
 export interface TACServerConfig {
-  /** Fastify server options */
+  /** Fastify server options (ignored if `fastifyInstance` is provided) */
   fastify?: FastifyServerOptions;
+
+  /**
+   * Pre-configured Fastify instance to mount TAC routes onto.
+   *
+   * Use this to control construction-time settings (logger, `trustProxy`,
+   * schema, ...) or to register your own plugins/hooks before TAC's
+   * routes are set up. If provided, the `fastify` options field is
+   * ignored.
+   */
+  fastifyInstance?: FastifyInstance;
 
   /** Voice server configuration */
   voice?: Partial<VoiceServerConfig>;
@@ -79,7 +89,7 @@ const DEFAULT_CONFIG = {
   validateWebhooks: true,
 } satisfies Omit<
   TACServerConfig,
-  'fastify' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'
+  'fastify' | 'fastifyInstance' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'
 >;
 
 /**
@@ -87,12 +97,32 @@ const DEFAULT_CONFIG = {
  *
  * Provides out-of-the-box setup for SMS and Voice channels with
  * proper webhook handling, WebSocket support, and production-ready defaults.
+ *
+ * Customization:
+ *   - Pass your own Fastify instance via `config.fastifyInstance` to control
+ *     construction-time settings (logger, `trustProxy`, schema, ...) and to
+ *     register plugins/hooks before TAC's routes are set up.
+ *   - Or mutate `server.fastify` after construction to add routes,
+ *     decorators, or hooks — before calling `start()`.
+ *
+ * Example:
+ *   import Fastify from 'fastify';
+ *
+ *   const app = Fastify({ logger: true, trustProxy: true });
+ *   const server = new TACServer(tac, { fastifyInstance: app });
+ *
+ *   server.fastify.get('/health', async () => ({ status: 'ok' }));
+ *
+ *   await server.start();
  */
 export class TACServer {
-  private readonly fastify: FastifyInstance;
+  public readonly fastify: FastifyInstance;
   private readonly tac: TAC;
   private readonly config: Required<
-    Omit<TACServerConfig, 'fastify' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'>
+    Omit<
+      TACServerConfig,
+      'fastify' | 'fastifyInstance' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'
+    >
   > & {
     handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>;
   };
@@ -135,23 +165,28 @@ export class TACServer {
         'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
       );
     }
-    // Initialize Fastify with Pino logger
-    this.fastify = Fastify({
-      logger: this.config.development
-        ? {
-            level: process.env.LOG_LEVEL || 'info',
-            transport: {
-              target: 'pino-pretty',
-              options: {
-                colorize: true,
+    // Use the user-supplied Fastify instance if provided; otherwise create
+    // a default one with Pino logging.
+    if (config.fastifyInstance) {
+      this.fastify = config.fastifyInstance;
+    } else {
+      this.fastify = Fastify({
+        logger: this.config.development
+          ? {
+              level: process.env.LOG_LEVEL || 'info',
+              transport: {
+                target: 'pino-pretty',
+                options: {
+                  colorize: true,
+                },
               },
+            }
+          : {
+              level: process.env.LOG_LEVEL || 'info',
             },
-          }
-        : {
-            level: process.env.LOG_LEVEL || 'info',
-          },
-      ...config.fastify,
-    });
+        ...config.fastify,
+      });
+    }
   }
 
   /**
@@ -384,14 +419,17 @@ export class TACServer {
    */
   public async start(): Promise<void> {
     try {
-      // Register form body parser for POST requests
-      await this.fastify.register(formbody);
-
-      // Register WebSocket support
-      await this.fastify.register(websocket);
-
-      // Register graceful shutdown - waits for WebSockets to close
-      await this.fastify.register(gracefulShutdown);
+      // Register required plugins, guarding against users who pre-registered
+      // them on a supplied `fastifyInstance` (duplicate registration throws).
+      if (!this.fastify.hasContentTypeParser('application/x-www-form-urlencoded')) {
+        await this.fastify.register(formbody);
+      }
+      if (!this.fastify.hasDecorator('websocketServer')) {
+        await this.fastify.register(websocket);
+      }
+      if (!this.fastify.hasDecorator('gracefulShutdown')) {
+        await this.fastify.register(gracefulShutdown);
+      }
 
       // Register webhook signature validation (must be after formbody for body access)
       this.registerWebhookValidation();

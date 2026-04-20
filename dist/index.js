@@ -3860,20 +3860,24 @@ var TACServer = class {
         'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
       );
     }
-    this.fastify = Fastify({
-      logger: this.config.development ? {
-        level: process.env.LOG_LEVEL || "info",
-        transport: {
-          target: "pino-pretty",
-          options: {
-            colorize: true
+    if (config.fastifyInstance) {
+      this.fastify = config.fastifyInstance;
+    } else {
+      this.fastify = Fastify({
+        logger: this.config.development ? {
+          level: process.env.LOG_LEVEL || "info",
+          transport: {
+            target: "pino-pretty",
+            options: {
+              colorize: true
+            }
           }
-        }
-      } : {
-        level: process.env.LOG_LEVEL || "info"
-      },
-      ...config.fastify
-    });
+        } : {
+          level: process.env.LOG_LEVEL || "info"
+        },
+        ...config.fastify
+      });
+    }
   }
   /**
    * Get the full URL for webhook validation
@@ -4063,9 +4067,15 @@ var TACServer = class {
    */
   async start() {
     try {
-      await this.fastify.register(formbody);
-      await this.fastify.register(websocket);
-      await this.fastify.register(gracefulShutdown);
+      if (!this.fastify.hasContentTypeParser("application/x-www-form-urlencoded")) {
+        await this.fastify.register(formbody);
+      }
+      if (!this.fastify.hasDecorator("websocketServer")) {
+        await this.fastify.register(websocket);
+      }
+      if (!this.fastify.hasDecorator("gracefulShutdown")) {
+        await this.fastify.register(gracefulShutdown);
+      }
       this.registerWebhookValidation();
       await this.setupRoutes();
       this.fastify.gracefulShutdown(async (signal) => {

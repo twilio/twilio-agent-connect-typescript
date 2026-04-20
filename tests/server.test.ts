@@ -677,3 +677,211 @@ describe('TACServer with conversationRelayConfig', () => {
     );
   });
 });
+
+describe('TACServer customization', () => {
+  const getTestConfig = () => ({
+    twilioAccountSid: 'ACtest123456789',
+    twilioAuthToken: 'test_token_123',
+    twilioApiKey: 'test_api_key',
+    twilioApiToken: 'test_api_token',
+    twilioPhoneNumber: '+15551234567',
+    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  let tac: TAC;
+  let server: TACServer;
+  let currentPort: number;
+
+  beforeEach(() => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+    mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
+
+    currentPort = getNextPort();
+
+    const config = new TACConfig(getTestConfig());
+    tac = new TAC({ config });
+
+    const smsChannel = new SMSChannel(tac);
+    const voiceChannel = new VoiceChannel(tac);
+    tac.registerChannel(smsChannel);
+    tac.registerChannel(voiceChannel);
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  it('uses the provided Fastify instance', async () => {
+    const Fastify = (await import('fastify')).default;
+    const customApp = Fastify({ logger: false });
+
+    server = new TACServer(tac, {
+      fastifyInstance: customApp,
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    expect(server.fastify).toBe(customApp);
+  });
+
+  it('mounts TAC endpoints and user routes on a provided Fastify instance', async () => {
+    const Fastify = (await import('fastify')).default;
+    const customApp = Fastify({ logger: false });
+
+    // User registers their own route + hook before TAC start()
+    customApp.get('/health', async () => ({ status: 'ok' }));
+    customApp.addHook('onSend', async (_req, reply, payload) => {
+      reply.header('x-user-hook', 'yes');
+      return payload;
+    });
+
+    server = new TACServer(tac, {
+      fastifyInstance: customApp,
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    // User route is reachable
+    const health = await fetch(`http://localhost:${currentPort}/health`);
+    expect(health.status).toBe(200);
+    expect(await health.json()).toEqual({ status: 'ok' });
+
+    // User hook also fires on TAC's own routes
+    const twiml = await fetch(`http://localhost:${currentPort}/twiml`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
+    });
+    expect(twiml.status).not.toBe(404); // TAC /twiml is mounted
+    expect(twiml.headers.get('x-user-hook')).toBe('yes');
+
+    // User hook also fires on the /webhook (messaging) route
+    const sms = await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'From=%2B15551234567&Body=hi',
+    });
+    expect(sms.status).not.toBe(404); // TAC /webhook is mounted
+    expect(sms.headers.get('x-user-hook')).toBe('yes');
+  });
+
+  it('does not crash when user pre-registers plugins TAC also needs', async () => {
+    const Fastify = (await import('fastify')).default;
+    const formbody = (await import('@fastify/formbody')).default;
+    const websocket = (await import('@fastify/websocket')).default;
+
+    const customApp = Fastify({ logger: false });
+    // Simulate a user who registers formbody + websocket themselves for their
+    // own routes. start() should detect and skip duplicate registration.
+    await customApp.register(formbody);
+    await customApp.register(websocket);
+
+    server = new TACServer(tac, {
+      fastifyInstance: customApp,
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    // Must not throw
+    await server.start();
+
+    // TAC's form-body-parsed routes still work
+    const resp = await fetch(`http://localhost:${currentPort}/twiml`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
+    });
+    expect(resp.status).not.toBe(404);
+  });
+
+  it('creates a default Fastify instance when none is provided', () => {
+    server = new TACServer(tac, {
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    expect(server.fastify).toBeDefined();
+    expect(typeof server.fastify.listen).toBe('function');
+  });
+
+  it('exposes the same Fastify instance before and after start()', async () => {
+    server = new TACServer(tac, {
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    const before = server.fastify;
+    await server.start();
+    const after = server.fastify;
+
+    expect(after).toBe(before);
+  });
+
+  it('allows adding a custom route to server.fastify after construction', async () => {
+    server = new TACServer(tac, {
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    server.fastify.get('/health', async () => ({ status: 'ok' }));
+
+    await server.start();
+
+    const resp = await fetch(`http://localhost:${currentPort}/health`);
+    expect(resp.status).toBe(200);
+    expect(await resp.json()).toEqual({ status: 'ok' });
+  });
+
+  it('allows adding a hook to server.fastify after construction', async () => {
+    server = new TACServer(tac, {
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    server.fastify.addHook('onSend', async (_request, reply, payload) => {
+      reply.header('x-test', 'yes');
+      return payload;
+    });
+
+    server.fastify.get('/ping', async () => ({ ok: true }));
+
+    await server.start();
+
+    const resp = await fetch(`http://localhost:${currentPort}/ping`);
+    expect(resp.headers.get('x-test')).toBe('yes');
+  });
+
+  it('allows adding a custom error handler on server.fastify', async () => {
+    server = new TACServer(tac, {
+      validateWebhooks: false,
+      voice: { port: currentPort },
+    });
+
+    class MyError extends Error {}
+
+    server.fastify.setErrorHandler(async (error, _request, reply) => {
+      if (error instanceof MyError) {
+        await reply.code(418).send({ handled: true });
+        return;
+      }
+      throw error;
+    });
+
+    server.fastify.get('/boom', async () => {
+      throw new MyError('kapow');
+    });
+
+    await server.start();
+
+    const resp = await fetch(`http://localhost:${currentPort}/boom`);
+    expect(resp.status).toBe(418);
+    expect(await resp.json()).toEqual({ handled: true });
+  });
+});
