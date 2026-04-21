@@ -11,9 +11,8 @@
  *     Then open http://localhost:8000 in a browser.
  *
  * Required env vars (in addition to standard TAC vars):
- *     TWILIO_API_KEY                  - API Key SID (starts with SK)
- *     TWILIO_API_TOKEN                - API Token
  *     TWILIO_CONVERSATION_SERVICE_SID - Conversations v1 Service SID (starts with IS)
+ *     OPENAI_API_KEY                  - OpenAI API key
  */
 
 import { config } from 'dotenv';
@@ -183,7 +182,7 @@ app.post('/token', async (request, reply) => {
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const apiKey = process.env.TWILIO_API_KEY;
-  const apiSecret = process.env.TWILIO_API_TOKEN;
+  const apiSecret = process.env.TWILIO_API_SECRET;
   const serviceSid = process.env.TWILIO_CONVERSATION_SERVICE_SID;
 
   if (!accountSid || !apiKey || !apiSecret || !serviceSid) {

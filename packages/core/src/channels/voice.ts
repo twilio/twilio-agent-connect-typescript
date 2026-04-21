@@ -440,7 +440,8 @@ export class VoiceChannel extends BaseChannel {
       {
         ...conversationRelayConfig,
         conversationConfiguration:
-          conversationRelayConfig.conversationConfiguration ?? this.config.conversationServiceId,
+          conversationRelayConfig.conversationConfiguration ??
+          this.config.conversationConfigurationId,
       },
       actionUrl ? { actionUrl } : undefined
     );

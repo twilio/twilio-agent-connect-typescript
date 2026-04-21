@@ -32,8 +32,8 @@ export abstract class BaseClient {
       baseURL: baseUrl,
       timeout: 30000,
       auth: {
-        username: config.twilioApiKey,
-        password: config.twilioApiToken,
+        username: config.apiKey,
+        password: config.apiSecret,
       },
       headers: {
         'User-Agent': buildUserAgent(),

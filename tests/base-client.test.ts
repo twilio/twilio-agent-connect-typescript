@@ -14,12 +14,12 @@ describe('BaseClient', () => {
 
   beforeEach(() => {
     const config = new TACConfig({
-      twilioAccountSid: 'ACtest',
-      twilioAuthToken: 'test_auth_token',
-      twilioPhoneNumber: '+15555555555',
-      twilioApiKey: 'SKtest',
-      twilioApiToken: 'test_token',
-      conversationServiceId: 'conv_configuration_00000000000000000000000000',
+      accountSid: 'ACtest',
+      authToken: 'test_auth_token',
+      phoneNumber: '+15555555555',
+      apiKey: 'SKtest',
+      apiSecret: 'test_token',
+      conversationConfigurationId: 'conv_configuration_00000000000000000000000000',
       knowledgeApiUrl: 'https://knowledge.twilio.com',
       memoryApiUrl: 'https://memory.twilio.com',
       conversationsApiUrl: 'https://conversations.twilio.com',

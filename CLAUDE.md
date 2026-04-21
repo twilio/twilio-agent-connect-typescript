@@ -62,7 +62,7 @@ getting_started/  # Example apps (OpenAI integration)
   - **Type safety**: Generic type parameters on `makeRequest<T>()` for better IDE support
   - **Validation**: Zod schemas validate all responses at runtime
   - **Error logging**: Logs 4xx client errors as warnings, 5xx/network failures as errors via interceptors
-  - Credentials consolidated at `TACConfig` level (twilioApiKey/twilioApiToken shared across clients)
+  - Credentials consolidated at `TACConfig` level (apiKey/apiSecret shared across clients)
 - **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server with default `welcomeGreeting` for voice calls; customizable via `conversationRelayConfig`
 
 ## Dependencies

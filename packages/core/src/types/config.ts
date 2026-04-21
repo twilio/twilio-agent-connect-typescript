@@ -10,24 +10,24 @@ export type ChannelType = z.infer<typeof ChannelTypeSchema>;
  * TAC configuration schema
  */
 export const TACConfigSchema = z.object({
-  twilioAccountSid: z.string().min(1, 'Twilio Account SID is required'),
-  twilioAuthToken: z.string().min(1, 'Twilio Auth Token is required'),
-  twilioApiKey: z.string().min(1, 'Twilio API Key is required'),
-  twilioApiToken: z.string().min(1, 'Twilio API Token is required'),
-  twilioPhoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
+  accountSid: z.string().min(1, 'Twilio Account SID is required'),
+  authToken: z.string().min(1, 'Twilio Auth Token is required'),
+  apiKey: z.string().min(1, 'Twilio API Key is required'),
+  apiSecret: z.string().min(1, 'Twilio API Secret is required'),
+  phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
   memoryStoreId: z
     .string()
     .regex(/^mem_(service|store)_[0-9a-z]{26}$/, 'Invalid Memory Store ID format')
     .optional(),
   traitGroups: z.array(z.string()).optional(),
-  conversationServiceId: z
+  conversationConfigurationId: z
     .string()
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format'),
   voicePublicDomain: z.string().url().optional(),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
-  twilioRegion: z
+  region: z
     .string()
     .max(63, 'Invalid Twilio region format (must be a valid DNS label)')
     .regex(
@@ -46,11 +46,11 @@ export const EnvironmentVariables = {
   TWILIO_ACCOUNT_SID: 'TWILIO_ACCOUNT_SID',
   TWILIO_AUTH_TOKEN: 'TWILIO_AUTH_TOKEN',
   TWILIO_API_KEY: 'TWILIO_API_KEY',
-  TWILIO_API_TOKEN: 'TWILIO_API_TOKEN',
+  TWILIO_API_SECRET: 'TWILIO_API_SECRET',
   TWILIO_PHONE_NUMBER: 'TWILIO_PHONE_NUMBER',
   MEMORY_STORE_ID: 'MEMORY_STORE_ID',
   TRAIT_GROUPS: 'TRAIT_GROUPS',
-  CONVERSATION_SERVICE_ID: 'CONVERSATION_SERVICE_ID',
+  TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
   VOICE_PUBLIC_DOMAIN: 'VOICE_PUBLIC_DOMAIN',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',

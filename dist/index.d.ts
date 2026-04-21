@@ -15,47 +15,47 @@ type ChannelType = z.infer<typeof ChannelTypeSchema>;
  * TAC configuration schema
  */
 declare const TACConfigSchema: z.ZodObject<{
-    twilioAccountSid: z.ZodString;
-    twilioAuthToken: z.ZodString;
-    twilioApiKey: z.ZodString;
-    twilioApiToken: z.ZodString;
-    twilioPhoneNumber: z.ZodString;
+    accountSid: z.ZodString;
+    authToken: z.ZodString;
+    apiKey: z.ZodString;
+    apiSecret: z.ZodString;
+    phoneNumber: z.ZodString;
     memoryStoreId: z.ZodOptional<z.ZodString>;
     traitGroups: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
-    conversationServiceId: z.ZodString;
+    conversationConfigurationId: z.ZodString;
     voicePublicDomain: z.ZodOptional<z.ZodString>;
     cintelConfigurationId: z.ZodOptional<z.ZodString>;
     cintelObservationOperatorSid: z.ZodOptional<z.ZodString>;
     cintelSummaryOperatorSid: z.ZodOptional<z.ZodString>;
-    twilioRegion: z.ZodOptional<z.ZodString>;
+    region: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    twilioAccountSid: string;
-    twilioAuthToken: string;
-    twilioApiKey: string;
-    twilioApiToken: string;
-    twilioPhoneNumber: string;
-    conversationServiceId: string;
+    accountSid: string;
+    authToken: string;
+    apiKey: string;
+    apiSecret: string;
+    phoneNumber: string;
+    conversationConfigurationId: string;
     memoryStoreId?: string | undefined;
     traitGroups?: string[] | undefined;
     voicePublicDomain?: string | undefined;
     cintelConfigurationId?: string | undefined;
     cintelObservationOperatorSid?: string | undefined;
     cintelSummaryOperatorSid?: string | undefined;
-    twilioRegion?: string | undefined;
+    region?: string | undefined;
 }, {
-    twilioAccountSid: string;
-    twilioAuthToken: string;
-    twilioApiKey: string;
-    twilioApiToken: string;
-    twilioPhoneNumber: string;
-    conversationServiceId: string;
+    accountSid: string;
+    authToken: string;
+    apiKey: string;
+    apiSecret: string;
+    phoneNumber: string;
+    conversationConfigurationId: string;
     memoryStoreId?: string | undefined;
     traitGroups?: string[] | undefined;
     voicePublicDomain?: string | undefined;
     cintelConfigurationId?: string | undefined;
     cintelObservationOperatorSid?: string | undefined;
     cintelSummaryOperatorSid?: string | undefined;
-    twilioRegion?: string | undefined;
+    region?: string | undefined;
 }>;
 type TACConfigData = z.infer<typeof TACConfigSchema>;
 /**
@@ -65,11 +65,11 @@ declare const EnvironmentVariables: {
     readonly TWILIO_ACCOUNT_SID: "TWILIO_ACCOUNT_SID";
     readonly TWILIO_AUTH_TOKEN: "TWILIO_AUTH_TOKEN";
     readonly TWILIO_API_KEY: "TWILIO_API_KEY";
-    readonly TWILIO_API_TOKEN: "TWILIO_API_TOKEN";
+    readonly TWILIO_API_SECRET: "TWILIO_API_SECRET";
     readonly TWILIO_PHONE_NUMBER: "TWILIO_PHONE_NUMBER";
     readonly MEMORY_STORE_ID: "MEMORY_STORE_ID";
     readonly TRAIT_GROUPS: "TRAIT_GROUPS";
-    readonly CONVERSATION_SERVICE_ID: "CONVERSATION_SERVICE_ID";
+    readonly TWILIO_CONVERSATION_CONFIGURATION_ID: "TWILIO_CONVERSATION_CONFIGURATION_ID";
     readonly VOICE_PUBLIC_DOMAIN: "VOICE_PUBLIC_DOMAIN";
     readonly TWILIO_TAC_CI_CONFIGURATION_ID: "TWILIO_TAC_CI_CONFIGURATION_ID";
     readonly TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: "TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID";
@@ -2304,6 +2304,7 @@ declare const SetupMessageSchema: z.ZodObject<{
     customParameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
     type: "setup";
+    accountSid: string;
     direction: string;
     from: string;
     to: string;
@@ -2311,13 +2312,13 @@ declare const SetupMessageSchema: z.ZodObject<{
     callSid: string;
     callType: string;
     callStatus: string;
-    accountSid: string;
     parentCallSid?: string | undefined;
     forwardedFrom?: string | undefined;
     callerName?: string | undefined;
     customParameters?: Record<string, unknown> | undefined;
 }, {
     type: "setup";
+    accountSid: string;
     direction: string;
     from: string;
     to: string;
@@ -2325,7 +2326,6 @@ declare const SetupMessageSchema: z.ZodObject<{
     callSid: string;
     callType: string;
     callStatus: string;
-    accountSid: string;
     parentCallSid?: string | undefined;
     forwardedFrom?: string | undefined;
     callerName?: string | undefined;
@@ -2391,6 +2391,7 @@ declare const WebSocketMessageSchema: z.ZodUnion<[z.ZodObject<{
     customParameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
 }, "strip", z.ZodTypeAny, {
     type: "setup";
+    accountSid: string;
     direction: string;
     from: string;
     to: string;
@@ -2398,13 +2399,13 @@ declare const WebSocketMessageSchema: z.ZodUnion<[z.ZodObject<{
     callSid: string;
     callType: string;
     callStatus: string;
-    accountSid: string;
     parentCallSid?: string | undefined;
     forwardedFrom?: string | undefined;
     callerName?: string | undefined;
     customParameters?: Record<string, unknown> | undefined;
 }, {
     type: "setup";
+    accountSid: string;
     direction: string;
     from: string;
     to: string;
@@ -2412,7 +2413,6 @@ declare const WebSocketMessageSchema: z.ZodUnion<[z.ZodObject<{
     callSid: string;
     callType: string;
     callStatus: string;
-    accountSid: string;
     parentCallSid?: string | undefined;
     forwardedFrom?: string | undefined;
     callerName?: string | undefined;
@@ -3593,26 +3593,26 @@ declare class TACMemoryResponse {
  *
  * // Or create manually
  * const config = new TACConfig({
- *   twilioAccountSid: 'ACxxxx',
+ *   accountSid: 'ACxxxx',
  *   // ...
  * });
  * ```
  */
 declare class TACConfig {
-    readonly twilioAccountSid: string;
-    readonly twilioAuthToken: string;
-    readonly twilioApiKey: string;
-    readonly twilioApiToken: string;
-    readonly twilioPhoneNumber: string;
+    readonly accountSid: string;
+    readonly authToken: string;
+    readonly apiKey: string;
+    readonly apiSecret: string;
+    readonly phoneNumber: string;
     readonly memoryStoreId?: string;
     readonly traitGroups?: string[];
-    readonly conversationServiceId: string;
+    readonly conversationConfigurationId: string;
     readonly voicePublicDomain?: string;
     readonly cintelConfigurationId?: string;
     readonly cintelObservationOperatorSid?: string;
     readonly cintelSummaryOperatorSid?: string;
     /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
-    readonly twilioRegion?: string;
+    readonly region?: string;
     constructor(data: TACConfigData);
     /**
      * Create TACConfig from environment variables.
@@ -3621,11 +3621,11 @@ declare class TACConfig {
      * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
      * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
      * - TWILIO_API_KEY: Twilio API Key (required)
-     * - TWILIO_API_TOKEN: Twilio API Token (required)
+     * - TWILIO_API_SECRET: Twilio API Secret (required)
      * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
      * - MEMORY_STORE_ID: Memory Store ID (optional, for Twilio Memory)
      * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
-     * - CONVERSATION_SERVICE_ID: Twilio Conversation Configuration ID (required)
+     * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
      * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
      * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
      *
@@ -3759,7 +3759,7 @@ declare class MemoryClient extends BaseClient {
  * Conversation client for interacting with Twilio Conversations Service
  */
 declare class ConversationClient extends BaseClient {
-    private readonly conversationServiceId;
+    private readonly conversationConfigurationId;
     constructor(config: TACConfig, logger?: Logger);
     /**
      * Send a communication using the Conversation Orchestrator Send API

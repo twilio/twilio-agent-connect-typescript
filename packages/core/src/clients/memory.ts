@@ -21,8 +21,8 @@ import { BaseClient } from './base';
  */
 export class MemoryClient extends BaseClient {
   constructor(config: TACConfig, logger?: Logger) {
-    const baseUrl = config.twilioRegion
-      ? `https://memory.${config.twilioRegion}.twilio.com`
+    const baseUrl = config.region
+      ? `https://memory.${config.region}.twilio.com`
       : 'https://memory.twilio.com';
     super(baseUrl, config, logger);
   }

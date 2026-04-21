@@ -7,13 +7,13 @@ import MockAdapter from 'axios-mock-adapter';
 describe('KnowledgeClient', () => {
   const getTestConfig = () => ({
 
-    twilioAccountSid: 'ACtest123',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
+    accountSid: 'ACtest123',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
     memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   let knowledgeClient: KnowledgeClient;
@@ -190,7 +190,7 @@ describe('KnowledgeClient', () => {
 
   describe('region support', () => {
     it('should use region in base URL when configured', () => {
-      const config = new TACConfig({ ...getTestConfig(), twilioRegion: 'test-region' });
+      const config = new TACConfig({ ...getTestConfig(), region: 'test-region' });
       const regionClient = new KnowledgeClient(config);
 
       expect((regionClient as any).baseUrl).toBe('https://knowledge.test-region.twilio.com');

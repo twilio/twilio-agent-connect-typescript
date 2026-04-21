@@ -75,9 +75,9 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - `TWILIO_ACCOUNT_SID`: Twilio account SID
 - `TWILIO_AUTH_TOKEN`: Twilio auth token
 - `TWILIO_API_KEY`: Twilio API key
-- `TWILIO_API_TOKEN`: Twilio API token
+- `TWILIO_API_SECRET`: Twilio API secret
 - `TWILIO_PHONE_NUMBER`: Your Twilio phone number
-- `CONVERSATION_SERVICE_ID`: Conversation service ID
+- `TWILIO_CONVERSATION_CONFIGURATION_ID`: Conversation configuration ID
 - `OPENAI_API_KEY`: Your OpenAI API key (for OpenAI example)
 
 ### Optional (Memory)

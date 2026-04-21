@@ -3,13 +3,13 @@ import { TACConfig } from '@twilio/tac-core';
 
 describe('TACConfig', () => {
   const getTestConfigData = () => ({
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'SKtest123456789',
-    twilioApiToken: 'test_api_token_123',
-    twilioPhoneNumber: '+15551234567',
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'SKtest123456789',
+    apiSecret: 'test_api_token_123',
+    phoneNumber: '+15551234567',
     memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   // Store original env vars
@@ -20,10 +20,10 @@ describe('TACConfig', () => {
       TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
       TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
       TWILIO_API_KEY: process.env.TWILIO_API_KEY,
-      TWILIO_API_TOKEN: process.env.TWILIO_API_TOKEN,
+      TWILIO_API_SECRET: process.env.TWILIO_API_SECRET,
       TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
       MEMORY_STORE_ID: process.env.MEMORY_STORE_ID,
-      CONVERSATION_SERVICE_ID: process.env.CONVERSATION_SERVICE_ID,
+      TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
       VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
     };
@@ -45,11 +45,11 @@ describe('TACConfig', () => {
       const configData = getTestConfigData();
       const config = new TACConfig(configData);
 
-      expect(config.twilioAccountSid).toBe('ACtest123456789');
-      expect(config.twilioAuthToken).toBe('test_token_123');
-      expect(config.twilioPhoneNumber).toBe('+15551234567');
+      expect(config.accountSid).toBe('ACtest123456789');
+      expect(config.authToken).toBe('test_token_123');
+      expect(config.phoneNumber).toBe('+15551234567');
       expect(config.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
-      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
     it('should validate required fields', () => {
@@ -61,8 +61,8 @@ describe('TACConfig', () => {
     it('should validate Twilio SID formats', () => {
       const invalidConfig = {
         ...getTestConfigData(),
-        twilioAccountSid: 'invalid_sid',
-        conversationServiceId: 'invalid_conv_sid',
+        accountSid: 'invalid_sid',
+        conversationConfigurationId: 'invalid_conv_sid',
       };
 
       expect(() => {
@@ -73,7 +73,7 @@ describe('TACConfig', () => {
     it('should reject legacy comms_service format', () => {
       const legacyConfig = {
         ...getTestConfigData(),
-        conversationServiceId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
+        conversationConfigurationId: 'comms_service_01kbjqhn79f0fvwfsxqzd5nqhd',
       };
 
       expect(() => {
@@ -101,31 +101,31 @@ describe('TACConfig', () => {
       const config = new TACConfig(configWithoutMemory);
 
       expect(config.memoryStoreId).toBeUndefined();
-      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
-    it('should store twilioRegion when provided', () => {
+    it('should store region when provided', () => {
       const config = new TACConfig({
         ...getTestConfigData(),
-        twilioRegion: 'test-region',
+        region: 'test-region',
       });
 
-      expect(config.twilioRegion).toBe('test-region');
+      expect(config.region).toBe('test-region');
     });
 
-    it('should leave twilioRegion undefined when not provided', () => {
+    it('should leave region undefined when not provided', () => {
       const config = new TACConfig(getTestConfigData());
 
-      expect(config.twilioRegion).toBeUndefined();
+      expect(config.region).toBeUndefined();
     });
 
-    it('should accept single-character twilioRegion', () => {
-      const config = new TACConfig({ ...getTestConfigData(), twilioRegion: 'a' });
+    it('should accept single-character region', () => {
+      const config = new TACConfig({ ...getTestConfigData(), region: 'a' });
 
-      expect(config.twilioRegion).toBe('a');
+      expect(config.region).toBe('a');
     });
 
-    it('should reject invalid twilioRegion values', () => {
+    it('should reject invalid region values', () => {
       const invalidRegions = [
         'has spaces',
         'has/slash',
@@ -138,7 +138,7 @@ describe('TACConfig', () => {
 
       for (const region of invalidRegions) {
         expect(() => {
-          new TACConfig({ ...getTestConfigData(), twilioRegion: region });
+          new TACConfig({ ...getTestConfigData(), region: region });
         }).toThrow('Invalid Twilio region format');
       }
     });
@@ -150,10 +150,10 @@ describe('TACConfig', () => {
       process.env.TWILIO_ACCOUNT_SID = 'ACtest123';
       process.env.TWILIO_AUTH_TOKEN = 'test_auth_token';
       process.env.TWILIO_API_KEY = 'SKtest123';
-      process.env.TWILIO_API_TOKEN = 'test_api_token';
+      process.env.TWILIO_API_SECRET = 'test_api_token';
       process.env.TWILIO_PHONE_NUMBER = '+1234567890';
       process.env.MEMORY_STORE_ID = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg';
-      process.env.CONVERSATION_SERVICE_ID = 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd';
+      process.env.TWILIO_CONVERSATION_CONFIGURATION_ID = 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd';
     };
 
     it('should create config when all required env vars are set', () => {
@@ -161,11 +161,11 @@ describe('TACConfig', () => {
 
       const config = TACConfig.fromEnv();
 
-      expect(config.twilioAccountSid).toBe('ACtest123');
-      expect(config.twilioAuthToken).toBe('test_auth_token');
-      expect(config.twilioPhoneNumber).toBe('+1234567890');
+      expect(config.accountSid).toBe('ACtest123');
+      expect(config.authToken).toBe('test_auth_token');
+      expect(config.phoneNumber).toBe('+1234567890');
       expect(config.memoryStoreId).toBe('mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
-      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
     it('should include optional voicePublicDomain when set', () => {
@@ -204,13 +204,13 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_API_KEY');
     });
 
-    it('should throw error when TWILIO_API_TOKEN is missing', () => {
+    it('should throw error when TWILIO_API_SECRET is missing', () => {
       setRequiredEnvVars();
-      delete process.env.TWILIO_API_TOKEN;
+      delete process.env.TWILIO_API_SECRET;
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_API_TOKEN');
+      }).toThrow('Missing required environment variable: TWILIO_API_SECRET');
     });
 
     it('should throw error when TWILIO_PHONE_NUMBER is missing', () => {
@@ -229,16 +229,16 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.memoryStoreId).toBeUndefined();
-      expect(config.conversationServiceId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
-    it('should throw error when CONVERSATION_SERVICE_ID is missing', () => {
+    it('should throw error when TWILIO_CONVERSATION_CONFIGURATION_ID is missing', () => {
       setRequiredEnvVars();
-      delete process.env.CONVERSATION_SERVICE_ID;
+      delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: CONVERSATION_SERVICE_ID');
+      }).toThrow('Missing required environment variable: TWILIO_CONVERSATION_CONFIGURATION_ID');
     });
 
     it('should throw error when no environment variables are set', () => {
@@ -257,7 +257,7 @@ describe('TACConfig', () => {
 
       const config = TACConfig.fromEnv();
 
-      expect(config.twilioRegion).toBe('test-region');
+      expect(config.region).toBe('test-region');
     });
 
     it('should leave twilioRegion undefined when TWILIO_REGION is not set', () => {
@@ -266,7 +266,7 @@ describe('TACConfig', () => {
 
       const config = TACConfig.fromEnv();
 
-      expect(config.twilioRegion).toBeUndefined();
+      expect(config.region).toBeUndefined();
     });
   });
 

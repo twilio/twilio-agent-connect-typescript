@@ -16,7 +16,7 @@ export function createLogger(options?: {
   pretty?: boolean;
   name?: string;
 }): Logger {
-  const level = options?.level || process.env.LOG_LEVEL || 'info';
+  const level = options?.level || process.env.TWILIO_LOG_LEVEL || 'info';
   const isDevelopment = process.env.NODE_ENV !== 'production';
   const usePretty = options?.pretty !== undefined ? options.pretty : isDevelopment;
 

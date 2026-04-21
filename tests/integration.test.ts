@@ -5,12 +5,12 @@ import { TAC, SMSChannel } from '@twilio/tac-core';
 describe('Integration Tests', () => {
   const getTestConfig = () => ({
 
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
   });
 
   let tac: TAC;

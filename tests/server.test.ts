@@ -30,12 +30,12 @@ const getNextPort = () => testPort++;
 describe('TACServer Webhook Validation', () => {
   const getTestConfig = () => ({
 
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   let tac: TAC;
@@ -288,12 +288,12 @@ describe('TACServer Webhook Validation', () => {
 describe('TACServer idempotency token', () => {
   const getTestConfig = () => ({
 
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   let tac: TAC;
@@ -389,12 +389,12 @@ describe('TACServer idempotency token', () => {
 describe('TACServer with conversationRelayConfig', () => {
   const getTestConfig = () => ({
 
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   let tac: TAC;
@@ -680,12 +680,12 @@ describe('TACServer with conversationRelayConfig', () => {
 
 describe('TACServer customization', () => {
   const getTestConfig = () => ({
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
   let tac: TAC;

@@ -3,12 +3,12 @@ import { TAC, TACConfig } from '@twilio/tac-core';
 
 describe('TAC Core', () => {
   const getTestConfig = () => ({
-    twilioAccountSid: 'ACtest123456789',
-    twilioAuthToken: 'test_token_123',
-    twilioApiKey: 'test_api_key',
-    twilioApiToken: 'test_api_token',
-    twilioPhoneNumber: '+15551234567',
-    conversationServiceId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
   });
 
   describe('initialization', () => {
@@ -26,7 +26,7 @@ describe('TAC Core', () => {
         'TWILIO_AUTH_TOKEN',
         'TWILIO_PHONE_NUMBER',
         'MEMORY_STORE_ID',
-        'CONVERSATION_SERVICE_ID',
+        'TWILIO_CONVERSATION_CONFIGURATION_ID',
         'VOICE_PUBLIC_DOMAIN',
       ] as const;
       const snapshot: Record<(typeof keys)[number], string | undefined> = {
@@ -34,7 +34,7 @@ describe('TAC Core', () => {
         TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
         TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
         MEMORY_STORE_ID: process.env.MEMORY_STORE_ID,
-        CONVERSATION_SERVICE_ID: process.env.CONVERSATION_SERVICE_ID,
+        TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
         VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
       };
 
@@ -61,7 +61,7 @@ describe('TAC Core', () => {
       const tac = new TAC({ config });
 
       const retrievedConfig = tac.getConfig();
-      expect(retrievedConfig.twilioAccountSid).toBe('ACtest123456789');
+      expect(retrievedConfig.accountSid).toBe('ACtest123456789');
     });
 
     it('should provide access to clients', () => {

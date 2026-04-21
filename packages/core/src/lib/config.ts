@@ -10,43 +10,43 @@ import { TACConfigData, TACConfigSchema, EnvironmentVariables } from '../types/i
  *
  * // Or create manually
  * const config = new TACConfig({
- *   twilioAccountSid: 'ACxxxx',
+ *   accountSid: 'ACxxxx',
  *   // ...
  * });
  * ```
  */
 export class TACConfig {
-  public readonly twilioAccountSid: string;
-  public readonly twilioAuthToken: string;
-  public readonly twilioApiKey: string;
-  public readonly twilioApiToken: string;
-  public readonly twilioPhoneNumber: string;
+  public readonly accountSid: string;
+  public readonly authToken: string;
+  public readonly apiKey: string;
+  public readonly apiSecret: string;
+  public readonly phoneNumber: string;
   public readonly memoryStoreId?: string;
   public readonly traitGroups?: string[];
-  public readonly conversationServiceId: string;
+  public readonly conversationConfigurationId: string;
   public readonly voicePublicDomain?: string;
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
   public readonly cintelSummaryOperatorSid?: string;
   /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
-  public readonly twilioRegion?: string;
+  public readonly region?: string;
   constructor(data: TACConfigData) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
 
     // Assign all properties
-    this.twilioAccountSid = validatedConfig.twilioAccountSid;
-    this.twilioAuthToken = validatedConfig.twilioAuthToken;
-    this.twilioApiKey = validatedConfig.twilioApiKey;
-    this.twilioApiToken = validatedConfig.twilioApiToken;
-    this.twilioPhoneNumber = validatedConfig.twilioPhoneNumber;
+    this.accountSid = validatedConfig.accountSid;
+    this.authToken = validatedConfig.authToken;
+    this.apiKey = validatedConfig.apiKey;
+    this.apiSecret = validatedConfig.apiSecret;
+    this.phoneNumber = validatedConfig.phoneNumber;
     if (validatedConfig.memoryStoreId) {
       this.memoryStoreId = validatedConfig.memoryStoreId;
     }
     if (validatedConfig.traitGroups) {
       this.traitGroups = validatedConfig.traitGroups;
     }
-    this.conversationServiceId = validatedConfig.conversationServiceId;
+    this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
@@ -59,8 +59,8 @@ export class TACConfig {
     if (validatedConfig.cintelSummaryOperatorSid) {
       this.cintelSummaryOperatorSid = validatedConfig.cintelSummaryOperatorSid;
     }
-    if (validatedConfig.twilioRegion) {
-      this.twilioRegion = validatedConfig.twilioRegion;
+    if (validatedConfig.region) {
+      this.region = validatedConfig.region;
     }
   }
 
@@ -71,11 +71,11 @@ export class TACConfig {
    * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
    * - TWILIO_API_KEY: Twilio API Key (required)
-   * - TWILIO_API_TOKEN: Twilio API Token (required)
+   * - TWILIO_API_SECRET: Twilio API Secret (required)
    * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
    * - MEMORY_STORE_ID: Memory Store ID (optional, for Twilio Memory)
    * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
-   * - CONVERSATION_SERVICE_ID: Twilio Conversation Configuration ID (required)
+   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
    * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    *
@@ -96,9 +96,12 @@ export class TACConfig {
       { key: EnvironmentVariables.TWILIO_ACCOUNT_SID, name: 'TWILIO_ACCOUNT_SID' },
       { key: EnvironmentVariables.TWILIO_AUTH_TOKEN, name: 'TWILIO_AUTH_TOKEN' },
       { key: EnvironmentVariables.TWILIO_API_KEY, name: 'TWILIO_API_KEY' },
-      { key: EnvironmentVariables.TWILIO_API_TOKEN, name: 'TWILIO_API_TOKEN' },
+      { key: EnvironmentVariables.TWILIO_API_SECRET, name: 'TWILIO_API_SECRET' },
       { key: EnvironmentVariables.TWILIO_PHONE_NUMBER, name: 'TWILIO_PHONE_NUMBER' },
-      { key: EnvironmentVariables.CONVERSATION_SERVICE_ID, name: 'CONVERSATION_SERVICE_ID' },
+      {
+        key: EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID,
+        name: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
+      },
     ];
 
     // Throw error for missing required variables (like Python's KeyError)
@@ -109,21 +112,22 @@ export class TACConfig {
     }
 
     const rawConfig: TACConfigData = {
-      twilioAccountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
-      twilioAuthToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
-      twilioApiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
-      twilioApiToken: process.env[EnvironmentVariables.TWILIO_API_TOKEN]!,
-      twilioPhoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
+      accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
+      authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
+      apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
+      apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
+      phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
       memoryStoreId: process.env[EnvironmentVariables.MEMORY_STORE_ID],
       traitGroups: process.env[EnvironmentVariables.TRAIT_GROUPS]?.split(','),
-      conversationServiceId: process.env[EnvironmentVariables.CONVERSATION_SERVICE_ID]!,
+      conversationConfigurationId:
+        process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID]!,
       voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],
       cintelSummaryOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
-      twilioRegion: process.env[EnvironmentVariables.TWILIO_REGION],
+      region: process.env[EnvironmentVariables.TWILIO_REGION],
     };
 
     return new TACConfig(rawConfig);
@@ -134,8 +138,8 @@ export class TACConfig {
    */
   public getBasicAuthCredentials(): { username: string; password: string } {
     return {
-      username: this.twilioAccountSid,
-      password: this.twilioAuthToken,
+      username: this.accountSid,
+      password: this.authToken,
     };
   }
 }
