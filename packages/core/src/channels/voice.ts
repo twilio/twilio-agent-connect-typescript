@@ -324,7 +324,7 @@ export class VoiceChannel extends BaseChannel {
 
     // Automatic memory retrieval (matching passive voice behavior)
     let userMemory: TACMemoryResponse | undefined;
-    if (session && this.tac.isMemoryEnabled()) {
+    if (session) {
       try {
         userMemory = await this.tac.retrieveMemory(session, transcript);
         this.logger.debug({ conversation_id: conversationId }, 'Retrieved memory for active voice');

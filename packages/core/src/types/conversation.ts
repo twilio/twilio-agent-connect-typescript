@@ -334,7 +334,9 @@ export const ConversationConfigurationSchema = z.object({
     .optional(),
   description: z.string(),
   conversationGroupingType: ConversationGroupingTypeSchema,
-  memoryStoreId: z.string(),
+  memoryStoreId: z
+    .string()
+    .regex(/^mem_(store|service)_[0-7][0-9a-z]{25}$/, 'Invalid Memory Store ID format'),
   channelSettings: z.record(ChannelSettingsSchema).nullable().optional(),
   statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
   intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),

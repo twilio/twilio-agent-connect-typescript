@@ -295,7 +295,7 @@ describe('ConversationClient', () => {
         id: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
         description: 'Test Config',
         conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES',
-        memoryStoreId: 'mem_store_123',
+        memoryStoreId: 'mem_store_01kbjqhhdpft0tbp21jt4ktbxg',
         createdAt: '2019-08-24T14:15:22Z',
         updatedAt: '2019-08-24T14:15:22Z',
       };
@@ -312,7 +312,7 @@ describe('ConversationClient', () => {
         id: 'conv_configuration_minimal',
         description: 'Minimal Config',
         conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES',
-        memoryStoreId: 'mem_store_124',
+        memoryStoreId: 'mem_store_01kbjqhhdpft0tbp21jt4ktbxh',
         createdAt: '2019-08-24T14:15:22Z',
         updatedAt: '2019-08-24T14:15:22Z',
       };
@@ -348,7 +348,7 @@ describe('ConversationClient', () => {
         id: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
         description: 'Invalid Callback Test',
         conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES',
-        memoryStoreId: 'mem_store_126',
+        memoryStoreId: 'mem_store_01kbjqhhdpft0tbp21jt4ktbxi',
         statusCallbacks: [{ url: 'not-a-valid-url' }],
         createdAt: '2019-08-24T14:15:22Z',
         updatedAt: '2019-08-24T14:15:22Z',

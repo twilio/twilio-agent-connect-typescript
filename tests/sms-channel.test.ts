@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SMSChannel, TAC, ConversationSession } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
+import { createTestTAC } from './helpers/tac';
 
 describe('SMS Channel', () => {
   let mockAdapter: MockAdapter;
@@ -22,8 +23,8 @@ describe('SMS Channel', () => {
   let channel: SMSChannel;
   let tac: TAC;
 
-  beforeEach(() => {
-    tac = new TAC({ config: getTestConfig() });
+  beforeEach(async () => {
+    tac = await createTestTAC(getTestConfig());
     channel = new SMSChannel(tac);
   });
 
@@ -484,6 +485,11 @@ describe('SMS Channel', () => {
       // Access the conversation client's axios instance through TAC
       const conversationClient = (tac as any).conversationClient;
       mockAdapter = new MockAdapter(conversationClient.axiosInstance);
+      // Reset history to clear the getConfiguration call from TAC initialization
+      mockAdapter.resetHistory();
+
+      // Stub retrieveMemory to avoid HTTP calls during webhook processing
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
 
       // Mock listParticipants call
       mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
@@ -540,9 +546,9 @@ describe('SMS Channel', () => {
 
       await channel.sendResponse('CHtest123456789', 'Hello back!');
 
-      // Verify that the correct requests were made
+      // Verify that the correct requests were made (listParticipants + sendCommunication)
       const history = mockAdapter.history;
-      expect(history.get.length).toBe(1);
+      expect(history.get.length).toBe(1); // listParticipants
       expect(history.get[0].url).toBe('/v2/Conversations/CHtest123456789/Participants');
 
       expect(history.post.length).toBe(1);

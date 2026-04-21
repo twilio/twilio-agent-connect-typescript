@@ -9,6 +9,7 @@ import {
   TACMemoryResponse,
   MemoryCommunication,
 } from '@twilio/tac-core';
+import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
 
 describe('Memory Functionality', () => {
   const getTestConfigWithoutMemory = () => ({
@@ -26,26 +27,10 @@ describe('Memory Functionality', () => {
     memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
   });
 
-  describe('isMemoryEnabled()', () => {
-    it('should return true when memory configured', () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
-
-      expect(tac.isMemoryEnabled()).toBe(true);
-    });
-
-    it('should return false when memory not configured', () => {
-      const config = new TACConfig(getTestConfigWithoutMemory());
-      const tac = new TAC({ config });
-
-      expect(tac.isMemoryEnabled()).toBe(false);
-    });
-  });
-
   describe('retrieveMemory() with Memory Service', () => {
     it('should retrieve memory with profile_id provided', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+      
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const mockMemoryResponse: MemoryRetrievalResponse = {
         observations: [],
@@ -86,8 +71,8 @@ describe('Memory Functionality', () => {
     });
 
     it('should auto-lookup profile when missing', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+      
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const mockLookupResponse = {
         normalized_value: '+13175556789',
@@ -148,8 +133,8 @@ describe('Memory Functionality', () => {
     });
 
     it('should use first profile when multiple found', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+      
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const mockLookupResponse = {
         normalized_value: '+13175556789',
@@ -196,9 +181,25 @@ describe('Memory Functionality', () => {
       );
     });
 
-    it('should throw error when profile_id and author_info both missing', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+    it('should fallback to Conversations API when profile_id and author_info both missing', async () => {
+
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_123',
+          conversationId: 'conv_test_123',
+          accountId: 'AC123',
+          author: { address: '+15551234567', channel: 'SMS', participantId: 'part_123' },
+          content: { type: 'TEXT', text: 'Hello' },
+          recipients: [],
+        },
+      ];
+
+      const conversationClient = tac.getConversationClient();
+      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue(
+        mockCommunications
+      );
 
       const session: ConversationSession = {
         conversationId: 'conv_test_123',
@@ -208,14 +209,31 @@ describe('Memory Functionality', () => {
         authorInfo: undefined,
       };
 
-      await expect(tac.retrieveMemory(session)).rejects.toThrow(
-        'profileId is required for memory retrieval'
-      );
+      const result = await tac.retrieveMemory(session);
+
+      expect(result).toBeInstanceOf(TACMemoryResponse);
+      expect(result.communications).toHaveLength(1);
     });
 
-    it('should throw error when author_info exists but address is empty', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+    it('should fallback to Conversations API when author_info exists but address is empty', async () => {
+
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_456',
+          conversationId: 'conv_test_123',
+          accountId: 'AC123',
+          author: { address: '+15551234567', channel: 'SMS', participantId: 'part_456' },
+          content: { type: 'TEXT', text: 'Test' },
+          recipients: [],
+        },
+      ];
+
+      const conversationClient = tac.getConversationClient();
+      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue(
+        mockCommunications
+      );
 
       const session: ConversationSession = {
         conversationId: 'conv_test_123',
@@ -228,213 +246,99 @@ describe('Memory Functionality', () => {
         },
       };
 
-      await expect(tac.retrieveMemory(session)).rejects.toThrow(
-        'profileId is required for memory retrieval'
-      );
+      const result = await tac.retrieveMemory(session);
+
+      expect(result).toBeInstanceOf(TACMemoryResponse);
+      expect(result.communications).toHaveLength(1);
     });
 
-    it('should throw error when profile lookup returns no profiles', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+    it('should fallback to Conversations API when profile lookup returns no profiles', async () => {
+
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const mockLookupResponse = {
         normalized_value: '+13175556789',
         profiles: [],
       };
 
-      const memoryClient = tac.getMemoryClient();
-      vi.spyOn(memoryClient!, 'lookupProfile').mockResolvedValue(mockLookupResponse);
-
-      const session: ConversationSession = {
-        conversationId: 'conv_test_123',
-        profileId: undefined,
-        channel: 'sms',
-        startedAt: new Date(),
-        authorInfo: { address: '+13175556789' },
-      };
-
-      await expect(tac.retrieveMemory(session)).rejects.toThrow(
-        'No profile found for phone +13175556789'
-      );
-    });
-
-    it('should handle profile lookup API errors', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
-
-      const memoryClient = tac.getMemoryClient();
-      vi.spyOn(memoryClient!, 'lookupProfile').mockRejectedValue(
-        new Error('Profile lookup API error')
-      );
-
-      const session: ConversationSession = {
-        conversationId: 'conv_test_123',
-        profileId: undefined,
-        channel: 'sms',
-        startedAt: new Date(),
-        authorInfo: { address: '+13175556789' },
-      };
-
-      await expect(tac.retrieveMemory(session)).rejects.toThrow('Profile lookup API error');
-    });
-  });
-
-  describe('retrieveMemory() fallback to Conversations Service', () => {
-    it('should fallback when memory not configured', async () => {
-      const config = new TACConfig(getTestConfigWithoutMemory());
-      const tac = new TAC({ config });
-
       const mockCommunications: Communication[] = [
         {
-          id: 'comm_123',
-          conversationId: 'CH123',
-          accountId: 'AC123456',
-          author: {
-            address: '+12025551234',
-            channel: 'SMS',
-            participantId: 'part_123',
-          },
-          content: {
-            type: 'TEXT',
-            text: 'Hello',
-          },
-          recipients: [
-            {
-              address: '+12025555678',
-              channel: 'SMS',
-              participantId: 'part_456',
-            },
-          ],
-          createdAt: '2019-08-24T14:15:22Z',
-          updatedAt: '2019-08-24T14:15:22Z',
+          id: 'comm_789',
+          conversationId: 'conv_test_123',
+          accountId: 'AC123',
+          author: { address: '+13175556789', channel: 'SMS', participantId: 'part_789' },
+          content: { type: 'TEXT', text: 'Fallback' },
+          recipients: [],
         },
       ];
 
-      const conversationClient = tac.getConversationClient();
-      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue(mockCommunications);
-
-      const session: ConversationSession = {
-        conversationId: 'CH123',
-        profileId: undefined,
-        channel: 'sms',
-        startedAt: new Date(),
-      };
-
-      const result = await tac.retrieveMemory(session);
-
-      // Verify fallback was called
-      expect(conversationClient.listCommunications).toHaveBeenCalledWith('CH123');
-
-      // Result is wrapped in TACMemoryResponse
-      expect(result).toBeInstanceOf(TACMemoryResponse);
-      expect(result.hasMemoryFeatures).toBe(false); // Maestro fallback
-
-      // Check response structure - observations and summaries are empty for fallback
-      expect(result.observations).toEqual([]);
-      expect(result.summaries).toEqual([]);
-
-      // Communications are converted to unified TACCommunication format
-      expect(result.communications).toHaveLength(1);
-      expect(result.communications[0].id).toBe('comm_123');
-    });
-
-    it('should handle empty communications list', async () => {
-      const config = new TACConfig(getTestConfigWithoutMemory());
-      const tac = new TAC({ config });
+      const memoryClient = tac.getMemoryClient();
+      vi.spyOn(memoryClient, 'lookupProfile').mockResolvedValue(mockLookupResponse);
 
       const conversationClient = tac.getConversationClient();
-      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue([]);
-
-      const session: ConversationSession = {
-        conversationId: 'CH123',
-        profileId: undefined,
-        channel: 'sms',
-        startedAt: new Date(),
-      };
-
-      const result = await tac.retrieveMemory(session);
-
-      // Result is wrapped in TACMemoryResponse
-      expect(result).toBeInstanceOf(TACMemoryResponse);
-      expect(result.hasMemoryFeatures).toBe(false);
-      expect(result.communications).toEqual([]);
-      expect(result.observations).toEqual([]);
-      expect(result.summaries).toEqual([]);
-    });
-
-    it('should propagate Conversations Service API errors', async () => {
-      const config = new TACConfig(getTestConfigWithoutMemory());
-      const tac = new TAC({ config });
-
-      const conversationClient = tac.getConversationClient();
-      vi.spyOn(conversationClient, 'listCommunications').mockRejectedValue(
-        new Error('Conversations Service API Error')
+      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue(
+        mockCommunications
       );
 
       const session: ConversationSession = {
-        conversationId: 'CH123',
+        conversationId: 'conv_test_123',
         profileId: undefined,
         channel: 'sms',
         startedAt: new Date(),
-      };
-
-      await expect(tac.retrieveMemory(session)).rejects.toThrow('Conversations Service API Error');
-    });
-
-    it('should work with multiple communications', async () => {
-      const config = new TACConfig(getTestConfigWithoutMemory());
-      const tac = new TAC({ config });
-
-      const mockCommunications: Communication[] = Array.from({ length: 5 }, (_, i) => ({
-        id: `comm_${i}`,
-        conversationId: 'CH123',
-        accountId: 'AC123456',
-        author: {
-          address: '+12025551234',
-          channel: 'SMS' as const,
-          participantId: 'part_123',
-        },
-        content: {
-          type: 'TEXT' as const,
-          text: `Message ${i}`,
-        },
-        recipients: [
-          {
-            address: '+12025555678',
-            channel: 'SMS' as const,
-            participantId: 'part_456',
-          },
-        ],
-        createdAt: '2019-08-24T14:15:22Z',
-        updatedAt: '2019-08-24T14:15:22Z',
-      }));
-
-      const conversationClient = tac.getConversationClient();
-      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue(mockCommunications);
-
-      const session: ConversationSession = {
-        conversationId: 'CH123',
-        profileId: undefined,
-        channel: 'sms',
-        startedAt: new Date(),
+        authorInfo: { address: '+13175556789' },
       };
 
       const result = await tac.retrieveMemory(session);
 
-      // Result is wrapped in TACMemoryResponse
       expect(result).toBeInstanceOf(TACMemoryResponse);
-      expect(result.communications).toHaveLength(5);
-      result.communications.forEach((comm, i) => {
-        expect(comm.id).toBe(`comm_${i}`);
-        expect(comm.content.text).toBe(`Message ${i}`);
-      });
+      expect(result.communications).toHaveLength(1);
+    });
+
+    it('should fallback to Conversations API on profile lookup errors', async () => {
+
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_error',
+          conversationId: 'conv_test_123',
+          accountId: 'AC123',
+          author: { address: '+13175556789', channel: 'SMS', participantId: 'part_error' },
+          content: { type: 'TEXT', text: 'Fallback on error' },
+          recipients: [],
+        },
+      ];
+
+      const memoryClient = tac.getMemoryClient();
+      vi.spyOn(memoryClient, 'lookupProfile').mockRejectedValue(
+        new Error('Profile lookup API error')
+      );
+
+      const conversationClient = tac.getConversationClient();
+      vi.spyOn(conversationClient, 'listCommunications').mockResolvedValue(
+        mockCommunications
+      );
+
+      const session: ConversationSession = {
+        conversationId: 'conv_test_123',
+        profileId: undefined,
+        channel: 'sms',
+        startedAt: new Date(),
+        authorInfo: { address: '+13175556789' },
+      };
+
+      const result = await tac.retrieveMemory(session);
+
+      expect(result).toBeInstanceOf(TACMemoryResponse);
+      expect(result.communications).toHaveLength(1);
     });
   });
 
+
   describe('fetchProfile()', () => {
     it('should fetch profile successfully', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+      
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const mockProfileResponse: ProfileResponse = {
         id: 'profile_123',
@@ -459,8 +363,7 @@ describe('Memory Functionality', () => {
     });
 
     it('should return undefined when memory not configured', async () => {
-      const config = new TACConfig(getTestConfigWithoutMemory());
-      const tac = new TAC({ config });
+      const tac = await createTestTAC(getTestConfigWithoutMemory());
 
       const result = await tac.fetchProfile('profile_123');
 
@@ -468,8 +371,8 @@ describe('Memory Functionality', () => {
     });
 
     it('should return undefined when profileId is empty', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+      
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const result = await tac.fetchProfile('');
 
@@ -477,8 +380,8 @@ describe('Memory Functionality', () => {
     });
 
     it('should handle API errors gracefully', async () => {
-      const config = new TACConfig(getTestConfigWithMemory());
-      const tac = new TAC({ config });
+      
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const memoryClient = tac.getMemoryClient();
       vi.spyOn(memoryClient!, 'getProfile').mockRejectedValue(new Error('API error'));

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TAC, TACConfig } from '@twilio/tac-core';
+import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
 
 describe('TAC Core', () => {
   const getTestConfig = () => ({
@@ -12,14 +13,19 @@ describe('TAC Core', () => {
   });
 
   describe('initialization', () => {
-    it('should initialize TAC with config object', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should prevent direct construction with clear error message', () => {
+      expect(() => {
+        new (TAC as any)();
+      }).toThrow('TAC constructor is private. Use TAC.create() instead of new TAC().');
+    });
+
+    it('should initialize TAC with config object', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       expect(tac).toBeInstanceOf(TAC);
     });
 
-    it('should initialize TAC without config (from environment)', () => {
+    it('should initialize TAC without config (from environment)', async () => {
       // This will fail without env vars but should instantiate
       const keys = [
         'TWILIO_ACCOUNT_SID',
@@ -43,7 +49,7 @@ describe('TAC Core', () => {
           delete process.env[key];
         });
 
-        expect(() => new TAC()).toThrow();
+        await expect(TAC.create()).rejects.toThrow();
       } finally {
         keys.forEach(key => {
           const value = snapshot[key];
@@ -56,37 +62,28 @@ describe('TAC Core', () => {
       }
     });
 
-    it('should provide access to config', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should provide access to config', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       const retrievedConfig = tac.getConfig();
       expect(retrievedConfig.accountSid).toBe('ACtest123456789');
     });
 
-    it('should provide access to clients', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should provide access to clients', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
-      // Memory client should be undefined when memoryStoreId not provided
-      expect(tac.getMemoryClient()).toBeUndefined();
+      expect(tac.getMemoryClient()).toBeDefined();
       expect(tac.getConversationClient()).toBeDefined();
     });
 
-    it('should initialize memory client when memoryStoreId is provided', () => {
-      const configWithMemory = {
-        ...getTestConfig(),
-        memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
-      };
-      const config = new TACConfig(configWithMemory);
-      const tac = new TAC({ config });
+    it('should initialize memory client when memoryStoreId is provided from conversation config', async () => {
+      const tac = await createTestTACWithMemory(getTestConfig());
 
       expect(tac.getMemoryClient()).toBeDefined();
     });
 
-    it('should start with no channels (until explicitly registered)', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should start with no channels (until explicitly registered)', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       // Verify no channels are registered by default
       const smsChannel = tac.getChannel('sms');
@@ -97,9 +94,8 @@ describe('TAC Core', () => {
   });
 
   describe('callback registration', () => {
-    it('should register message ready callback', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should register message ready callback', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       const mockCallback = () => 'response';
 
@@ -108,9 +104,8 @@ describe('TAC Core', () => {
       }).not.toThrow();
     });
 
-    it('should register interrupt callback', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should register interrupt callback', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       const mockCallback = () => {};
 
@@ -119,9 +114,8 @@ describe('TAC Core', () => {
       }).not.toThrow();
     });
 
-    it('should register handoff callback', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should register handoff callback', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       const mockCallback = () => {};
 
@@ -132,9 +126,8 @@ describe('TAC Core', () => {
   });
 
   describe('lifecycle', () => {
-    it('should shutdown cleanly', () => {
-      const config = new TACConfig(getTestConfig());
-      const tac = new TAC({ config });
+    it('should shutdown cleanly', async () => {
+      const tac = await createTestTAC(getTestConfig());
 
       expect(() => {
         tac.shutdown();

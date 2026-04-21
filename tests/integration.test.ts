@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SpyInstance } from 'vitest';
 import { TAC, SMSChannel } from '@twilio/tac-core';
+import { createTestTAC } from './helpers/tac';
 
 describe('Integration Tests', () => {
   const getTestConfig = () => ({
@@ -17,7 +18,7 @@ describe('Integration Tests', () => {
   let channel: SMSChannel;
   let fetchSpy: SpyInstance;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: string | URL) => {
       const urlString = url.toString();
 
@@ -61,7 +62,7 @@ describe('Integration Tests', () => {
       });
     });
 
-    tac = new TAC({ config: getTestConfig() });
+    tac = await createTestTAC(getTestConfig());
     channel = new SMSChannel(tac);
     tac.registerChannel(channel);
   });

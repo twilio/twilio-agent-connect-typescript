@@ -405,7 +405,7 @@ export abstract class MessagingChannel extends BaseChannel {
 
     // Retrieve user memory using tac.retrieveMemory, which handles profile lookup by address (e.g., phone number or email)
     let userMemory;
-    if (session && this.tac.isMemoryEnabled()) {
+    if (session) {
       this.logger.debug({ conversation_id: conversationId, author }, 'Retrieving user memory');
       try {
         userMemory = await this.tac.retrieveMemory(session, message);

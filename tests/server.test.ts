@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createTestTAC } from './helpers/tac';
 import { TAC, TACConfig, SMSChannel, VoiceChannel } from '@twilio/tac-core';
 import { TACServer } from '@twilio/tac-server';
 
@@ -42,7 +43,7 @@ describe('TACServer Webhook Validation', () => {
   let server: TACServer;
   let currentPort: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Reset mock
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
@@ -52,7 +53,7 @@ describe('TACServer Webhook Validation', () => {
 
     // Create TAC instance
     const config = new TACConfig(getTestConfig());
-    tac = new TAC({ config });
+    tac = await createTestTAC(config);
 
     // Register channels (required for route handlers)
     const smsChannel = new SMSChannel(tac);
@@ -301,7 +302,7 @@ describe('TACServer idempotency token', () => {
   let smsChannel: SMSChannel;
   let currentPort: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true);
@@ -309,7 +310,7 @@ describe('TACServer idempotency token', () => {
     currentPort = getNextPort();
 
     const config = new TACConfig(getTestConfig());
-    tac = new TAC({ config });
+    tac = await createTestTAC(config);
 
     smsChannel = new SMSChannel(tac);
     const voiceChannel = new VoiceChannel(tac);
@@ -402,7 +403,7 @@ describe('TACServer with conversationRelayConfig', () => {
   let voiceChannel: VoiceChannel;
   let currentPort: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true); // Default to valid
@@ -410,7 +411,7 @@ describe('TACServer with conversationRelayConfig', () => {
     currentPort = getNextPort();
 
     const config = new TACConfig(getTestConfig());
-    tac = new TAC({ config });
+    tac = await createTestTAC(config);
 
     const smsChannel = new SMSChannel(tac);
     voiceChannel = new VoiceChannel(tac);
@@ -692,7 +693,7 @@ describe('TACServer customization', () => {
   let server: TACServer;
   let currentPort: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true);
@@ -701,7 +702,7 @@ describe('TACServer customization', () => {
     currentPort = getNextPort();
 
     const config = new TACConfig(getTestConfig());
-    tac = new TAC({ config });
+    tac = await createTestTAC(config);
 
     const smsChannel = new SMSChannel(tac);
     const voiceChannel = new VoiceChannel(tac);

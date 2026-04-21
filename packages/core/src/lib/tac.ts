@@ -6,7 +6,7 @@ import {
   ProfileResponse,
   ChannelType,
   OperatorProcessingResult,
-} from '../types/index';
+} from '../types';
 import { TACMemoryResponse } from './tac-memory-response';
 import { TACConfig } from './config';
 import { MemoryClient } from '../clients/memory';
@@ -59,13 +59,17 @@ export type ConversationEndedCallback = (params: {
  * and coordinates between memory, conversations, and LLM integrations.
  */
 export class TAC {
+  private static readonly FACTORY_TOKEN = Symbol('TAC.create');
+
   private readonly config: TACConfig;
   public readonly logger: Logger;
-  private readonly memoryClient?: MemoryClient;
-  private readonly knowledgeClient?: KnowledgeClient;
+  private memoryClient!: MemoryClient;
+  private knowledgeClient!: KnowledgeClient;
   private readonly conversationClient: ConversationClient;
   private readonly channels: Map<ChannelType, BaseChannel>;
-  private readonly cintelProcessor?: OperatorResultProcessor;
+  private cintelProcessor?: OperatorResultProcessor;
+
+  private memoryStoreId!: string;
 
   // Callback registrations
   private messageReadyCallback?: MessageReadyCallback;
@@ -73,7 +77,10 @@ export class TAC {
   private handoffCallback?: HandoffCallback;
   private conversationEndedCallback?: ConversationEndedCallback;
 
-  constructor(options: TACOptions = {}) {
+  private constructor(token: symbol, options: TACOptions = {}) {
+    if (token !== TAC.FACTORY_TOKEN) {
+      throw new Error('TAC constructor is private. Use TAC.create() instead of new TAC().');
+    }
     // Handle config resolution:
     // - If it's already a TACConfig instance, use it
     // - If it's data, create a new TACConfig
@@ -87,43 +94,46 @@ export class TAC {
 
     this.config = finalConfig;
     this.logger = finalLogger;
-
     this.channels = new Map();
-
-    // Initialize Memory client only if memoryStoreId is provided
-    // API credentials are always available (required at TACConfig level)
-    if (this.config.memoryStoreId) {
-      this.memoryClient = new MemoryClient(this.config, this.logger.child({ component: 'memory' }));
-      this.logger.info('Memory client initialized');
-
-      // Initialize Knowledge client (uses same API credentials)
-      this.knowledgeClient = new KnowledgeClient(
-        this.config,
-        this.logger.child({ component: 'knowledge' })
-      );
-      this.logger.info('Knowledge client initialized');
-    } else {
-      this.logger.info('Memory and Knowledge clients not initialized (credentials not provided)');
-    }
-
-    // Initialize Conversation Intelligence processor if configured
-    if (this.memoryClient && this.config.cintelConfigurationId) {
-      this.cintelProcessor = new OperatorResultProcessor(
-        this.memoryClient,
-        {
-          configurationId: this.config.cintelConfigurationId,
-          observationOperatorSid: this.config.cintelObservationOperatorSid,
-          summaryOperatorSid: this.config.cintelSummaryOperatorSid,
-        },
-        this.logger.child({ component: 'cintel' })
-      );
-      this.logger.info('Conversation Intelligence processor initialized');
-    }
-
     this.conversationClient = new ConversationClient(
       this.config,
       this.logger.child({ component: 'conversation' })
     );
+  }
+
+  public static async create(options: TACOptions = {}): Promise<TAC> {
+    const tac = new TAC(TAC.FACTORY_TOKEN, options);
+
+    try {
+      const conversationConfig = await tac.conversationClient.getConfiguration(
+        tac.config.conversationConfigurationId
+      );
+
+      tac.memoryStoreId = conversationConfig.memoryStoreId;
+      tac.memoryClient = new MemoryClient(tac.config, tac.logger.child({ component: 'memory' }));
+
+      tac.knowledgeClient = new KnowledgeClient(
+        tac.config,
+        tac.logger.child({ component: 'knowledge' })
+      );
+
+      if (tac.config.cintelConfigurationId) {
+        tac.cintelProcessor = new OperatorResultProcessor(
+          tac.memoryClient,
+          {
+            configurationId: tac.config.cintelConfigurationId,
+            observationOperatorSid: tac.config.cintelObservationOperatorSid,
+            summaryOperatorSid: tac.config.cintelSummaryOperatorSid,
+          },
+          tac.logger.child({ component: 'cintel' })
+        );
+      }
+
+      return tac;
+    } catch (error) {
+      tac.logger.error({ err: error }, 'TAC initialization failed');
+      throw error;
+    }
   }
 
   /**
@@ -301,16 +311,16 @@ export class TAC {
         throw new Error(`No session found for conversation ${data.conversationId}`);
       }
 
-      // Get memory if not already provided, profile ID exists, and memory client is initialized
+      // Get memory if not already provided and profile ID exists
       let memory = data.userMemory;
-      if (!memory && data.profileId && this.memoryClient && this.config.memoryStoreId) {
+      if (!memory && data.profileId) {
         this.logger.debug(
           { profile_id: data.profileId, operation: 'memory_retrieval' },
           'Retrieving memory for profile'
         );
         try {
           const memoryResponse = await this.memoryClient.retrieveMemories(
-            this.config.memoryStoreId,
+            this.memoryStoreId,
             data.profileId
           );
           memory = new TACMemoryResponse(memoryResponse);
@@ -444,17 +454,15 @@ export class TAC {
 
   /**
    * Get memory client for advanced memory operations
-   * Returns undefined if memory credentials are not configured
    */
-  public getMemoryClient(): MemoryClient | undefined {
+  public getMemoryClient(): MemoryClient {
     return this.memoryClient;
   }
 
   /**
    * Get knowledge client for knowledge base operations
-   * Returns undefined if memory credentials are not configured
    */
-  public getKnowledgeClient(): KnowledgeClient | undefined {
+  public getKnowledgeClient(): KnowledgeClient {
     return this.knowledgeClient;
   }
 
@@ -463,24 +471,6 @@ export class TAC {
    */
   public getConversationClient(): ConversationClient {
     return this.conversationClient;
-  }
-
-  /**
-   * Check if Twilio Memory functionality is enabled
-   *
-   * @returns true if memory client is initialized, false otherwise
-   */
-  public isMemoryEnabled(): boolean {
-    return this.memoryClient !== undefined;
-  }
-
-  /**
-   * Check if Knowledge functionality is enabled
-   *
-   * @returns true if knowledge client is initialized, false otherwise
-   */
-  public isKnowledgeEnabled(): boolean {
-    return this.knowledgeClient !== undefined;
   }
 
   /**
@@ -503,24 +493,24 @@ export class TAC {
     if (!this.cintelProcessor) {
       throw new Error(
         'Conversation Intelligence processor is not initialized. ' +
-          'Ensure both memory credentials and cintelConfigurationId are provided.'
+          'Ensure cintelConfigurationId is provided in TAC configuration.'
       );
     }
     return this.cintelProcessor.processEvent(payload);
   }
 
   /**
-   * Retrieve memories from Memory API or fallback to Conversations API
+   * Retrieve memories from Memory API with automatic fallback to Conversations API
    *
    * @param session - Conversation session context
    * @param query - Optional semantic search query
    * @returns Promise containing TACMemoryResponse wrapper providing unified access to memory data.
    *
-   * When Memory is configured:
+   * Attempts to retrieve from Memory API first:
    * - observations, summaries, and communications available
    * - communications include author name and type
    *
-   * When using Maestro fallback:
+   * Falls back to Conversations API on error:
    * - observations and summaries are empty arrays
    * - communications have basic fields only (no author name/type)
    */
@@ -528,8 +518,7 @@ export class TAC {
     session: ConversationSession,
     query?: string
   ): Promise<TACMemoryResponse> {
-    // If Memory API is configured
-    if (this.memoryClient && this.config.memoryStoreId) {
+    try {
       // If profileId is missing, try to lookup profile using address
       if (!session.profileId) {
         // Check if authorInfo and address are available
@@ -561,60 +550,48 @@ export class TAC {
           'profileId not found, attempting to lookup profile'
         );
 
-        try {
-          // Lookup profile using appropriate identity type
-          const lookupResponse = await this.memoryClient.lookupProfile(
-            this.config.memoryStoreId,
-            identityType,
-            session.authorInfo.address
-          );
-
-          // Check if any profiles were found
-          if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
-            throw new Error(
-              `No profile found for ${identityType} ${session.authorInfo.address}. ` +
-                'Profile lookup returned no results. Ensure the identity ' +
-                'is registered in the identity resolution system.'
-            );
-          }
-
-          // Use the first profile ID
-          session.profileId = lookupResponse.profiles[0];
-        } catch (error) {
-          this.logger.error(
-            { err: error },
-            `Failed to lookup profile for ${session.authorInfo.address}`
-          );
-          throw error;
-        }
-      }
-
-      try {
-        // At this point, profileId is guaranteed to be defined (either provided or looked up)
-        const memoryResponse = await this.memoryClient.retrieveMemories(
-          this.config.memoryStoreId,
-          session.profileId!,
-          { query }
+        // Lookup profile using appropriate identity type
+        const lookupResponse = await this.memoryClient.lookupProfile(
+          this.memoryStoreId,
+          identityType,
+          session.authorInfo.address
         );
-        return new TACMemoryResponse(memoryResponse);
-      } catch (error) {
-        this.logger.error({ err: error }, 'Failed to retrieve memory');
-        throw error;
+
+        // Check if any profiles were found
+        if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
+          throw new Error(
+            `No profile found for ${identityType} ${session.authorInfo.address}. ` +
+              'Profile lookup returned no results. Ensure the identity ' +
+              'is registered in the identity resolution system.'
+          );
+        }
+
+        // Use the first profile ID
+        session.profileId = lookupResponse.profiles[0];
       }
-    } else {
-      // Fallback to Conversations API
-      this.logger.info('Twilio Memory not configured, falling back to Conversations API');
+
+      // At this point, profileId is guaranteed to be defined (either provided or looked up)
+      const memoryResponse = await this.memoryClient.retrieveMemories(
+        this.memoryStoreId,
+        session.profileId!,
+        { query }
+      );
+      return new TACMemoryResponse(memoryResponse);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        'Failed to retrieve memory from Memory API, falling back to Conversations API'
+      );
 
       try {
         const communications = await this.conversationClient.listCommunications(
           session.conversationId
         );
 
-        // Return TACMemoryResponse wrapper with only communications populated
         return new TACMemoryResponse(communications);
-      } catch (error) {
-        this.logger.error({ err: error }, 'Failed to retrieve communications');
-        throw error;
+      } catch (fallbackError) {
+        this.logger.error({ err: fallbackError }, 'Failed to retrieve communications');
+        throw fallbackError;
       }
     }
   }
@@ -626,28 +603,15 @@ export class TAC {
    * @returns Promise containing profile response or undefined if not available
    */
   public async fetchProfile(profileId: string): Promise<ProfileResponse | undefined> {
-    // Check if memory client is initialized
-    if (!this.memoryClient || !this.config.memoryStoreId) {
-      this.logger.warn(
-        'Memory client is not initialized. Cannot fetch profile. ' +
-          'Provide memory credentials when creating TAC to enable profile fetching.'
-      );
-      return undefined;
-    }
-
-    // Validate profile_id
     if (!profileId) {
       this.logger.warn('profile_id is required for profile fetching but was not provided');
       return undefined;
     }
 
     try {
-      // Get trait_groups from config if provided
       const traitGroups = this.config.traitGroups;
-
-      // Fetch profile
       const profileResponse = await this.memoryClient.getProfile(
-        this.config.memoryStoreId,
+        this.memoryStoreId,
         profileId,
         traitGroups
       );

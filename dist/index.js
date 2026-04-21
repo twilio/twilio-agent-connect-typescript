@@ -19,7 +19,6 @@ var TACConfigSchema = z.object({
   apiKey: z.string().min(1, "Twilio API Key is required"),
   apiSecret: z.string().min(1, "Twilio API Secret is required"),
   phoneNumber: z.string().min(1, "Twilio Phone Number is required"),
-  memoryStoreId: z.string().regex(/^mem_(service|store)_[0-9a-z]{26}$/, "Invalid Memory Store ID format").optional(),
   traitGroups: z.array(z.string()).optional(),
   conversationConfigurationId: z.string().regex(/^conv_configuration_[0-9a-z]{26}$/, "Invalid Conversation Configuration ID format"),
   voicePublicDomain: z.string().url().optional(),
@@ -37,7 +36,6 @@ var EnvironmentVariables = {
   TWILIO_API_KEY: "TWILIO_API_KEY",
   TWILIO_API_SECRET: "TWILIO_API_SECRET",
   TWILIO_PHONE_NUMBER: "TWILIO_PHONE_NUMBER",
-  MEMORY_STORE_ID: "MEMORY_STORE_ID",
   TRAIT_GROUPS: "TRAIT_GROUPS",
   TWILIO_CONVERSATION_CONFIGURATION_ID: "TWILIO_CONVERSATION_CONFIGURATION_ID",
   VOICE_PUBLIC_DOMAIN: "VOICE_PUBLIC_DOMAIN",
@@ -206,7 +204,7 @@ var ConversationConfigurationSchema = z.object({
   displayName: z.string().max(32).regex(/^[a-zA-Z0-9-_ ]+$/).nullable().optional(),
   description: z.string(),
   conversationGroupingType: ConversationGroupingTypeSchema,
-  memoryStoreId: z.string(),
+  memoryStoreId: z.string().regex(/^mem_(store|service)_[0-7][0-9a-z]{25}$/, "Invalid Memory Store ID format"),
   channelSettings: z.record(ChannelSettingsSchema).nullable().optional(),
   statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
   intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),
@@ -736,7 +734,6 @@ var TACConfig = class _TACConfig {
   apiKey;
   apiSecret;
   phoneNumber;
-  memoryStoreId;
   traitGroups;
   conversationConfigurationId;
   voicePublicDomain;
@@ -752,9 +749,6 @@ var TACConfig = class _TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
-    if (validatedConfig.memoryStoreId) {
-      this.memoryStoreId = validatedConfig.memoryStoreId;
-    }
     if (validatedConfig.traitGroups) {
       this.traitGroups = validatedConfig.traitGroups;
     }
@@ -784,7 +778,6 @@ var TACConfig = class _TACConfig {
    * - TWILIO_API_KEY: Twilio API Key (required)
    * - TWILIO_API_SECRET: Twilio API Secret (required)
    * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
-   * - MEMORY_STORE_ID: Memory Store ID (optional, for Twilio Memory)
    * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
@@ -824,7 +817,6 @@ var TACConfig = class _TACConfig {
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY],
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET],
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER],
-      memoryStoreId: process.env[EnvironmentVariables.MEMORY_STORE_ID],
       traitGroups: process.env[EnvironmentVariables.TRAIT_GROUPS]?.split(","),
       conversationConfigurationId: process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID],
       voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
@@ -1732,7 +1724,7 @@ var OperatorResultProcessor = class {
 };
 
 // packages/core/src/lib/tac.ts
-var TAC = class {
+var TAC = class _TAC {
   config;
   logger;
   memoryClient;
@@ -1740,6 +1732,7 @@ var TAC = class {
   conversationClient;
   channels;
   cintelProcessor;
+  memoryStoreId;
   // Callback registrations
   messageReadyCallback;
   interruptCallback;
@@ -1751,33 +1744,42 @@ var TAC = class {
     this.config = finalConfig;
     this.logger = finalLogger;
     this.channels = /* @__PURE__ */ new Map();
-    if (this.config.memoryStoreId) {
-      this.memoryClient = new MemoryClient(this.config, this.logger.child({ component: "memory" }));
-      this.logger.info("Memory client initialized");
-      this.knowledgeClient = new KnowledgeClient(
-        this.config,
-        this.logger.child({ component: "knowledge" })
-      );
-      this.logger.info("Knowledge client initialized");
-    } else {
-      this.logger.info("Memory and Knowledge clients not initialized (credentials not provided)");
-    }
-    if (this.memoryClient && this.config.cintelConfigurationId) {
-      this.cintelProcessor = new OperatorResultProcessor(
-        this.memoryClient,
-        {
-          configurationId: this.config.cintelConfigurationId,
-          observationOperatorSid: this.config.cintelObservationOperatorSid,
-          summaryOperatorSid: this.config.cintelSummaryOperatorSid
-        },
-        this.logger.child({ component: "cintel" })
-      );
-      this.logger.info("Conversation Intelligence processor initialized");
-    }
     this.conversationClient = new ConversationClient(
       this.config,
       this.logger.child({ component: "conversation" })
     );
+  }
+  static async create(options = {}) {
+    const tac = new _TAC(options);
+    try {
+      const conversationConfig = await tac.conversationClient.getConfiguration(
+        tac.config.conversationConfigurationId
+      );
+      tac.memoryStoreId = conversationConfig.memoryStoreId;
+      tac.memoryClient = new MemoryClient(
+        tac.config,
+        tac.logger.child({ component: "memory" })
+      );
+      tac.knowledgeClient = new KnowledgeClient(
+        tac.config,
+        tac.logger.child({ component: "knowledge" })
+      );
+      if (tac.config.cintelConfigurationId) {
+        tac.cintelProcessor = new OperatorResultProcessor(
+          tac.memoryClient,
+          {
+            configurationId: tac.config.cintelConfigurationId,
+            observationOperatorSid: tac.config.cintelObservationOperatorSid,
+            summaryOperatorSid: tac.config.cintelSummaryOperatorSid
+          },
+          tac.logger.child({ component: "cintel" })
+        );
+      }
+      return tac;
+    } catch (error) {
+      tac.logger.error({ err: error }, "TAC initialization failed");
+      throw error;
+    }
   }
   /**
    * Register a channel with the framework
@@ -1908,14 +1910,14 @@ var TAC = class {
         throw new Error(`No session found for conversation ${data.conversationId}`);
       }
       let memory = data.userMemory;
-      if (!memory && data.profileId && this.memoryClient && this.config.memoryStoreId) {
+      if (!memory && data.profileId) {
         this.logger.debug(
           { profile_id: data.profileId, operation: "memory_retrieval" },
           "Retrieving memory for profile"
         );
         try {
           const memoryResponse = await this.memoryClient.retrieveMemories(
-            this.config.memoryStoreId,
+            this.memoryStoreId,
             data.profileId
           );
           memory = new TACMemoryResponse(memoryResponse);
@@ -2034,14 +2036,12 @@ var TAC = class {
   }
   /**
    * Get memory client for advanced memory operations
-   * Returns undefined if memory credentials are not configured
    */
   getMemoryClient() {
     return this.memoryClient;
   }
   /**
    * Get knowledge client for knowledge base operations
-   * Returns undefined if memory credentials are not configured
    */
   getKnowledgeClient() {
     return this.knowledgeClient;
@@ -2051,22 +2051,6 @@ var TAC = class {
    */
   getConversationClient() {
     return this.conversationClient;
-  }
-  /**
-   * Check if Twilio Memory functionality is enabled
-   *
-   * @returns true if memory client is initialized, false otherwise
-   */
-  isMemoryEnabled() {
-    return this.memoryClient !== void 0;
-  }
-  /**
-   * Check if Knowledge functionality is enabled
-   *
-   * @returns true if knowledge client is initialized, false otherwise
-   */
-  isKnowledgeEnabled() {
-    return this.knowledgeClient !== void 0;
   }
   /**
    * Check if Conversation Intelligence processing is enabled
@@ -2086,28 +2070,28 @@ var TAC = class {
   async processCintelEvent(payload) {
     if (!this.cintelProcessor) {
       throw new Error(
-        "Conversation Intelligence processor is not initialized. Ensure both memory credentials and cintelConfigurationId are provided."
+        "Conversation Intelligence processor is not initialized. Ensure cintelConfigurationId is provided in TAC configuration."
       );
     }
     return this.cintelProcessor.processEvent(payload);
   }
   /**
-   * Retrieve memories from Memory API or fallback to Conversations API
+   * Retrieve memories from Memory API with automatic fallback to Conversations API
    *
    * @param session - Conversation session context
    * @param query - Optional semantic search query
    * @returns Promise containing TACMemoryResponse wrapper providing unified access to memory data.
    *
-   * When Memory is configured:
+   * Attempts to retrieve from Memory API first:
    * - observations, summaries, and communications available
    * - communications include author name and type
    *
-   * When using Maestro fallback:
+   * Falls back to Conversations API on error:
    * - observations and summaries are empty arrays
    * - communications have basic fields only (no author name/type)
    */
   async retrieveMemory(session, query) {
-    if (this.memoryClient && this.config.memoryStoreId) {
+    try {
       if (!session.profileId) {
         if (!session.authorInfo || !session.authorInfo.address) {
           throw new Error(
@@ -2129,47 +2113,37 @@ var TAC = class {
           { identityType, address, channel: session.channel },
           "profileId not found, attempting to lookup profile"
         );
-        try {
-          const lookupResponse = await this.memoryClient.lookupProfile(
-            this.config.memoryStoreId,
-            identityType,
-            session.authorInfo.address
-          );
-          if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
-            throw new Error(
-              `No profile found for ${identityType} ${session.authorInfo.address}. Profile lookup returned no results. Ensure the identity is registered in the identity resolution system.`
-            );
-          }
-          session.profileId = lookupResponse.profiles[0];
-        } catch (error) {
-          this.logger.error(
-            { err: error },
-            `Failed to lookup profile for ${session.authorInfo.address}`
-          );
-          throw error;
-        }
-      }
-      try {
-        const memoryResponse = await this.memoryClient.retrieveMemories(
-          this.config.memoryStoreId,
-          session.profileId,
-          { query }
+        const lookupResponse = await this.memoryClient.lookupProfile(
+          this.memoryStoreId,
+          identityType,
+          session.authorInfo.address
         );
-        return new TACMemoryResponse(memoryResponse);
-      } catch (error) {
-        this.logger.error({ err: error }, "Failed to retrieve memory");
-        throw error;
+        if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
+          throw new Error(
+            `No profile found for ${identityType} ${session.authorInfo.address}. Profile lookup returned no results. Ensure the identity is registered in the identity resolution system.`
+          );
+        }
+        session.profileId = lookupResponse.profiles[0];
       }
-    } else {
-      this.logger.info("Twilio Memory not configured, falling back to Conversations API");
+      const memoryResponse = await this.memoryClient.retrieveMemories(
+        this.memoryStoreId,
+        session.profileId,
+        { query }
+      );
+      return new TACMemoryResponse(memoryResponse);
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        "Failed to retrieve memory from Memory API, falling back to Conversations API"
+      );
       try {
         const communications = await this.conversationClient.listCommunications(
           session.conversationId
         );
         return new TACMemoryResponse(communications);
-      } catch (error) {
-        this.logger.error({ err: error }, "Failed to retrieve communications");
-        throw error;
+      } catch (fallbackError) {
+        this.logger.error({ err: fallbackError }, "Failed to retrieve communications");
+        throw fallbackError;
       }
     }
   }
@@ -2180,12 +2154,6 @@ var TAC = class {
    * @returns Promise containing profile response or undefined if not available
    */
   async fetchProfile(profileId) {
-    if (!this.memoryClient || !this.config.memoryStoreId) {
-      this.logger.warn(
-        "Memory client is not initialized. Cannot fetch profile. Provide memory credentials when creating TAC to enable profile fetching."
-      );
-      return void 0;
-    }
     if (!profileId) {
       this.logger.warn("profile_id is required for profile fetching but was not provided");
       return void 0;
@@ -2193,7 +2161,7 @@ var TAC = class {
     try {
       const traitGroups = this.config.traitGroups;
       const profileResponse = await this.memoryClient.getProfile(
-        this.config.memoryStoreId,
+        this.memoryStoreId,
         profileId,
         traitGroups
       );
@@ -2646,7 +2614,7 @@ var MessagingChannel = class extends BaseChannel {
       }
     }
     let userMemory;
-    if (session && this.tac.isMemoryEnabled()) {
+    if (session) {
       this.logger.debug({ conversation_id: conversationId, author }, "Retrieving user memory");
       try {
         userMemory = await this.tac.retrieveMemory(session, message);
@@ -3181,7 +3149,7 @@ var VoiceChannel = class extends BaseChannel {
     this.cancelStreamTask(conversationId);
     const session = this.getConversationSession(conversationId);
     let userMemory;
-    if (session && this.tac.isMemoryEnabled()) {
+    if (session) {
       try {
         userMemory = await this.tac.retrieveMemory(session, transcript);
         this.logger.debug({ conversation_id: conversationId }, "Retrieved memory for active voice");

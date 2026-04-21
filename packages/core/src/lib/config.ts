@@ -21,7 +21,6 @@ export class TACConfig {
   public readonly apiKey: string;
   public readonly apiSecret: string;
   public readonly phoneNumber: string;
-  public readonly memoryStoreId?: string;
   public readonly traitGroups?: string[];
   public readonly conversationConfigurationId: string;
   public readonly voicePublicDomain?: string;
@@ -40,9 +39,6 @@ export class TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
-    if (validatedConfig.memoryStoreId) {
-      this.memoryStoreId = validatedConfig.memoryStoreId;
-    }
     if (validatedConfig.traitGroups) {
       this.traitGroups = validatedConfig.traitGroups;
     }
@@ -73,7 +69,6 @@ export class TACConfig {
    * - TWILIO_API_KEY: Twilio API Key (required)
    * - TWILIO_API_SECRET: Twilio API Secret (required)
    * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
-   * - MEMORY_STORE_ID: Memory Store ID (optional, for Twilio Memory)
    * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
@@ -117,7 +112,6 @@ export class TACConfig {
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
-      memoryStoreId: process.env[EnvironmentVariables.MEMORY_STORE_ID],
       traitGroups: process.env[EnvironmentVariables.TRAIT_GROUPS]?.split(','),
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID]!,

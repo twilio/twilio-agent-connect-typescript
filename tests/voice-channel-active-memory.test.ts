@@ -3,31 +3,19 @@ import { TAC } from '../packages/core/src/lib/tac';
 import { VoiceChannel } from '../packages/core/src/channels/voice';
 import type { PromptMessage } from '../packages/core/src/types/index';
 import { WebSocket } from 'ws';
+import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
 
 describe('VoiceChannel - Active Voice Memory Enrichment', () => {
   let tac: TAC;
   let voiceChannel: VoiceChannel;
 
   const getTestConfig = () => ({
-
     accountSid: 'ACtest123456789',
     authToken: 'test_token_123',
     apiKey: 'SKtest_api_key',
     apiSecret: 'test_api_token',
     phoneNumber: '+15555555555',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
-    memoryStoreId: 'mem_store_01234567890123456789abcdef', // Enable memory
-  });
-
-  const getTestConfigWithoutMemory = () => ({
-
-    accountSid: 'ACtest123456789',
-    authToken: 'test_token_123',
-    apiKey: 'SKtest_api_key',
-    apiSecret: 'test_api_token',
-    phoneNumber: '+15555555555',
-    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
-    // No memoryStoreId - memory disabled
   });
 
   beforeEach(() => {
@@ -40,7 +28,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
   describe('Memory Retrieval in handlePromptMessage', () => {
     it('should retrieve memory when Memory API enabled', async () => {
-      tac = new TAC({ config: getTestConfig() });
+      tac = await createTestTACWithMemory(getTestConfig());
       voiceChannel = new VoiceChannel(tac);
       tac.registerChannel(voiceChannel);
 
@@ -109,61 +97,9 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       );
     });
 
-    it('should not retrieve memory when Memory API disabled', async () => {
-      tac = new TAC({ config: getTestConfigWithoutMemory() });
-      voiceChannel = new VoiceChannel(tac);
-      tac.registerChannel(voiceChannel);
-
-      const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory');
-
-      // Set up WebSocket and session
-      const mockWs = {
-        readyState: WebSocket.OPEN,
-        send: vi.fn(),
-        on: vi.fn(),
-      } as unknown as WebSocket;
-
-      const setupMessage = {
-        type: 'setup' as const,
-        callSid: 'CA123',
-        from: '+15551234567',
-        to: '+15555555555',
-        customParameters: {
-          conversation_id: 'conv123',
-        },
-      };
-
-      // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
-      (voiceChannel as any).startConversation('conv123', 'prof123');
-
-      const promptCallbackSpy = vi.fn();
-      voiceChannel.on('prompt', promptCallbackSpy);
-
-      const promptMessage: PromptMessage = {
-        type: 'prompt',
-        voicePrompt: 'Hello',
-      };
-
-      await (voiceChannel as any).handlePromptMessage('conv123', promptMessage);
-
-      // Memory retrieval should NOT be called
-      expect(retrieveMemorySpy).not.toHaveBeenCalled();
-
-      // Callback should still be invoked (without memory)
-      expect(promptCallbackSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          conversationId: 'conv123',
-          transcript: 'Hello',
-        })
-      );
-
-      // Should not have userMemory property since memory is disabled
-      expect(promptCallbackSpy.mock.calls[0][0]).not.toHaveProperty('userMemory');
-    });
 
     it('should handle memory retrieval errors gracefully', async () => {
-      tac = new TAC({ config: getTestConfig() });
+      tac = await createTestTACWithMemory(getTestConfig());
       voiceChannel = new VoiceChannel(tac);
       tac.registerChannel(voiceChannel);
 
@@ -217,7 +153,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
   describe('Integration with TAC onMessageReady', () => {
     it('should pass enriched memory to TAC.onMessageReady callback', async () => {
-      tac = new TAC({ config: getTestConfig() });
+      tac = await createTestTACWithMemory(getTestConfig());
       voiceChannel = new VoiceChannel(tac);
       tac.registerChannel(voiceChannel);
 
@@ -271,55 +207,11 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       );
     });
 
-    it('should work without memory when disabled', async () => {
-      tac = new TAC({ config: getTestConfigWithoutMemory() });
-      voiceChannel = new VoiceChannel(tac);
-      tac.registerChannel(voiceChannel);
-
-      const messageReadySpy = vi.fn();
-      tac.onMessageReady(messageReadySpy);
-
-      const mockWs = {
-        readyState: WebSocket.OPEN,
-        send: vi.fn(),
-        on: vi.fn(),
-      } as unknown as WebSocket;
-
-      const setupMessage = {
-        type: 'setup' as const,
-        callSid: 'CA123',
-        from: '+15551234567',
-        to: '+15555555555',
-        customParameters: {
-          conversation_id: 'conv123',
-        },
-      };
-
-      // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
-      (voiceChannel as any).startConversation('conv123', 'prof123');
-
-      const promptMessage: PromptMessage = {
-        type: 'prompt',
-        voicePrompt: 'No memory test',
-      };
-
-      await (voiceChannel as any).handlePromptMessage('conv123', promptMessage);
-
-      // Should still invoke callback without memory
-      expect(messageReadySpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          conversationId: 'conv123',
-          message: 'No memory test',
-          channel: 'voice',
-        })
-      );
-    });
   });
 
   describe('Backward Compatibility', () => {
     it('should work with callbacks that only use conversationId and transcript', async () => {
-      tac = new TAC({ config: getTestConfig() });
+      tac = await createTestTACWithMemory(getTestConfig());
       voiceChannel = new VoiceChannel(tac);
       tac.registerChannel(voiceChannel);
 
@@ -376,7 +268,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
   describe('Prompt Serialization', () => {
     it('should serialize prompt messages to prevent race conditions', async () => {
-      tac = new TAC({ config: getTestConfig() });
+      tac = await createTestTACWithMemory(getTestConfig());
       voiceChannel = new VoiceChannel(tac);
       tac.registerChannel(voiceChannel);
 

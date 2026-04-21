@@ -80,10 +80,6 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - `TWILIO_CONVERSATION_CONFIGURATION_ID`: Conversation configuration ID
 - `OPENAI_API_KEY`: Your OpenAI API key (for OpenAI example)
 
-### Optional (Memory)
-
-- `MEMORY_STORE_ID`: Memory store ID
-
 ### Optional (Server)
 
 - `VOICE_PUBLIC_DOMAIN`: Your ngrok domain (required for voice)

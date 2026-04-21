@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatChannel, TAC, ConversationSession } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
+import { createTestTAC } from './helpers/tac';
 
 describe('Chat Channel', () => {
   let mockAdapter: MockAdapter;
@@ -23,8 +24,8 @@ describe('Chat Channel', () => {
   let channel: ChatChannel;
   let tac: TAC;
 
-  beforeEach(() => {
-    tac = new TAC({ config: getTestConfig() });
+  beforeEach(async () => {
+    tac = await createTestTAC(getTestConfig());
     channel = new ChatChannel(tac);
   });
 
@@ -233,6 +234,11 @@ describe('Chat Channel', () => {
       // Access the conversation client's axios instance through TAC
       const conversationClient = (tac as any).conversationClient;
       mockAdapter = new MockAdapter(conversationClient.axiosInstance);
+      // Reset history to clear the getConfiguration call from TAC initialization
+      mockAdapter.resetHistory();
+
+      // Stub retrieveMemory to avoid HTTP calls during webhook processing
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
     });
 
     it('should send response via Send API with existing AI_AGENT', async () => {
@@ -280,9 +286,9 @@ describe('Chat Channel', () => {
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests
+      // Verify requests (listParticipants + sendCommunication)
       const history = mockAdapter.history;
-      expect(history.get.length).toBe(1);
+      expect(history.get.length).toBe(1); // listParticipants
       expect(history.post.length).toBe(1);
       expect(history.post[0].url).toBe('/v2/Communications');
       const sendBody = JSON.parse(history.post[0].data);
@@ -355,9 +361,9 @@ describe('Chat Channel', () => {
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests
+      // Verify requests (listParticipants + addParticipant + sendCommunication)
       const history = mockAdapter.history;
-      expect(history.get.length).toBe(1);
+      expect(history.get.length).toBe(1); // listParticipants
       expect(history.post.length).toBe(2); // addParticipant + sendCommunication
 
       // Verify addParticipant call
@@ -440,10 +446,10 @@ describe('Chat Channel', () => {
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests: 2 GET (list participants), 1 POST (add participant), 1 POST (send)
+      // Verify requests: 2x listParticipants + addParticipant + sendCommunication
       const history = mockAdapter.history;
-      expect(history.get.length).toBe(2);
-      expect(history.post.length).toBe(2);
+      expect(history.get.length).toBe(2); // 2x listParticipants (retry after 409)
+      expect(history.post.length).toBe(2); // addParticipant + sendCommunication
     });
 
     it('should throw error if no active session', async () => {

@@ -83,7 +83,7 @@ config();
 const openai = new OpenAI();
 
 // Initialize TAC and channels
-const tac = new TAC({ config: TACConfig.fromEnv() });
+const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac);
 const smsChannel = new SMSChannel(tac);
 
