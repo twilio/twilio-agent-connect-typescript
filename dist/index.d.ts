@@ -3673,6 +3673,7 @@ declare function createLogger(options?: {
  * - Automatic Basic Auth using Twilio API credentials
  * - User-Agent header injection
  * - 30-second request timeout
+ * - HTTP redirect following (up to 5 redirects) with auth preservation
  * - Automatic retry (up to 3 retries / 4 total attempts with exponential backoff)
  * - Error logging for failed requests
  * - Automatic JSON serialization/deserialization

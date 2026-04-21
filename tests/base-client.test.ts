@@ -108,4 +108,61 @@ describe('BaseClient', () => {
       expect(attemptCount).toBe(1); // Should only try once for POST with 5xx
     });
   });
+
+  describe('redirect handling', () => {
+    it('should configure redirect following with maxRedirects', () => {
+      expect((client as any).axiosInstance.defaults.maxRedirects).toBe(5);
+    });
+
+    it('should configure beforeRedirect callback to preserve auth headers', () => {
+      // Verify that beforeRedirect callback is configured
+      expect((client as any).axiosInstance.defaults.beforeRedirect).toBeDefined();
+      expect(typeof (client as any).axiosInstance.defaults.beforeRedirect).toBe('function');
+    });
+
+    it('should have Authorization header set for all requests', () => {
+      // Verify that Authorization header is configured
+      const authHeader = (client as any).axiosInstance.defaults.headers.Authorization;
+      expect(authHeader).toBeDefined();
+      expect(authHeader).toContain('Basic');
+
+      // Verify it's properly base64 encoded
+      const base64Part = authHeader.split(' ')[1];
+      const decoded = Buffer.from(base64Part, 'base64').toString('utf-8');
+      expect(decoded).toContain('SKtest');
+    });
+
+    it('beforeRedirect callback preserves Authorization header for same-origin redirects', () => {
+      const beforeRedirect = (client as any).axiosInstance.defaults.beforeRedirect;
+      const mockOptions = {
+        protocol: 'https:',
+        host: 'knowledge.twilio.com',
+        path: '/v1/knowledge/redirect',
+        headers: {} as Record<string, string>,
+      };
+
+      // Call the beforeRedirect callback (same origin as baseURL)
+      beforeRedirect(mockOptions, {});
+
+      // Verify it adds the Authorization header for same-origin redirect
+      expect(mockOptions.headers.Authorization).toBeDefined();
+      expect(mockOptions.headers.Authorization).toContain('Basic');
+    });
+
+    it('beforeRedirect callback does NOT preserve Authorization header for cross-origin redirects', () => {
+      const beforeRedirect = (client as any).axiosInstance.defaults.beforeRedirect;
+      const mockOptions = {
+        protocol: 'https:',
+        host: 'malicious-site.com',
+        path: '/steal-credentials',
+        headers: {} as Record<string, string>,
+      };
+
+      // Call the beforeRedirect callback (different origin)
+      beforeRedirect(mockOptions, {});
+
+      // Verify Authorization header is NOT added for cross-origin redirect
+      expect(mockOptions.headers.Authorization).toBeUndefined();
+    });
+  });
 });

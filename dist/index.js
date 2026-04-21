@@ -878,15 +878,24 @@ var BaseClient = class {
   constructor(baseUrl, config, logger2) {
     this.baseUrl = baseUrl;
     this.logger = logger2 || createLogger({ name: this.constructor.name });
+    const authHeader = "Basic " + Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString("base64");
+    const baseOrigin = new URL(baseUrl).origin;
     this.axiosInstance = axios.create({
       baseURL: baseUrl,
       timeout: 3e4,
-      auth: {
-        username: config.apiKey,
-        password: config.apiSecret
-      },
+      maxRedirects: 5,
       headers: {
-        "User-Agent": buildUserAgent()
+        "User-Agent": buildUserAgent(),
+        Authorization: authHeader
+      },
+      beforeRedirect: (options, _responseDetails) => {
+        const redirectUrl = new URL(
+          String(options.path || ""),
+          `${String(options.protocol)}//${String(options.host)}`
+        );
+        if (redirectUrl.origin === baseOrigin && options.headers) {
+          options.headers.Authorization = authHeader;
+        }
       }
     });
     axiosRetry(this.axiosInstance, {

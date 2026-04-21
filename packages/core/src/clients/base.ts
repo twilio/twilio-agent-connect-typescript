@@ -15,6 +15,7 @@ function buildUserAgent(): string {
  * - Automatic Basic Auth using Twilio API credentials
  * - User-Agent header injection
  * - 30-second request timeout
+ * - HTTP redirect following (up to 5 redirects) with auth preservation
  * - Automatic retry (up to 3 retries / 4 total attempts with exponential backoff)
  * - Error logging for failed requests
  * - Automatic JSON serialization/deserialization
@@ -28,15 +29,30 @@ export abstract class BaseClient {
     this.baseUrl = baseUrl;
     this.logger = logger || createLogger({ name: this.constructor.name });
 
+    // Create Authorization header for Basic Auth
+    const authHeader =
+      'Basic ' + Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString('base64');
+
+    // Extract origin from baseUrl for same-origin check
+    const baseOrigin = new URL(baseUrl).origin;
+
     this.axiosInstance = axios.create({
       baseURL: baseUrl,
       timeout: 30000,
-      auth: {
-        username: config.apiKey,
-        password: config.apiSecret,
-      },
+      maxRedirects: 5,
       headers: {
         'User-Agent': buildUserAgent(),
+        Authorization: authHeader,
+      },
+      beforeRedirect: (options, _responseDetails) => {
+        // Preserve auth header for same-origin redirects only (prevents credential leaks)
+        const redirectUrl = new URL(
+          String(options.path || ''),
+          `${String(options.protocol)}//${String(options.host)}`
+        );
+        if (redirectUrl.origin === baseOrigin && options.headers) {
+          (options.headers as Record<string, string>).Authorization = authHeader;
+        }
       },
     });
 

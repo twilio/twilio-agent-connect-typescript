@@ -56,6 +56,7 @@ getting_started/  # Example apps (OpenAI integration)
   - **HTTP client**: axios with axios-retry for resilience
   - **Automatic retry**: 3 retries with exponential backoff; retries idempotent methods on 5xx responses and non-idempotent methods only on network/no-response failures
   - **Timeout**: Fixed 30-second timeout for all requests
+  - **Redirect handling**: Follows up to 5 redirects; preserves Authorization header for same-origin redirects only (prevents credential leaks to malicious redirect targets)
   - **Authentication**: Automatic Basic Auth using Twilio API credentials
   - **User-Agent**: Automatic header injection (`twilio-agent-connect-typescript/{version}`)
   - **JSON handling**: Automatic serialization/deserialization
