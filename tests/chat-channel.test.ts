@@ -241,7 +241,7 @@ describe('Chat Channel', () => {
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
     });
 
-    it('should send response via Send API with existing AI_AGENT', async () => {
+    it('should send response via Actions API with existing AI_AGENT', async () => {
       // Setup conversation
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
@@ -277,41 +277,112 @@ describe('Chat Channel', () => {
         ],
       });
 
-      // Mock sendCommunication
-      mockAdapter.onPost('/v2/Communications').reply(202, {
-        message: 'Communication queued',
+      // Mock createAction
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
         conversationId: 'CHtest123456789',
-        channelId: 'CH00000000000000000000000000000000',
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests (listParticipants + sendCommunication)
+      // Verify requests (listParticipants + createAction)
       const history = mockAdapter.history;
       expect(history.get.length).toBe(1); // listParticipants
       expect(history.post.length).toBe(1);
-      expect(history.post[0].url).toBe('/v2/Communications');
-      const sendBody = JSON.parse(history.post[0].data);
-      expect(sendBody).toMatchObject({
-        conversationId: 'CHtest123456789',
-        author: {
-          address: 'ai-assistant',
-          channel: 'CHAT',
-          participantId: 'PA_agent_123',
-        },
-        recipients: [
-          {
+      expect(history.post[0]!.url).toBe('/v2/Conversations/CHtest123456789/Actions');
+      const body = JSON.parse(history.post[0]!.data);
+      expect(body).not.toHaveProperty('conversationId');
+      expect(body.type).toBe('SEND_MESSAGE');
+      // from/to send participantId + channel only (no address) for Mode 1 resolution
+      expect(body.payload.from.participantId).toBe('PA_agent_123');
+      expect(body.payload.from.channel).toBe('CHAT');
+      expect(body.payload.from).not.toHaveProperty('address');
+      expect(body.payload.to).toHaveLength(1);
+      expect(body.payload.to[0].participantId).toBe('PA_customer_123');
+      expect(body.payload.to[0].channel).toBe('CHAT');
+      expect(body.payload.to[0]).not.toHaveProperty('address');
+      expect(body.payload.content.text).toBe('Hello from bot');
+      expect(body.payload.channelSettings.channelId).toBe(
+        'CH00000000000000000000000000000000'
+      );
+    });
+
+    it('should forward chatService from TAC.conversationsV1ServiceSid when set', async () => {
+      // TODO(conv-orch): Drop this test when the chatService workaround is removed.
+      tac.conversationsV1ServiceSid = 'ISabcdef1234567890abcdef1234567890';
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: {
             address: 'customer@example.com',
-            channel: 'CHAT',
             participantId: 'PA_customer_123',
+            channel: 'CHAT',
+          },
+          content: { type: 'TEXT', text: 'Hello' },
+          channelId: 'CH00000000000000000000000000000000',
+        },
+      });
+
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
+        participants: [
+          {
+            id: 'PA_agent_123',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'AI_AGENT',
+            addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
+          },
+          {
+            id: 'PA_customer_123',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
           },
         ],
-        content: {
-          type: 'TEXT',
-          text: 'Hello from bot',
-        },
-        channelId: 'CH00000000000000000000000000000000',
       });
+
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
+        conversationId: 'CHtest123456789',
+      });
+
+      await channel.sendResponse('CHtest123456789', 'Hello');
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.channelSettings.chatService).toBe(
+        'ISabcdef1234567890abcdef1234567890'
+      );
+      expect(body.payload.channelSettings.channelId).toBe(
+        'CH00000000000000000000000000000000'
+      );
+    });
+
+    it('should throw when channelId missing from session metadata', async () => {
+      // Seed a session with inbound but no channelId
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: {
+            address: 'customer@example.com',
+            participantId: 'PA_customer_123',
+            channel: 'CHAT',
+          },
+          content: { type: 'TEXT', text: 'Hello' },
+          // no channelId
+        },
+      });
+
+      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
+        /session\.metadata\['channelId'\]/
+      );
     });
 
     it('should create AI_AGENT participant if not exists', async () => {
@@ -352,24 +423,25 @@ describe('Chat Channel', () => {
         addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
       });
 
-      // Mock sendCommunication
-      mockAdapter.onPost('/v2/Communications').reply(202, {
-        message: 'Communication queued',
+      // Mock createAction
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
         conversationId: 'CHtest123456789',
-        channelId: null,
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests (listParticipants + addParticipant + sendCommunication)
+      // Verify requests (listParticipants + addParticipant + createAction)
       const history = mockAdapter.history;
       expect(history.get.length).toBe(1); // listParticipants
-      expect(history.post.length).toBe(2); // addParticipant + sendCommunication
+      expect(history.post.length).toBe(2); // addParticipant + createAction
 
       // Verify addParticipant call
-      const addCall = history.post[0];
-      expect(addCall.url).toBe('/v2/Conversations/CHtest123456789/Participants');
-      const addBody = JSON.parse(addCall.data);
+      const addCall = history.post.find(p => p.url?.endsWith('/Participants'));
+      expect(addCall).toBeDefined();
+      const addBody = JSON.parse(addCall!.data);
       expect(addBody).toMatchObject({
         type: 'AI_AGENT',
         addresses: [
@@ -437,19 +509,54 @@ describe('Chat Channel', () => {
         error: 'Participant already exists',
       });
 
-      // Mock sendCommunication
-      mockAdapter.onPost('/v2/Communications').reply(202, {
-        message: 'Communication queued',
+      // Mock createAction
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
         conversationId: 'CHtest123456789',
-        channelId: null,
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests: 2x listParticipants + addParticipant + sendCommunication
+      // Verify requests: 2x listParticipants + addParticipant + createAction
       const history = mockAdapter.history;
       expect(history.get.length).toBe(2); // 2x listParticipants (retry after 409)
-      expect(history.post.length).toBe(2); // addParticipant + sendCommunication
+      expect(history.post.length).toBe(2); // addParticipant + createAction
+    });
+
+    it('should throw when ensureAgentParticipant fails (addParticipant fails and retry finds none)', async () => {
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: {
+            address: 'customer@example.com',
+            participantId: 'PA_customer_123',
+            channel: 'CHAT',
+          },
+          content: { type: 'TEXT', text: 'Hello' },
+          channelId: 'CH00000000000000000000000000000000',
+        },
+      });
+
+      // Both list calls return no AI_AGENT; addParticipant also fails
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
+        participants: [
+          {
+            id: 'PA_customer_123',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
+          },
+        ],
+      });
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(500);
+
+      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
+        'Failed to resolve AI_AGENT participant'
+      );
     });
 
     it('should throw error if no active session', async () => {

@@ -1,4 +1,11 @@
-import { ConversationId, ProfileId, isConversationId, isProfileId } from '../types/index';
+import {
+  ConversationAddress,
+  ConversationId,
+  ConversationParticipant,
+  ProfileId,
+  isConversationId,
+  isProfileId,
+} from '../types/index';
 import { BaseChannel, BaseChannelEvents } from './base';
 import type { TAC } from '../lib/tac';
 
@@ -504,5 +511,87 @@ export abstract class MessagingChannel extends BaseChannel {
       typeof webhookData.eventType === 'string' &&
       webhookData.eventType.length > 0
     );
+  }
+
+  /**
+   * Return the conversation's AI_AGENT participant, creating one if absent.
+   *
+   * Returns the first participant in `existingParticipants` whose type is
+   * AI_AGENT / HUMAN_AGENT / AGENT and owns `agentAddress`. If none match,
+   * creates an AI_AGENT with that address. On failure from another worker
+   * creating it concurrently (typically 409), re-lists and re-matches.
+   *
+   * Returns undefined if match-then-create-then-retry all fail. The caller
+   * should log and bail on undefined.
+   */
+  protected async ensureAgentParticipant(
+    conversationId: ConversationId,
+    existingParticipants: ConversationParticipant[],
+    agentAddress: ConversationAddress
+  ): Promise<ConversationParticipant | undefined> {
+    const matches = (p: ConversationParticipant): boolean =>
+      (p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT' || p.type === 'AGENT') &&
+      Array.isArray(p.addresses) &&
+      p.addresses.some(
+        a => a.channel === agentAddress.channel && a.address === agentAddress.address
+      );
+
+    const existing = existingParticipants.find(matches);
+    if (existing) {
+      return existing;
+    }
+
+    this.logger.debug(
+      {
+        conversation_id: conversationId,
+        channel: agentAddress.channel,
+        address: agentAddress.address,
+      },
+      'No agent participant found, creating AI_AGENT'
+    );
+
+    try {
+      const agent = await this.conversationClient.addParticipant(
+        conversationId,
+        [agentAddress],
+        'AI_AGENT'
+      );
+      this.logger.debug(
+        {
+          conversation_id: conversationId,
+          participant_id: agent.id,
+        },
+        'Created AI_AGENT participant'
+      );
+      return agent;
+    } catch (error) {
+      // Most likely a 409 race (another worker just created the agent), but
+      // we catch broadly here — log the original error so a real 5xx isn't
+      // hidden by the generic "failed to create or find" log below.
+      this.logger.warn(
+        { err: error, conversation_id: conversationId },
+        'Failed to create AI_AGENT, retrying participant list'
+      );
+    }
+
+    let retried: ConversationParticipant[];
+    try {
+      retried = await this.conversationClient.listParticipants(conversationId);
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        'Failed to retry listing participants'
+      );
+      return undefined;
+    }
+
+    const agent = retried.find(matches);
+    if (!agent) {
+      this.logger.error(
+        { conversation_id: conversationId },
+        'Failed to create or find AI_AGENT participant'
+      );
+    }
+    return agent;
   }
 }

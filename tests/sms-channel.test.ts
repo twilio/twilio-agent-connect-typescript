@@ -498,7 +498,7 @@ describe('SMS Channel', () => {
             id: 'PA111',
             conversationId: 'CHtest123456789',
             accountId: 'ACtest123456789',
-            type: 'HUMAN_AGENT',
+            type: 'AI_AGENT',
             addresses: [{ channel: 'SMS', address: '+15551234567' }],
           },
           {
@@ -511,15 +511,17 @@ describe('SMS Channel', () => {
         ],
       });
 
-      // Mock sendCommunication call (returns 202 Accepted)
-      mockAdapter.onPost('/v2/Communications').reply(202, {
-        message: 'Conversation setup complete',
+      // Mock createAction call (returns 202 Accepted)
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
         conversationId: 'CHtest123456789',
-        channelId: 'SM123abc',
+        createdAt: '2025-01-15T10:30:00Z',
       });
     });
 
-    it('should send SMS via Send API', async () => {
+    it('should send SMS via Actions API', async () => {
       // Start conversation and receive message to populate author_info
       await channel.processWebhook({
         eventType: 'CONVERSATION_CREATED',
@@ -546,24 +548,114 @@ describe('SMS Channel', () => {
 
       await channel.sendResponse('CHtest123456789', 'Hello back!');
 
-      // Verify that the correct requests were made (listParticipants + sendCommunication)
+      // Verify that the correct requests were made (listParticipants + createAction)
       const history = mockAdapter.history;
       expect(history.get.length).toBe(1); // listParticipants
-      expect(history.get[0].url).toBe('/v2/Conversations/CHtest123456789/Participants');
+      expect(history.get[0]!.url).toBe('/v2/Conversations/CHtest123456789/Participants');
 
       expect(history.post.length).toBe(1);
-      expect(history.post[0].url).toBe('/v2/Communications');
-      const body = JSON.parse(history.post[0].data);
-      expect(body.conversationId).toBe('CHtest123456789');
-      expect(body.author.address).toBe('+15551234567');
-      expect(body.author.channel).toBe('SMS');
-      expect(body.author.participantId).toBe('PA111');
-      expect(body.recipients).toHaveLength(1);
-      expect(body.recipients[0].address).toBe('+15559876543');
-      expect(body.recipients[0].channel).toBe('SMS');
-      expect(body.recipients[0].participantId).toBe('PA123');
-      expect(body.content.type).toBe('TEXT');
-      expect(body.content.text).toBe('Hello back!');
+      expect(history.post[0]!.url).toBe('/v2/Conversations/CHtest123456789/Actions');
+      const body = JSON.parse(history.post[0]!.data);
+      expect(body).not.toHaveProperty('conversationId'); // now in URL, not body
+      expect(body.type).toBe('SEND_MESSAGE');
+      // from/to send participantId + channel only (no address) for Mode 1 resolution
+      expect(body.payload.from.participantId).toBe('PA111');
+      expect(body.payload.from.channel).toBe('SMS');
+      expect(body.payload.from).not.toHaveProperty('address');
+      expect(body.payload.to).toHaveLength(1);
+      expect(body.payload.to[0].participantId).toBe('PA123');
+      expect(body.payload.to[0].channel).toBe('SMS');
+      expect(body.payload.to[0]).not.toHaveProperty('address');
+      expect(body.payload.content.text).toBe('Hello back!');
+      expect(body.payload.content).not.toHaveProperty('type'); // Actions content has no discriminator
+      // No channelId on the webhook → channelSettings omitted
+      expect(body.payload).not.toHaveProperty('channelSettings');
+    });
+
+    it('should forward channelId as channelSettings.channelId when present', async () => {
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
+      // Inbound communication carrying a channelId (stored in session.metadata)
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS', participantId: 'PA123' },
+          channelId: 'SMabcdef',
+        },
+      });
+
+      await channel.sendResponse('CHtest123456789', 'Reply');
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.channelSettings.channelId).toBe('SMabcdef');
+    });
+
+    it('should lazily create AI_AGENT participant when absent', async () => {
+      // Replace the default listParticipants mock with one that returns only the customer
+      mockAdapter.reset();
+      // keep the getConfiguration call silent (already resolved in createTestTAC)
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
+        participants: [
+          {
+            id: 'PA123',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'SMS', address: '+15559876543' }],
+          },
+        ],
+      });
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(201, {
+        id: 'PA_NEW_AGENT',
+        conversationId: 'CHtest123456789',
+        accountId: 'ACtest123456789',
+        type: 'AI_AGENT',
+        addresses: [{ channel: 'SMS', address: '+15551234567' }],
+      });
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
+        conversationId: 'CHtest123456789',
+      });
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS', participantId: 'PA123' },
+        },
+      });
+
+      await channel.sendResponse('CHtest123456789', 'Reply');
+
+      const posts = mockAdapter.history.post;
+      expect(posts).toHaveLength(2); // addParticipant + createAction
+
+      const addParticipantCall = posts.find(p =>
+        p.url?.endsWith('/Participants')
+      );
+      expect(addParticipantCall).toBeDefined();
+      const addBody = JSON.parse(addParticipantCall!.data);
+      expect(addBody.type).toBe('AI_AGENT');
+      expect(addBody.addresses).toHaveLength(1);
+      expect(addBody.addresses[0].channel).toBe('SMS');
+      expect(addBody.addresses[0].address).toBe('+15551234567');
+
+      const actionCall = posts.find(p => p.url?.endsWith('/Actions'));
+      expect(actionCall).toBeDefined();
+      const actionBody = JSON.parse(actionCall!.data);
+      expect(actionBody.payload.from.participantId).toBe('PA_NEW_AGENT');
     });
 
     it('should throw error when no session exists', async () => {
@@ -583,6 +675,73 @@ describe('SMS Channel', () => {
 
       await expect(channel.sendResponse('CHtest123456789', 'Test')).rejects.toThrow(
         'No author info found'
+      );
+    });
+
+    it('should throw when ensureAgentParticipant fails', async () => {
+      mockAdapter.reset();
+      // Only customer in the participant list and addParticipant fails
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
+        participants: [
+          {
+            id: 'PA123',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'SMS', address: '+15559876543' }],
+          },
+        ],
+      });
+      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(500);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS', participantId: 'PA123' },
+        },
+      });
+
+      await expect(channel.sendResponse('CHtest123456789', 'Reply')).rejects.toThrow(
+        'Failed to resolve AI_AGENT participant'
+      );
+    });
+
+    it('should throw when no CUSTOMER participant is found on SMS', async () => {
+      mockAdapter.reset();
+      // Only the agent participant exists — no CUSTOMER
+      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
+        participants: [
+          {
+            id: 'PA111',
+            conversationId: 'CHtest123456789',
+            accountId: 'ACtest123456789',
+            type: 'AI_AGENT',
+            addresses: [{ channel: 'SMS', address: '+15551234567' }],
+          },
+        ],
+      });
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS', participantId: 'PA_other' },
+        },
+      });
+
+      await expect(channel.sendResponse('CHtest123456789', 'Reply')).rejects.toThrow(
+        'Customer participant not found'
       );
     });
   });

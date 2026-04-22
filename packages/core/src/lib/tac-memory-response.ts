@@ -39,24 +39,24 @@ function normalizeMemoryCommunication(comm: MemoryCommunication): Record<string,
  * Unified response wrapper for TAC.retrieveMemory().
  *
  * Provides a consistent interface for accessing memory data regardless of whether
- * Memory API is configured or falling back to Maestro Communications API.
+ * Memory API is configured or falling back to Conversation Orchestrator Communications API.
  *
  * Memory configured:
  * - observations, summaries, communications all populated
  * - communications include Memory-specific fields (author id, name, type, profileId)
  *
- * Maestro fallback:
+ * Conversation Orchestrator fallback:
  * - observations and summaries are empty arrays
- * - communications include Maestro-specific fields (conversationId, accountId, etc.)
+ * - communications include Conversation Orchestrator-specific fields (conversationId, accountId, etc.)
  */
 export class TACMemoryResponse {
   private readonly _data: MemoryRetrievalResponse | Communication[];
   private readonly _communications: TACCommunication[];
 
   /**
-   * Initialize wrapper with either Memory or Maestro data.
+   * Initialize wrapper with either Memory or Conversation Orchestrator data.
    *
-   * @param data - Either MemoryRetrievalResponse (Memory) or Communication[] (Maestro)
+   * @param data - Either MemoryRetrievalResponse (Memory) or Communication[] (Conversation Orchestrator)
    */
   constructor(data: MemoryRetrievalResponse | Communication[]) {
     this._data = data;
@@ -75,7 +75,7 @@ export class TACMemoryResponse {
   /**
    * Get observation memories.
    *
-   * @returns List of observations if Memory is configured, empty array for Maestro fallback
+   * @returns List of observations if Memory is configured, empty array for Conversation Orchestrator fallback
    */
   get observations(): ObservationInfo[] {
     if (isMemoryRetrievalResponse(this._data)) {
@@ -87,7 +87,7 @@ export class TACMemoryResponse {
   /**
    * Get summary memories.
    *
-   * @returns List of summaries if Memory is configured, empty array for Maestro fallback
+   * @returns List of summaries if Memory is configured, empty array for Conversation Orchestrator fallback
    */
   get summaries(): SummaryInfo[] {
     if (isMemoryRetrievalResponse(this._data)) {
@@ -100,7 +100,7 @@ export class TACMemoryResponse {
    * Get communications in unified format with all available fields.
    *
    * Communications are converted to a common format during initialization that includes
-   * all fields from both Memory and Maestro APIs. Fields not available from a particular
+   * all fields from both Memory and Conversation Orchestrator APIs. Fields not available from a particular
    * API will be undefined.
    *
    * @returns List of unified communications with all available fields
@@ -113,7 +113,7 @@ export class TACMemoryResponse {
    * Check if Memory API is configured and providing full features.
    *
    * @returns true if Memory is configured (observations/summaries available),
-   *          false if using Maestro fallback (only communications available)
+   *          false if using Conversation Orchestrator fallback (only communications available)
    */
   get hasMemoryFeatures(): boolean {
     return isMemoryRetrievalResponse(this._data);

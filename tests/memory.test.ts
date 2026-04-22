@@ -434,21 +434,21 @@ describe('Memory Functionality', () => {
       expect(comm.author.type).toBe('CUSTOMER');
       expect(comm.author.profileId).toBe('profile_456');
 
-      // Maestro-only fields are undefined
+      // Conversation Orchestrator-only fields are undefined
       expect(comm.author.participantId).toBeUndefined();
       expect(comm.conversationId).toBeUndefined();
       expect(comm.accountId).toBeUndefined();
       expect(comm.content.type).toBeUndefined();
     });
 
-    it('should populate Maestro-only fields from Maestro communication', () => {
+    it('should populate Conversation Orchestrator-only fields from Conversation Orchestrator communication', () => {
       const response = new TACMemoryResponse([
         {
           id: 'comm_789',
           conversationId: 'CONV123',
           accountId: 'AC456',
           author: { address: '+15551234567', channel: 'SMS', participantId: 'part_customer' },
-          content: { type: 'TEXT', text: 'Hello from Maestro' },
+          content: { type: 'TEXT', text: 'Hello from Conversation Orchestrator' },
           recipients: [
             {
               address: '+15559876543',
@@ -463,7 +463,7 @@ describe('Memory Functionality', () => {
 
       const comm = response.communications[0];
 
-      // Maestro-only fields populated
+      // Conversation Orchestrator-only fields populated
       expect(comm.conversationId).toBe('CONV123');
       expect(comm.accountId).toBe('AC456');
       expect(comm.author.participantId).toBe('part_customer');

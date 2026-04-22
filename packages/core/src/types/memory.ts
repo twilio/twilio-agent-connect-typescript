@@ -42,7 +42,7 @@ export type MemoryDeliveryStatus = z.infer<typeof MemoryDeliveryStatusSchema>;
 /**
  * Participant in a Memory communication (author or recipient).
  *
- * Memory API has different field requirements than Maestro:
+ * Memory API has different field requirements than Conversation Orchestrator:
  * - Uses `id` and `name` instead of just `participant_id`
  * - Includes `type` and `profile_id` fields
  */
@@ -61,7 +61,7 @@ export type MemoryParticipant = z.infer<typeof MemoryParticipantSchema>;
 /**
  * Content of a Memory communication.
  *
- * Memory API content is simpler than Maestro - no type discriminator field.
+ * Memory API content is simpler than Conversation Orchestrator - no type discriminator field.
  * The `text` field is optional in Memory API models.
  */
 export const MemoryCommunicationContentSchema = z.object({
@@ -73,7 +73,7 @@ export type MemoryCommunicationContent = z.infer<typeof MemoryCommunicationConte
 /**
  * A communication from Memory API (historical conversation data).
  *
- * Memory API has different field requirements than Maestro:
+ * Memory API has different field requirements than Conversation Orchestrator:
  * - No `conversation_id`, `account_id`, or `content.type` fields
  * - Participants use `id`, `name`, `type`, `profile_id`
  */

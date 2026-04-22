@@ -1,4 +1,9 @@
-import { ChannelType, ConversationId } from '../types/index';
+import {
+  ActionChannelSettings,
+  ChannelType,
+  ConversationId,
+  SendMessageActionRequest,
+} from '../types/index';
 import { MessagingChannel, MessagingChannelConfig } from './messaging';
 import type { TAC } from '../lib/tac';
 
@@ -37,7 +42,7 @@ export class ChatChannel extends MessagingChannel {
   }
 
   /**
-   * Send chat response using Conversation Orchestrator Send API
+   * Send chat response using the Conversation Orchestrator Actions API (SEND_MESSAGE).
    */
   public async sendResponse(
     conversationId: ConversationId,
@@ -66,112 +71,84 @@ export class ChatChannel extends MessagingChannel {
         );
       }
 
-      // Get channelId (Chat Channel SID) from session metadata - REQUIRED for CHAT participants
+      const recipientParticipantId = session.authorInfo.participantId;
+      if (!recipientParticipantId) {
+        throw new Error(`No recipient participant ID found for conversation ${conversationId}`);
+      }
+
+      // channelId (Chat Channel SID) is required for CHAT delivery — the V1
+      // Chat backend uses it to pick the destination thread. Inbound webhooks
+      // always populate it, so a missing value here is a misuse.
       const chatChannelSid =
         typeof session.metadata?.channelId === 'string' ? session.metadata.channelId : undefined;
 
       if (!chatChannelSid) {
         throw new Error(
-          `No channelId found in session metadata for conversation ${conversationId}`
+          "Missing required session.metadata['channelId'] for chat sendResponse; " +
+            'this is normally populated by an inbound webhook. Ensure an inbound ' +
+            'message has been processed before calling sendResponse, or set ' +
+            "session.metadata['channelId'] explicitly in advanced usage."
         );
       }
-
-      const recipientAddress = session.authorInfo.address;
 
       // Fetch current participants from Conversation Orchestrator
       const participants = await this.conversationClient.listParticipants(conversationId);
 
-      // Find AI_AGENT participant (may not exist yet for chat)
-      let agentParticipant = participants.find(p => p.type === 'AI_AGENT' || p.type === 'AGENT');
-
-      // If no AI_AGENT participant exists, create one (lazy creation)
+      const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
+        channel: 'CHAT',
+        address: this.agentAddress,
+        channelId: chatChannelSid,
+      });
       if (!agentParticipant) {
-        this.logger.debug(
-          {
-            conversation_id: conversationId,
-            agent_address: this.agentAddress,
-            channel_id: chatChannelSid,
-          },
-          'No AI_AGENT participant found, creating one'
+        throw new Error(
+          `Failed to resolve AI_AGENT participant for conversation ${conversationId}`
         );
-
-        try {
-          // IMPORTANT: channelId is REQUIRED when adding CHAT participants
-          agentParticipant = await this.conversationClient.addParticipant(
-            conversationId,
-            [{ channel: 'CHAT' as const, address: this.agentAddress, channelId: chatChannelSid }],
-            'AI_AGENT'
-          );
-
-          this.logger.info(
-            {
-              conversation_id: conversationId,
-              participant_id: agentParticipant.id,
-              agent_address: this.agentAddress,
-              channel_id: chatChannelSid,
-            },
-            'Created AI_AGENT participant'
-          );
-        } catch (error) {
-          // Handle race condition: another process might have created it
-          this.logger.warn(
-            { err: error, conversation_id: conversationId },
-            'Failed to create AI_AGENT participant, attempting to list participants again'
-          );
-
-          // Retry listing to see if it was created by another process
-          const retriedParticipants =
-            await this.conversationClient.listParticipants(conversationId);
-          agentParticipant = retriedParticipants.find(
-            p => p.type === 'AI_AGENT' || p.type === 'AGENT'
-          );
-
-          if (!agentParticipant) {
-            throw new Error(
-              `Failed to create or find AI_AGENT participant for conversation ${conversationId}`
-            );
-          }
-        }
       }
+
+      // TODO(conv-orch): Drop `chatService` here once the Actions API resolves
+      // the V1 Chat service SID server-side. Confirmed this should not be
+      // required client-side; keep the workaround until the server-side fix
+      // ships. `channelId` stays — it's a permanent per-conversation requirement.
+      const chatServiceSid = this.tac.conversationsV1ServiceSid;
+      const channelSettings: ActionChannelSettings = {
+        channelId: chatChannelSid,
+        ...(chatServiceSid ? { chatService: chatServiceSid } : {}),
+      };
 
       this.logger.debug(
         {
           conversation_id: conversationId,
-          recipient_address: recipientAddress,
           recipient_participant_id: session.authorInfo.participantId,
           agent_participant_id: agentParticipant.id,
           agent_address: this.agentAddress,
+          channel_id: chatChannelSid,
         },
-        'Sending chat message via Send API'
+        'Sending chat message via Actions API'
       );
 
-      // Build Send API request with author (AI_AGENT) and recipient (HUMAN_AGENT)
-      const sendRequest = {
-        author: {
-          address: this.agentAddress,
-          channel: 'CHAT' as const,
-          participantId: agentParticipant.id,
-        },
-        recipients: [
-          {
-            address: recipientAddress,
-            channel: 'CHAT' as const,
-            participantId: session.authorInfo.participantId,
+      const actionRequest: SendMessageActionRequest = {
+        type: 'SEND_MESSAGE',
+        payload: {
+          from: {
+            channel: 'CHAT',
+            participantId: agentParticipant.id,
           },
-        ],
-        content: {
-          type: 'TEXT' as const,
-          text: message,
+          to: [
+            {
+              channel: 'CHAT',
+              participantId: recipientParticipantId,
+            },
+          ],
+          content: { text: message },
+          channelSettings,
         },
-        channelId: chatChannelSid,
       };
 
-      // Send via Conversation Orchestrator Send API
-      await this.conversationClient.sendCommunication(conversationId, sendRequest);
+      await this.conversationClient.createAction(conversationId, actionRequest);
 
       this.logger.info(
         { conversation_id: conversationId, channel_id: chatChannelSid },
-        'Chat message sent successfully via Send API'
+        'Chat message sent successfully via Actions API'
       );
     } catch (error) {
       this.logger.error({ err: error, conversation_id: conversationId }, 'Send response error');

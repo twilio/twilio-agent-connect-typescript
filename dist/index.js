@@ -102,25 +102,41 @@ var CommunicationSchema = z.object({
 var ListCommunicationsResponseSchema = z.object({
   communications: z.array(CommunicationSchema)
 });
-var SendCommunicationParticipantAddressSchema = z.object({
-  address: z.string().min(1, "Address is required").max(254),
-  channel: ParticipantAddressTypeSchema,
-  participantId: z.string().optional()
+var ActionParticipantRefSchema = z.object({
+  participantId: z.string().min(1).optional(),
+  address: z.string().min(1).max(254).optional(),
+  channel: ParticipantAddressTypeSchema
+}).refine((v) => Boolean(v.participantId) || Boolean(v.address), {
+  message: "ActionParticipantRef requires at least `participantId` or `address`"
 });
-var SendCommunicationRequestSchema = z.object({
-  author: SendCommunicationParticipantAddressSchema,
-  content: z.object({
-    type: z.enum(["TEXT", "TRANSCRIPTION"]),
-    text: z.string(),
-    transcription: TranscriptionSchema.optional()
-  }),
-  recipients: z.array(SendCommunicationParticipantAddressSchema).min(1),
-  channelId: z.string().optional()
+var ActionTextContentSchema = z.object({
+  text: z.string().max(8388608)
 });
-var SendCommunicationResponseSchema = z.object({
-  message: z.string(),
+var ActionChannelSettingsSchema = z.object({
+  channelId: z.string().optional(),
+  // TODO(conv-orch): Drop `chatService` once the Actions API resolves the V1 Chat
+  // service SID server-side. Confirmed this should not be required client-side;
+  // keep the field until the server-side fix ships.
+  chatService: z.string().optional()
+}).passthrough();
+var SendMessageActionPayloadSchema = z.object({
+  from: ActionParticipantRefSchema,
+  to: z.array(ActionParticipantRefSchema).min(1),
+  content: ActionTextContentSchema,
+  channelSettings: ActionChannelSettingsSchema.optional()
+});
+var SendMessageActionRequestSchema = z.object({
+  type: z.literal("SEND_MESSAGE").default("SEND_MESSAGE"),
+  payload: SendMessageActionPayloadSchema
+});
+var ActionResponseSchema = z.object({
+  id: z.string(),
+  // Kept as string (not enum) to tolerate future action types. Known: SEND_MESSAGE.
+  type: z.string(),
+  // Kept as string (not enum) to tolerate future statuses. Known: PENDING, COMPLETED, FAILED.
+  status: z.string(),
   conversationId: z.string(),
-  channelId: z.string().nullable()
+  createdAt: z.string().nullish()
 });
 var AuthorInfoSchema = z.object({
   address: z.string(),
@@ -200,6 +216,9 @@ var ConversationGroupingTypeSchema = z.enum([
   "GROUP_BY_PARTICIPANT_ADDRESSES",
   "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"
 ]);
+var ConversationsV1BridgeSchema = z.object({
+  serviceId: z.string()
+});
 var ConversationConfigurationSchema = z.object({
   id: z.string(),
   displayName: z.string().max(32).regex(/^[a-zA-Z0-9-_ ]+$/).nullable().optional(),
@@ -209,6 +228,9 @@ var ConversationConfigurationSchema = z.object({
   channelSettings: z.record(ChannelSettingsSchema).nullable().optional(),
   statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
   intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),
+  // TODO(conv-orch): Drop this field once the Actions API resolves the V1 Chat
+  // service SID server-side — see ConversationsV1BridgeSchema above.
+  conversationsV1Bridge: ConversationsV1BridgeSchema.nullish(),
   createdAt: z.string().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   version: z.number().int().nullable().optional()
@@ -237,7 +259,7 @@ var TACCommunicationAuthorSchema = z.object({
   // Common fields (both APIs)
   address: z.string(),
   channel: TACChannelTypeSchema,
-  // Maestro-only fields
+  // Conversation Orchestrator-only fields
   participantId: z.string().optional(),
   deliveryStatus: TACDeliveryStatusSchema.optional(),
   // Memory-only fields
@@ -247,11 +269,11 @@ var TACCommunicationAuthorSchema = z.object({
   profileId: z.string().optional()
 });
 var TACCommunicationContentSchema = z.object({
-  // Maestro-only: content type discriminator
+  // Conversation Orchestrator-only: content type discriminator
   type: z.enum(["TEXT", "TRANSCRIPTION"]).optional(),
   // Both APIs: message text (optional in unified model to handle both)
   text: z.string().optional(),
-  // Maestro-only: transcription metadata
+  // Conversation Orchestrator-only: transcription metadata
   transcription: TranscriptionSchema.optional()
 });
 var TACCommunicationSchema = z.object({
@@ -263,7 +285,7 @@ var TACCommunicationSchema = z.object({
   channelId: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
-  // Maestro-only fields
+  // Conversation Orchestrator-only fields
   conversationId: z.string().optional(),
   accountId: z.string().optional()
 });
@@ -294,9 +316,9 @@ var TACMemoryResponse = class {
   _data;
   _communications;
   /**
-   * Initialize wrapper with either Memory or Maestro data.
+   * Initialize wrapper with either Memory or Conversation Orchestrator data.
    *
-   * @param data - Either MemoryRetrievalResponse (Memory) or Communication[] (Maestro)
+   * @param data - Either MemoryRetrievalResponse (Memory) or Communication[] (Conversation Orchestrator)
    */
   constructor(data) {
     this._data = data;
@@ -311,7 +333,7 @@ var TACMemoryResponse = class {
   /**
    * Get observation memories.
    *
-   * @returns List of observations if Memory is configured, empty array for Maestro fallback
+   * @returns List of observations if Memory is configured, empty array for Conversation Orchestrator fallback
    */
   get observations() {
     if (isMemoryRetrievalResponse(this._data)) {
@@ -322,7 +344,7 @@ var TACMemoryResponse = class {
   /**
    * Get summary memories.
    *
-   * @returns List of summaries if Memory is configured, empty array for Maestro fallback
+   * @returns List of summaries if Memory is configured, empty array for Conversation Orchestrator fallback
    */
   get summaries() {
     if (isMemoryRetrievalResponse(this._data)) {
@@ -334,7 +356,7 @@ var TACMemoryResponse = class {
    * Get communications in unified format with all available fields.
    *
    * Communications are converted to a common format during initialization that includes
-   * all fields from both Memory and Maestro APIs. Fields not available from a particular
+   * all fields from both Memory and Conversation Orchestrator APIs. Fields not available from a particular
    * API will be undefined.
    *
    * @returns List of unified communications with all available fields
@@ -346,7 +368,7 @@ var TACMemoryResponse = class {
    * Check if Memory API is configured and providing full features.
    *
    * @returns true if Memory is configured (observations/summaries available),
-   *          false if using Maestro fallback (only communications available)
+   *          false if using Conversation Orchestrator fallback (only communications available)
    */
   get hasMemoryFeatures() {
     return isMemoryRetrievalResponse(this._data);
@@ -1147,24 +1169,23 @@ var ConversationClient = class extends BaseClient {
     this.conversationConfigurationId = config.conversationConfigurationId;
   }
   /**
-   * Send a communication using the Conversation Orchestrator Send API
+   * Create an action on a conversation via the Conversation Orchestrator Actions API.
+   *
+   * Currently supports SEND_MESSAGE actions. Returns 202 Accepted; the action is
+   * processed asynchronously and delivered via COMMUNICATION_CREATED webhook.
    *
    * @param conversationId - The conversation ID
-   * @param request - Send communication request
-   * @returns Promise containing communication response
+   * @param request - The action request ({type, payload})
+   * @returns Promise containing the ActionResponse
    */
-  async sendCommunication(conversationId, request) {
-    const url = `/v2/Communications`;
-    const requestBody = {
-      conversationId,
-      ...request
-    };
+  async createAction(conversationId, request) {
+    const url = `/v2/Conversations/${conversationId}/Actions`;
     try {
-      const data = await this.makeRequest(url, "POST", requestBody);
-      return SendCommunicationResponseSchema.parse(data);
+      const data = await this.makeRequest(url, "POST", request);
+      return ActionResponseSchema.parse(data);
     } catch (error) {
       throw new Error(
-        `Failed to send communication: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to create action: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
     }
@@ -1735,6 +1756,20 @@ var TAC = class _TAC {
   channels;
   cintelProcessor;
   memoryStoreId;
+  /**
+   * V1 Conversations service SID sourced from `conversationsV1Bridge.serviceId`
+   * on the configuration. Forwarded by the chat channel as
+   * `channelSettings.chatService` on Actions API requests.
+   *
+   * TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID
+   * server-side. Confirmed this should not be required client-side; until the
+   * server-side fix ships, CHAT sends fail with
+   *   "chatService attribute is required for CHAT channel"
+   * unless we pass it on channelSettings.chatService. When the server-side fix
+   * lands, drop this attribute plus ActionChannelSettings.chatService and the
+   * chat channel's chatServiceSid plumbing.
+   */
+  conversationsV1ServiceSid;
   // Callback registrations
   messageReadyCallback;
   interruptCallback;
@@ -1761,6 +1796,7 @@ var TAC = class _TAC {
         tac.config.conversationConfigurationId
       );
       tac.memoryStoreId = conversationConfig.memoryStoreId;
+      tac.conversationsV1ServiceSid = conversationConfig.conversationsV1Bridge?.serviceId ?? void 0;
       tac.memoryClient = new MemoryClient(tac.config, tac.logger.child({ component: "memory" }));
       tac.knowledgeClient = new KnowledgeClient(
         tac.config,
@@ -2716,6 +2752,72 @@ var MessagingChannel = class extends BaseChannel {
     const webhookData = payload;
     return typeof webhookData === "object" && typeof webhookData.eventType === "string" && webhookData.eventType.length > 0;
   }
+  /**
+   * Return the conversation's AI_AGENT participant, creating one if absent.
+   *
+   * Returns the first participant in `existingParticipants` whose type is
+   * AI_AGENT / HUMAN_AGENT / AGENT and owns `agentAddress`. If none match,
+   * creates an AI_AGENT with that address. On failure from another worker
+   * creating it concurrently (typically 409), re-lists and re-matches.
+   *
+   * Returns undefined if match-then-create-then-retry all fail. The caller
+   * should log and bail on undefined.
+   */
+  async ensureAgentParticipant(conversationId, existingParticipants, agentAddress) {
+    const matches = (p) => (p.type === "AI_AGENT" || p.type === "HUMAN_AGENT" || p.type === "AGENT") && Array.isArray(p.addresses) && p.addresses.some(
+      (a) => a.channel === agentAddress.channel && a.address === agentAddress.address
+    );
+    const existing = existingParticipants.find(matches);
+    if (existing) {
+      return existing;
+    }
+    this.logger.debug(
+      {
+        conversation_id: conversationId,
+        channel: agentAddress.channel,
+        address: agentAddress.address
+      },
+      "No agent participant found, creating AI_AGENT"
+    );
+    try {
+      const agent2 = await this.conversationClient.addParticipant(
+        conversationId,
+        [agentAddress],
+        "AI_AGENT"
+      );
+      this.logger.debug(
+        {
+          conversation_id: conversationId,
+          participant_id: agent2.id
+        },
+        "Created AI_AGENT participant"
+      );
+      return agent2;
+    } catch (error) {
+      this.logger.warn(
+        { err: error, conversation_id: conversationId },
+        "Failed to create AI_AGENT, retrying participant list"
+      );
+    }
+    let retried;
+    try {
+      retried = await this.conversationClient.listParticipants(conversationId);
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        "Failed to retry listing participants"
+      );
+      return void 0;
+    }
+    const agent = retried.find(matches);
+    if (!agent) {
+      this.logger.error(
+        { conversation_id: conversationId },
+        "Failed to create or find AI_AGENT participant"
+      );
+    }
+    return agent;
+  }
 };
 
 // packages/core/src/channels/sms.ts
@@ -2730,7 +2832,7 @@ var SMSChannel = class extends MessagingChannel {
     return authorAddress === this.config.phoneNumber;
   }
   /**
-   * Send SMS response using Conversation Orchestrator Send API
+   * Send SMS response using the Conversation Orchestrator Actions API (SEND_MESSAGE).
    */
   async sendResponse(conversationId, message, metadata) {
     this.logger.debug(
@@ -2753,50 +2855,61 @@ var SMSChannel = class extends MessagingChannel {
       }
       const recipientAddress = session.authorInfo.address;
       const participants = await this.conversationClient.listParticipants(conversationId);
-      const smsParticipants = participants.filter(
-        (p) => Array.isArray(p.addresses) && p.addresses.some(
-          (addr) => addr.channel === "SMS" && addr.address === this.config.phoneNumber
-        )
-      );
-      const agentParticipant = smsParticipants.find(
-        (p) => p.type === "AI_AGENT" || p.type === "HUMAN_AGENT" || p.type === "AGENT"
-      ) ?? smsParticipants[0];
+      let customerParticipantId;
+      for (const p of participants) {
+        if (p.type !== "CUSTOMER" || !Array.isArray(p.addresses)) continue;
+        const smsAddress = p.addresses.find((a) => a.channel === "SMS");
+        if (smsAddress) {
+          customerParticipantId = p.id;
+          break;
+        }
+      }
+      const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
+        channel: "SMS",
+        address: this.config.phoneNumber
+      });
       if (!agentParticipant) {
         throw new Error(
-          `Agent participant not found for conversation ${conversationId} with phone ${this.config.phoneNumber}`
+          `Failed to resolve AI_AGENT participant for conversation ${conversationId}`
         );
       }
+      if (!customerParticipantId) {
+        throw new Error(
+          `Customer participant not found on SMS channel for conversation ${conversationId}`
+        );
+      }
+      const channelId = typeof session.metadata?.channelId === "string" ? session.metadata.channelId : void 0;
       this.logger.debug(
         {
           conversation_id: conversationId,
           recipient_address: recipientAddress,
-          recipient_participant_id: session.authorInfo.participantId,
+          recipient_participant_id: customerParticipantId,
           agent_participant_id: agentParticipant.id,
           from_number: this.config.phoneNumber
         },
-        "Sending SMS via Send API"
+        "Sending SMS via Actions API"
       );
-      await this.conversationClient.sendCommunication(conversationId, {
-        author: {
-          address: this.config.phoneNumber,
-          channel: "SMS",
-          participantId: agentParticipant.id
-        },
-        recipients: [
-          {
-            address: recipientAddress,
+      const actionRequest = {
+        type: "SEND_MESSAGE",
+        payload: {
+          from: {
             channel: "SMS",
-            participantId: session.authorInfo.participantId
-          }
-        ],
-        content: {
-          type: "TEXT",
-          text: message
+            participantId: agentParticipant.id
+          },
+          to: [
+            {
+              channel: "SMS",
+              participantId: customerParticipantId
+            }
+          ],
+          content: { text: message },
+          ...channelId ? { channelSettings: { channelId } } : {}
         }
-      });
+      };
+      await this.conversationClient.createAction(conversationId, actionRequest);
       this.logger.info(
         { conversation_id: conversationId, recipient_address: recipientAddress },
-        "SMS sent successfully via Send API"
+        "SMS sent successfully via Actions API"
       );
     } catch (error) {
       this.logger.error({ err: error, conversation_id: conversationId }, "Send response error");
@@ -2827,7 +2940,7 @@ var ChatChannel = class extends MessagingChannel {
     return authorAddress === this.agentAddress;
   }
   /**
-   * Send chat response using Conversation Orchestrator Send API
+   * Send chat response using the Conversation Orchestrator Actions API (SEND_MESSAGE).
    */
   async sendResponse(conversationId, message, metadata) {
     this.logger.debug(
@@ -2848,88 +2961,63 @@ var ChatChannel = class extends MessagingChannel {
           `No author info found for conversation ${conversationId} - no inbound message received yet`
         );
       }
+      const recipientParticipantId = session.authorInfo.participantId;
+      if (!recipientParticipantId) {
+        throw new Error(`No recipient participant ID found for conversation ${conversationId}`);
+      }
       const chatChannelSid = typeof session.metadata?.channelId === "string" ? session.metadata.channelId : void 0;
       if (!chatChannelSid) {
         throw new Error(
-          `No channelId found in session metadata for conversation ${conversationId}`
+          "Missing required session.metadata['channelId'] for chat sendResponse; this is normally populated by an inbound webhook. Ensure an inbound message has been processed before calling sendResponse, or set session.metadata['channelId'] explicitly in advanced usage."
         );
       }
-      const recipientAddress = session.authorInfo.address;
       const participants = await this.conversationClient.listParticipants(conversationId);
-      let agentParticipant = participants.find((p) => p.type === "AI_AGENT" || p.type === "AGENT");
+      const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
+        channel: "CHAT",
+        address: this.agentAddress,
+        channelId: chatChannelSid
+      });
       if (!agentParticipant) {
-        this.logger.debug(
-          {
-            conversation_id: conversationId,
-            agent_address: this.agentAddress,
-            channel_id: chatChannelSid
-          },
-          "No AI_AGENT participant found, creating one"
+        throw new Error(
+          `Failed to resolve AI_AGENT participant for conversation ${conversationId}`
         );
-        try {
-          agentParticipant = await this.conversationClient.addParticipant(
-            conversationId,
-            [{ channel: "CHAT", address: this.agentAddress, channelId: chatChannelSid }],
-            "AI_AGENT"
-          );
-          this.logger.info(
-            {
-              conversation_id: conversationId,
-              participant_id: agentParticipant.id,
-              agent_address: this.agentAddress,
-              channel_id: chatChannelSid
-            },
-            "Created AI_AGENT participant"
-          );
-        } catch (error) {
-          this.logger.warn(
-            { err: error, conversation_id: conversationId },
-            "Failed to create AI_AGENT participant, attempting to list participants again"
-          );
-          const retriedParticipants = await this.conversationClient.listParticipants(conversationId);
-          agentParticipant = retriedParticipants.find(
-            (p) => p.type === "AI_AGENT" || p.type === "AGENT"
-          );
-          if (!agentParticipant) {
-            throw new Error(
-              `Failed to create or find AI_AGENT participant for conversation ${conversationId}`
-            );
-          }
-        }
       }
+      const chatServiceSid = this.tac.conversationsV1ServiceSid;
+      const channelSettings = {
+        channelId: chatChannelSid,
+        ...chatServiceSid ? { chatService: chatServiceSid } : {}
+      };
       this.logger.debug(
         {
           conversation_id: conversationId,
-          recipient_address: recipientAddress,
           recipient_participant_id: session.authorInfo.participantId,
           agent_participant_id: agentParticipant.id,
-          agent_address: this.agentAddress
+          agent_address: this.agentAddress,
+          channel_id: chatChannelSid
         },
-        "Sending chat message via Send API"
+        "Sending chat message via Actions API"
       );
-      const sendRequest = {
-        author: {
-          address: this.agentAddress,
-          channel: "CHAT",
-          participantId: agentParticipant.id
-        },
-        recipients: [
-          {
-            address: recipientAddress,
+      const actionRequest = {
+        type: "SEND_MESSAGE",
+        payload: {
+          from: {
             channel: "CHAT",
-            participantId: session.authorInfo.participantId
-          }
-        ],
-        content: {
-          type: "TEXT",
-          text: message
-        },
-        channelId: chatChannelSid
+            participantId: agentParticipant.id
+          },
+          to: [
+            {
+              channel: "CHAT",
+              participantId: recipientParticipantId
+            }
+          ],
+          content: { text: message },
+          channelSettings
+        }
       };
-      await this.conversationClient.sendCommunication(conversationId, sendRequest);
+      await this.conversationClient.createAction(conversationId, actionRequest);
       this.logger.info(
         { conversation_id: conversationId, channel_id: chatChannelSid },
-        "Chat message sent successfully via Send API"
+        "Chat message sent successfully via Actions API"
       );
     } catch (error) {
       this.logger.error({ err: error, conversation_id: conversationId }, "Send response error");
@@ -4167,6 +4255,6 @@ var TACServer = class {
   }
 };
 
-export { AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendCommunicationParticipantAddressSchema, SendCommunicationRequestSchema, SendCommunicationResponseSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

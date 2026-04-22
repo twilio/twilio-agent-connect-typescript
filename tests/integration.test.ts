@@ -30,7 +30,7 @@ describe('Integration Tests', () => {
               id: 'PA111',
               conversationId: 'CHtest123456789',
               accountId: 'ACtest123456789',
-              type: 'HUMAN_AGENT',
+              type: 'AI_AGENT',
               addresses: [{ channel: 'SMS', address: '+15551234567' }],
             },
             {
@@ -49,14 +49,16 @@ describe('Integration Tests', () => {
         });
       }
 
-      // Mock sendCommunication call (returns 202 Accepted)
-      const sendResponse = {
-        message: 'Conversation setup complete',
+      // Mock createAction call (returns 202 Accepted)
+      const actionResponse = {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
         conversationId: 'CHtest123456789',
-        channelId: 'SM123abc',
+        createdAt: '2025-01-15T10:30:00Z',
       };
 
-      return new Response(JSON.stringify(sendResponse), {
+      return new Response(JSON.stringify(actionResponse), {
         status: 202,
         headers: { 'Content-Type': 'application/json' },
       });

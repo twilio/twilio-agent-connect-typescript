@@ -257,35 +257,79 @@ describe('ConversationClient', () => {
     });
   });
 
-  describe('sendCommunication()', () => {
-    it('should send communication successfully', async () => {
+  describe('createAction()', () => {
+    it('should create a SEND_MESSAGE action successfully', async () => {
       const mockResponse = {
-        message: 'Communication queued',
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
         conversationId: 'CH123',
-        channelId: null,
+        createdAt: '2025-01-15T10:30:00Z',
       };
 
-      mockAdapter.onPost('/v2/Communications').reply(202, mockResponse);
+      mockAdapter.onPost('/v2/Conversations/CH123/Actions').reply(202, mockResponse);
 
-      const result = await conversationClient.sendCommunication('CH123', {
-        author: { address: '+12025551234', channel: 'SMS', participantId: 'part_123' },
-        content: { type: 'TEXT', text: 'Hello' },
-        recipients: [{ address: '+12025555678', channel: 'SMS', participantId: 'part_456' }],
+      const result = await conversationClient.createAction('CH123', {
+        type: 'SEND_MESSAGE',
+        payload: {
+          from: { address: '+12025551234', channel: 'SMS', participantId: 'part_123' },
+          to: [{ address: '+12025555678', channel: 'SMS', participantId: 'part_456' }],
+          content: { text: 'Hello' },
+          channelSettings: { channelId: 'SM999' },
+        },
       });
 
-      expect(result.message).toBe('Communication queued');
+      // Body uses the {type, payload} shape and does not include conversationId
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body).not.toHaveProperty('conversationId');
+      expect(body.type).toBe('SEND_MESSAGE');
+      expect(body.payload.from.participantId).toBe('part_123');
+      expect(body.payload.to).toHaveLength(1);
+      expect(body.payload.content.text).toBe('Hello');
+      expect(body.payload.content).not.toHaveProperty('type');
+      expect(body.payload.channelSettings.channelId).toBe('SM999');
+
+      expect(result.id).toBe('conv_action_01abcdef');
+      expect(result.type).toBe('SEND_MESSAGE');
+      expect(result.status).toBe('PENDING');
+      expect(result.conversationId).toBe('CH123');
+      expect(result.createdAt).toBe('2025-01-15T10:30:00Z');
+    });
+
+    it('should omit channelSettings when not provided', async () => {
+      mockAdapter.onPost('/v2/Conversations/CH123/Actions').reply(202, {
+        id: 'conv_action_01abcdef',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
+        conversationId: 'CH123',
+      });
+
+      await conversationClient.createAction('CH123', {
+        type: 'SEND_MESSAGE',
+        payload: {
+          from: { address: '+12025551234', channel: 'SMS', participantId: 'part_123' },
+          to: [{ address: '+12025555678', channel: 'SMS', participantId: 'part_456' }],
+          content: { text: 'Hello' },
+        },
+      });
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload).not.toHaveProperty('channelSettings');
     });
 
     it('should handle API errors', async () => {
-      mockAdapter.onPost('/v2/Communications').reply(500);
+      mockAdapter.onPost('/v2/Conversations/CH123/Actions').reply(500);
 
       await expect(
-        conversationClient.sendCommunication('CH123', {
-          author: { address: '+12025551234', channel: 'SMS', participantId: 'part_123' },
-          content: { type: 'TEXT', text: 'Hello' },
-          recipients: [{ address: '+12025555678', channel: 'SMS', participantId: 'part_456' }],
+        conversationClient.createAction('CH123', {
+          type: 'SEND_MESSAGE',
+          payload: {
+            from: { address: '+12025551234', channel: 'SMS', participantId: 'part_123' },
+            to: [{ address: '+12025555678', channel: 'SMS', participantId: 'part_456' }],
+            content: { text: 'Hello' },
+          },
         })
-      ).rejects.toThrow(/Failed to send communication/);
+      ).rejects.toThrow(/Failed to create action/);
     });
   });
 

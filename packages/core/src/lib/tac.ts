@@ -71,6 +71,21 @@ export class TAC {
 
   private memoryStoreId!: string;
 
+  /**
+   * V1 Conversations service SID sourced from `conversationsV1Bridge.serviceId`
+   * on the configuration. Forwarded by the chat channel as
+   * `channelSettings.chatService` on Actions API requests.
+   *
+   * TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID
+   * server-side. Confirmed this should not be required client-side; until the
+   * server-side fix ships, CHAT sends fail with
+   *   "chatService attribute is required for CHAT channel"
+   * unless we pass it on channelSettings.chatService. When the server-side fix
+   * lands, drop this attribute plus ActionChannelSettings.chatService and the
+   * chat channel's chatServiceSid plumbing.
+   */
+  public conversationsV1ServiceSid: string | undefined;
+
   // Callback registrations
   private messageReadyCallback?: MessageReadyCallback;
   private interruptCallback?: InterruptCallback;
@@ -110,6 +125,10 @@ export class TAC {
       );
 
       tac.memoryStoreId = conversationConfig.memoryStoreId;
+      // TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID
+      // server-side — see the conversationsV1ServiceSid field comment above.
+      tac.conversationsV1ServiceSid =
+        conversationConfig.conversationsV1Bridge?.serviceId ?? undefined;
       tac.memoryClient = new MemoryClient(tac.config, tac.logger.child({ component: 'memory' }));
 
       tac.knowledgeClient = new KnowledgeClient(

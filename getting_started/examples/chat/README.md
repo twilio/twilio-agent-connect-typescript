@@ -18,7 +18,7 @@ Example demonstrating ChatChannel integration with Twilio Agent Connect. Uses th
 
    Required credentials:
    - Standard TAC credentials (Account SID, Auth Token, API credentials, Conversation Orchestrator configuration ID: `TWILIO_CONVERSATION_CONFIGURATION_ID`)
-   - `TWILIO_CONVERSATION_SERVICE_SID` - Conversations v1 Service SID (starts with IS, **not** the Conversation Orchestrator configuration ID)
+   - `TWILIO_CONVERSATIONS_SERVICE_SID` - Conversations v1 Service SID (starts with IS, **not** the Conversation Orchestrator configuration ID)
    - `OPENAI_API_KEY` - OpenAI API key
 
 3. Install the example's dependencies:
@@ -45,10 +45,10 @@ Example demonstrating ChatChannel integration with Twilio Agent Connect. Uses th
 
 2. **Backend**: Standalone Fastify server with TAC + ChatChannel + OpenAI
    - `POST /token` — generates Conversations SDK access token
-   - `POST /conversation` — Conversation Orchestrator webhook endpoint
+   - `POST /webhook` — Conversation Orchestrator webhook endpoint
    - Routes webhook events to ChatChannel
-   - Calls OpenAI gpt-4o-mini for responses
-   - Sends responses via Conversation Orchestrator Send API
+   - Calls OpenAI gpt-5.4-mini for responses
+   - Sends responses via Conversation Orchestrator Actions API
 
 ## Architecture
 
@@ -66,12 +66,12 @@ sequenceDiagram
     Browser->>TC: 2. Create Conversation & Send Message (SDK)
     TC-->>CO: 3. Passive hydration
 
-    CO->>Server: 4. POST /conversation (COMMUNICATION_CREATED)
+    CO->>Server: 4. POST /webhook (COMMUNICATION_CREATED)
 
     Server->>OpenAI: 5. Generate response
     OpenAI-->>Server: AI response
 
-    Server->>CO: 6. POST /v2/Communications (Send API)
+    Server->>CO: 6. POST /v2/Conversations/{id}/Actions (SEND_MESSAGE)
     CO-->>TC: 7. Deliver message
 
     TC->>Browser: 8. Message Added (SDK event)
@@ -85,7 +85,7 @@ sequenceDiagram
 4. Check server logs to see:
    - Token generation
    - Webhook routing to ChatChannel
-   - Send API calls with `channel='CHAT'`
+   - Actions API calls with `channel='CHAT'`
 
 ## Notes
 
