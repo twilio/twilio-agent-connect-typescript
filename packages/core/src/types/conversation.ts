@@ -313,8 +313,18 @@ export type StatusCallback = z.infer<typeof StatusCallbackSchema>;
 
 /**
  * Conversation grouping type
+ *
+ * - `GROUP_BY_PROFILE`: Groups communications by participant profile. Communications
+ *   with the same profile go to the same conversation, regardless of the channel or address.
+ * - `GROUP_BY_PARTICIPANT_ADDRESSES`: Groups communications by participant addresses
+ *   across all channels. A customer using +15551234567 will be in the same conversation
+ *   whether they contact via SMS, WhatsApp, or RCS.
+ * - `GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE`: Groups communications by both
+ *   participant addresses AND channel. A customer using +15551234567 via SMS will be in
+ *   a different conversation than the same customer via WhatsApp.
  */
 export const ConversationGroupingTypeSchema = z.enum([
+  'GROUP_BY_PROFILE',
   'GROUP_BY_PARTICIPANT_ADDRESSES',
   'GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE',
 ]);

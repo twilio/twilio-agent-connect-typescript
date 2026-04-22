@@ -1994,8 +1994,17 @@ declare const StatusCallbackSchema: z.ZodObject<{
 type StatusCallback = z.infer<typeof StatusCallbackSchema>;
 /**
  * Conversation grouping type
+ *
+ * - `GROUP_BY_PROFILE`: Groups communications by participant profile. Communications
+ *   with the same profile go to the same conversation, regardless of the channel or address.
+ * - `GROUP_BY_PARTICIPANT_ADDRESSES`: Groups communications by participant addresses
+ *   across all channels. A customer using +15551234567 will be in the same conversation
+ *   whether they contact via SMS, WhatsApp, or RCS.
+ * - `GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE`: Groups communications by both
+ *   participant addresses AND channel. A customer using +15551234567 via SMS will be in
+ *   a different conversation than the same customer via WhatsApp.
  */
-declare const ConversationGroupingTypeSchema: z.ZodEnum<["GROUP_BY_PARTICIPANT_ADDRESSES", "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"]>;
+declare const ConversationGroupingTypeSchema: z.ZodEnum<["GROUP_BY_PROFILE", "GROUP_BY_PARTICIPANT_ADDRESSES", "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"]>;
 type ConversationGroupingType = z.infer<typeof ConversationGroupingTypeSchema>;
 /**
  * Configuration settings for a conversation
@@ -2004,7 +2013,7 @@ declare const ConversationConfigurationSchema: z.ZodObject<{
     id: z.ZodString;
     displayName: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     description: z.ZodString;
-    conversationGroupingType: z.ZodEnum<["GROUP_BY_PARTICIPANT_ADDRESSES", "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"]>;
+    conversationGroupingType: z.ZodEnum<["GROUP_BY_PROFILE", "GROUP_BY_PARTICIPANT_ADDRESSES", "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"]>;
     memoryStoreId: z.ZodString;
     channelSettings: z.ZodOptional<z.ZodNullable<z.ZodRecord<z.ZodString, z.ZodObject<{
         statusTimeouts: z.ZodOptional<z.ZodNullable<z.ZodObject<{
@@ -2068,7 +2077,7 @@ declare const ConversationConfigurationSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     id: string;
     description: string;
-    conversationGroupingType: "GROUP_BY_PARTICIPANT_ADDRESSES" | "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE";
+    conversationGroupingType: "GROUP_BY_PROFILE" | "GROUP_BY_PARTICIPANT_ADDRESSES" | "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE";
     memoryStoreId: string;
     createdAt?: string | null | undefined;
     updatedAt?: string | null | undefined;
@@ -2093,7 +2102,7 @@ declare const ConversationConfigurationSchema: z.ZodObject<{
 }, {
     id: string;
     description: string;
-    conversationGroupingType: "GROUP_BY_PARTICIPANT_ADDRESSES" | "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE";
+    conversationGroupingType: "GROUP_BY_PROFILE" | "GROUP_BY_PARTICIPANT_ADDRESSES" | "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE";
     memoryStoreId: string;
     createdAt?: string | null | undefined;
     updatedAt?: string | null | undefined;
@@ -3970,6 +3979,7 @@ type ConversationEndedCallback = (params: {
  * and coordinates between memory, conversations, and LLM integrations.
  */
 declare class TAC {
+    private static readonly FACTORY_TOKEN;
     private readonly config;
     readonly logger: Logger;
     private memoryClient;

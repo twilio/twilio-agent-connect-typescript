@@ -358,6 +358,49 @@ describe('ConversationClient', () => {
 
       await expect(conversationClient.getConfiguration('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd')).rejects.toThrow();
     });
+
+    it('should accept GROUP_BY_PROFILE grouping type', async () => {
+      const mockResponse = {
+        id: 'conv_configuration_profile',
+        description: 'Profile-Based Configuration',
+        conversationGroupingType: 'GROUP_BY_PROFILE',
+        memoryStoreId: 'mem_store_01kbjqhhdpft0tbp21jt4ktbxj',
+        createdAt: '2019-08-24T14:15:22Z',
+        updatedAt: '2019-08-24T14:15:22Z',
+      };
+
+      mockAdapter.onGet('/v2/ControlPlane/Configurations/conv_configuration_profile').reply(200, mockResponse);
+
+      const result = await conversationClient.getConfiguration('conv_configuration_profile');
+
+      expect(result.id).toBe('conv_configuration_profile');
+      expect(result.conversationGroupingType).toBe('GROUP_BY_PROFILE');
+    });
+
+    it('should accept all valid grouping types', async () => {
+      const groupingTypes = [
+        'GROUP_BY_PROFILE',
+        'GROUP_BY_PARTICIPANT_ADDRESSES',
+        'GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE',
+      ];
+
+      for (const groupingType of groupingTypes) {
+        const mockResponse = {
+          id: `conv_configuration_${groupingType}`,
+          description: `Test config with ${groupingType}`,
+          conversationGroupingType: groupingType,
+          memoryStoreId: 'mem_store_01kbjqhhdpft0tbp21jt4ktbxk',
+          createdAt: '2019-08-24T14:15:22Z',
+          updatedAt: '2019-08-24T14:15:22Z',
+        };
+
+        mockAdapter.onGet(`/v2/ControlPlane/Configurations/conv_configuration_${groupingType}`).reply(200, mockResponse);
+
+        const result = await conversationClient.getConfiguration(`conv_configuration_${groupingType}`);
+
+        expect(result.conversationGroupingType).toBe(groupingType);
+      }
+    });
   });
 
   describe('region support', () => {

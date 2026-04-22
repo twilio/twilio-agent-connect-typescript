@@ -196,6 +196,7 @@ var StatusCallbackSchema = z.object({
   method: z.enum(["POST", "GET", "PUT", "DELETE", "PATCH"]).optional().default("POST")
 });
 var ConversationGroupingTypeSchema = z.enum([
+  "GROUP_BY_PROFILE",
   "GROUP_BY_PARTICIPANT_ADDRESSES",
   "GROUP_BY_PARTICIPANT_ADDRESSES_AND_CHANNEL_TYPE"
 ]);
@@ -1725,6 +1726,7 @@ var OperatorResultProcessor = class {
 
 // packages/core/src/lib/tac.ts
 var TAC = class _TAC {
+  static FACTORY_TOKEN = /* @__PURE__ */ Symbol("TAC.create");
   config;
   logger;
   memoryClient;
@@ -1738,7 +1740,10 @@ var TAC = class _TAC {
   interruptCallback;
   handoffCallback;
   conversationEndedCallback;
-  constructor(options = {}) {
+  constructor(token, options = {}) {
+    if (token !== _TAC.FACTORY_TOKEN) {
+      throw new Error("TAC constructor is private. Use TAC.create() instead of new TAC().");
+    }
     const finalConfig = options.config ? options.config instanceof TACConfig ? options.config : new TACConfig(options.config) : TACConfig.fromEnv();
     const finalLogger = options.logger ?? createLogger({ name: "tac" });
     this.config = finalConfig;
@@ -1750,16 +1755,13 @@ var TAC = class _TAC {
     );
   }
   static async create(options = {}) {
-    const tac = new _TAC(options);
+    const tac = new _TAC(_TAC.FACTORY_TOKEN, options);
     try {
       const conversationConfig = await tac.conversationClient.getConfiguration(
         tac.config.conversationConfigurationId
       );
       tac.memoryStoreId = conversationConfig.memoryStoreId;
-      tac.memoryClient = new MemoryClient(
-        tac.config,
-        tac.logger.child({ component: "memory" })
-      );
+      tac.memoryClient = new MemoryClient(tac.config, tac.logger.child({ component: "memory" }));
       tac.knowledgeClient = new KnowledgeClient(
         tac.config,
         tac.logger.child({ component: "knowledge" })
@@ -3499,6 +3501,10 @@ var TACTool = class {
     this.parameters = parameters;
     this.implementation = implementation;
   }
+  name;
+  description;
+  parameters;
+  implementation;
   /**
    * Convert to OpenAI function calling format
    */
