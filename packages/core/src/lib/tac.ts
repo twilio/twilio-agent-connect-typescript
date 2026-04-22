@@ -32,7 +32,7 @@ export type MessageReadyCallback = (params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}) => Promise<void> | void;
+}) => Promise<string | null | void> | string | null | void;
 
 export type InterruptCallback = (params: {
   conversationId: ConversationId;
@@ -336,7 +336,7 @@ export class TAC {
         'Executing message ready callback'
       );
       try {
-        await this.messageReadyCallback({
+        const response = await this.messageReadyCallback({
           conversationId: data.conversationId,
           profileId: data.profileId,
           message: data.message,
@@ -349,6 +349,25 @@ export class TAC {
           { conversation_id: data.conversationId },
           'Message ready callback completed'
         );
+
+        // Auto-send if callback returned a string
+        if (typeof response === 'string') {
+          if (response === '') {
+            this.logger.warn(
+              { conversation_id: data.conversationId },
+              'Callback returned empty string, skipping auto-send'
+            );
+          } else {
+            try {
+              await channel.sendResponse(data.conversationId, response);
+            } catch (sendError) {
+              this.logger.error(
+                { err: sendError, conversation_id: data.conversationId },
+                'Failed to auto-send callback response'
+              );
+            }
+          }
+        }
       } catch (error) {
         this.logger.error(
           { err: error, conversation_id: data.conversationId },
@@ -366,7 +385,8 @@ export class TAC {
   }
 
   /**
-   * Register callback for when messages are ready to be processed
+   * Register callback for when messages are ready to be processed.
+   * Return a string to auto-send, or null/void for manual handling.
    */
   public onMessageReady(callback: MessageReadyCallback): void {
     this.messageReadyCallback = callback;

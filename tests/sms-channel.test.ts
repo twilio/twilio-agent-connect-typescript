@@ -586,4 +586,90 @@ describe('SMS Channel', () => {
       );
     });
   });
+
+  describe('callback auto-send behavior', () => {
+    beforeEach(() => {
+      tac.registerChannel(channel);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+    });
+
+    it('should auto-send when callback returns string', async () => {
+      const sendResponseSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+
+      tac.onMessageReady(() => {
+        return 'Auto-sent response';
+      });
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Test message' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(sendResponseSpy).toHaveBeenCalledWith('CHtest123456789', 'Auto-sent response');
+      });
+    });
+
+    it('should not auto-send when callback returns void', async () => {
+      const sendResponseSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+
+      tac.onMessageReady(() => {
+        // Return void - no auto-send
+      });
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Test message' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(sendResponseSpy).not.toHaveBeenCalled();
+    });
+
+    it('should auto-send when async callback returns string', async () => {
+      const sendResponseSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+
+      tac.onMessageReady(async () => {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        return 'Async auto-sent response';
+      });
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Test message' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(sendResponseSpy).toHaveBeenCalledWith('CHtest123456789', 'Async auto-sent response');
+      });
+    });
+  });
 });

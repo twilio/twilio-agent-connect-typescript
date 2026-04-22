@@ -68,7 +68,7 @@ async function handleMessageReady(params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<void> {
+}): Promise<string> {
   const { conversationId, message, memory } = params;
   const convId = conversationId as string;
 
@@ -123,18 +123,16 @@ async function handleMessageReady(params: {
 
     const llmResponse = response.choices[0]?.message?.content ?? '';
 
-    if (llmResponse) {
-      // Add assistant response to history
-      conversationMessages[convId].push({
-        role: 'assistant',
-        content: llmResponse,
-      });
+    // Add assistant response to history
+    conversationMessages[convId].push({
+      role: 'assistant',
+      content: llmResponse,
+    });
 
-      // Send response via chat channel
-      await chatChannel.sendResponse(conversationId, llmResponse);
-    }
+    return llmResponse;
   } catch (error) {
     console.error(`Error processing message for conversation ${convId}:`, error);
+    return 'Sorry, I encountered an error processing your message.';
   }
 }
 

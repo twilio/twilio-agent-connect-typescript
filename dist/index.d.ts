@@ -3956,7 +3956,7 @@ type MessageReadyCallback = (params: {
     memory: TACMemoryResponse | undefined;
     session: ConversationSession;
     channel: ChannelType;
-}) => Promise<void> | void;
+}) => Promise<string | null | void> | string | null | void;
 type InterruptCallback = (params: {
     conversationId: ConversationId;
     reason: string;
@@ -4007,7 +4007,8 @@ declare class TAC {
      */
     private handleMessageReady;
     /**
-     * Register callback for when messages are ready to be processed
+     * Register callback for when messages are ready to be processed.
+     * Return a string to auto-send, or null/void for manual handling.
      */
     onMessageReady(callback: MessageReadyCallback): void;
     /**

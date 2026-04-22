@@ -141,8 +141,8 @@ async function handleMessageReady(params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<void> {
-  const { conversationId, message, memory, session, channel } = params;
+}): Promise<string> {
+  const { conversationId, message, memory, session } = params;
   const convId = conversationId as string;
 
   try {
@@ -181,14 +181,10 @@ async function handleMessageReady(params: {
       content: llmResponse,
     });
 
-    // Send response based on channel
-    if (channel === 'voice') {
-      await voiceChannel.sendResponse(conversationId, llmResponse);
-    } else if (channel === 'sms') {
-      await smsChannel.sendResponse(conversationId, llmResponse);
-    }
+    return llmResponse;
   } catch (error) {
     console.error(`Error processing message for conversation ${convId}:`, error);
+    return 'Sorry, I encountered an error processing your message.';
   }
 }
 

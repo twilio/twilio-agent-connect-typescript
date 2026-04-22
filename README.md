@@ -95,7 +95,7 @@ tac.registerChannel(smsChannel);
 const conversationHistory: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
 
 // Handle incoming messages
-tac.onMessageReady(async ({ conversationId, message, memory, session, channel }) => {
+tac.onMessageReady(async ({ conversationId, message, memory, session }) => {
   const convId = conversationId as string;
 
   if (!conversationHistory[convId]) {
@@ -112,12 +112,7 @@ tac.onMessageReady(async ({ conversationId, message, memory, session, channel })
   const llmResponse = response.choices[0]?.message?.content ?? '';
   conversationHistory[convId].push({ role: 'assistant', content: llmResponse });
 
-  // Send response based on channel
-  if (channel === 'voice') {
-    await voiceChannel.sendResponse(conversationId, llmResponse);
-  } else if (channel === 'sms') {
-    await smsChannel.sendResponse(conversationId, llmResponse);
-  }
+  return llmResponse;
 });
 
 const server = new TACServer(tac);

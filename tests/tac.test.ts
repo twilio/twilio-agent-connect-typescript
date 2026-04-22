@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TAC, TACConfig } from '@twilio/tac-core';
 import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
 
@@ -132,6 +132,134 @@ describe('TAC Core', () => {
       expect(() => {
         tac.shutdown();
       }).not.toThrow();
+    });
+  });
+
+  describe('callback return behavior', () => {
+    it('should not auto-send empty string (log warning instead)', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const { SMSChannel } = await import('@twilio/tac-core');
+      const channel = new SMSChannel(tac);
+      tac.registerChannel(channel);
+
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+      const warnSpy = vi.spyOn(tac.logger, 'warn');
+
+      tac.onMessageReady(() => '');
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest',
+          content: { type: 'TEXT', text: 'test' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(warnSpy).toHaveBeenCalledWith(
+          { conversation_id: 'CHtest' },
+          'Callback returned empty string, skipping auto-send'
+        );
+      });
+
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not auto-send when callback returns null', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const { SMSChannel } = await import('@twilio/tac-core');
+      const channel = new SMSChannel(tac);
+      tac.registerChannel(channel);
+
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+
+      tac.onMessageReady(() => null);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest',
+          content: { type: 'TEXT', text: 'test' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not auto-send when callback returns number', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const { SMSChannel } = await import('@twilio/tac-core');
+      const channel = new SMSChannel(tac);
+      tac.registerChannel(channel);
+
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+
+      tac.onMessageReady(() => 123 as any);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest',
+          content: { type: 'TEXT', text: 'test' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not auto-send when callback returns object', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const { SMSChannel } = await import('@twilio/tac-core');
+      const channel = new SMSChannel(tac);
+      tac.registerChannel(channel);
+
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+
+      tac.onMessageReady(() => ({ message: 'test' }) as any);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest' },
+      });
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest',
+          content: { type: 'TEXT', text: 'test' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(sendSpy).not.toHaveBeenCalled();
     });
   });
 });
