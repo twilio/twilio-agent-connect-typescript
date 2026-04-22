@@ -4685,8 +4685,6 @@ interface TACServerConfig {
     handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>;
     /** Enable development features */
     development?: boolean;
-    /** Enable Twilio webhook signature validation (default: true) */
-    validateWebhooks?: boolean;
     /** Voice channel instance (alternative to registering on TAC) */
     voiceChannel?: VoiceChannel;
     /** Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC) */

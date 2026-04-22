@@ -3826,8 +3826,7 @@ var DEFAULT_CONFIG = {
   conversationRelayConfig: {
     welcomeGreeting: "Hello! How can I assist you today?"
   },
-  development: false,
-  validateWebhooks: true
+  development: false
 };
 var TACServer = class {
   fastify;
@@ -3892,9 +3891,6 @@ var TACServer = class {
    * Register global Twilio webhook signature validation hook
    */
   registerWebhookValidation() {
-    if (!this.config.validateWebhooks) {
-      return;
-    }
     this.fastify.addHook("preHandler", (request, reply, done) => {
       if (request.method === "GET") {
         done();
@@ -4013,7 +4009,19 @@ var TACServer = class {
       fastify.get(
         this.config.webhookPaths.ws || "/ws",
         { websocket: true },
-        (socket) => {
+        (socket, request) => {
+          const signature = request.headers["x-twilio-signature"];
+          const url = this.getWebhookUrl(request);
+          const authToken = this.tac.getConfig().authToken;
+          const isValid = twilio.validateRequest(authToken, signature, url, {});
+          if (!isValid) {
+            this.fastify.log.warn(
+              { url, hasSignature: !!signature },
+              "WebSocket connection rejected: invalid Twilio signature"
+            );
+            socket.close(1008, "Invalid signature");
+            return;
+          }
           if (!this.voiceChannel) {
             socket.terminate();
             return;
@@ -4098,16 +4106,10 @@ var TACServer = class {
           conversation_relay_callback: this.config.webhookPaths.conversationRelayCallback,
           ...this.config.webhookPaths.cintel && {
             cintel_webhook: this.config.webhookPaths.cintel
-          },
-          webhook_validation: this.config.validateWebhooks ? "enabled" : "disabled"
+          }
         },
         "TAC Server started"
       );
-      if (!this.config.validateWebhooks) {
-        this.fastify.log.warn(
-          "Webhook signature validation is DISABLED. Enable in production for security."
-        );
-      }
     } catch (error) {
       this.fastify.log.error({ err: error }, "Failed to start TAC Server");
       throw error;

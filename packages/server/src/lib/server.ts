@@ -58,9 +58,6 @@ export interface TACServerConfig {
   /** Enable development features */
   development?: boolean;
 
-  /** Enable Twilio webhook signature validation (default: true) */
-  validateWebhooks?: boolean;
-
   /** Voice channel instance (alternative to registering on TAC) */
   voiceChannel?: VoiceChannel;
 
@@ -86,7 +83,6 @@ const DEFAULT_CONFIG = {
     welcomeGreeting: 'Hello! How can I assist you today?',
   },
   development: false,
-  validateWebhooks: true,
 } satisfies Omit<
   TACServerConfig,
   'fastify' | 'fastifyInstance' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'
@@ -203,12 +199,8 @@ export class TACServer {
    * Register global Twilio webhook signature validation hook
    */
   private registerWebhookValidation(): void {
-    if (!this.config.validateWebhooks) {
-      return;
-    }
-
     this.fastify.addHook('preHandler', (request, reply, done): void => {
-      // Skip GET requests (WebSocket upgrades)
+      // Skip GET requests — WebSocket upgrades are validated in the route handler
       if (request.method === 'GET') {
         done();
         return;
@@ -356,13 +348,26 @@ export class TACServer {
       fastify.get(
         this.config.webhookPaths.ws || '/ws',
         { websocket: true },
-        (socket: WebSocket) => {
+        (socket: WebSocket, request: FastifyRequest) => {
+          const signature = request.headers['x-twilio-signature'] as string;
+          const url = this.getWebhookUrl(request);
+          const authToken = this.tac.getConfig().authToken;
+          const isValid = twilio.validateRequest(authToken, signature, url, {});
+
+          if (!isValid) {
+            this.fastify.log.warn(
+              { url, hasSignature: !!signature },
+              'WebSocket connection rejected: invalid Twilio signature'
+            );
+            socket.close(1008, 'Invalid signature');
+            return;
+          }
+
           if (!this.voiceChannel) {
             socket.terminate();
             return;
           }
 
-          // Handle WebSocket connection
           this.voiceChannel.handleWebSocketConnection(socket);
         }
       );
@@ -466,17 +471,9 @@ export class TACServer {
           ...(this.config.webhookPaths.cintel && {
             cintel_webhook: this.config.webhookPaths.cintel,
           }),
-          webhook_validation: this.config.validateWebhooks ? 'enabled' : 'disabled',
         },
         'TAC Server started'
       );
-
-      // Warn if webhook validation is disabled
-      if (!this.config.validateWebhooks) {
-        this.fastify.log.warn(
-          'Webhook signature validation is DISABLED. Enable in production for security.'
-        );
-      }
     } catch (error) {
       this.fastify.log.error({ err: error }, 'Failed to start TAC Server');
       throw error;

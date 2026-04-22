@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestTAC } from './helpers/tac';
 import { TAC, TACConfig, SMSChannel, VoiceChannel } from '@twilio/tac-core';
 import { TACServer } from '@twilio/tac-server';
+import WebSocket from 'ws';
 
 // Mock twilio module - use vi.hoisted since vi.mock is hoisted to top of file
 const { mockValidateRequest, mockValidateRequestWithBody } = vi.hoisted(() => ({
@@ -69,115 +70,77 @@ describe('TACServer Webhook Validation', () => {
     tac.shutdown();
   });
 
-  describe('with validation enabled (default)', () => {
-    it('should reject requests with invalid signature', async () => {
-      // Mock invalid signature
-      mockValidateRequest.mockReturnValue(false);
+  it('should reject requests with invalid signature', async () => {
+    mockValidateRequest.mockReturnValue(false);
 
-      server = new TACServer(tac, {
-        development: true,
-        validateWebhooks: true,
-        voice: { port: currentPort },
-      });
-
-      await server.start();
-
-      // Make request to SMS endpoint
-      const response = await fetch(`http://localhost:${currentPort}/webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Twilio-Signature': 'invalid-signature',
-        },
-        body: 'From=%2B15551234567&Body=Hello',
-      });
-
-      expect(response.status).toBe(403);
-      const body = await response.json();
-      expect(body.error).toBe('Invalid webhook signature');
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
     });
 
-    it('should accept requests with valid signature', async () => {
-      // Mock valid signature
-      mockValidateRequest.mockReturnValue(true);
+    await server.start();
 
-      server = new TACServer(tac, {
-        development: true,
-        validateWebhooks: true,
-        voice: { port: currentPort },
-      });
-
-      await server.start();
-
-      // Make request to SMS endpoint with valid webhook payload
-      const response = await fetch(`http://localhost:${currentPort}/webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Twilio-Signature': 'valid-signature',
-        },
-        body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
-      });
-
-      // Should not be 403 (may be 200 or 500 depending on further processing)
-      expect(response.status).not.toBe(403);
+    const response = await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Twilio-Signature': 'invalid-signature',
+      },
+      body: 'From=%2B15551234567&Body=Hello',
     });
 
-    it('should call validateRequest with correct parameters', async () => {
-      mockValidateRequest.mockReturnValue(true);
-
-      server = new TACServer(tac, {
-        development: true,
-        validateWebhooks: true,
-        voice: { port: currentPort },
-      });
-
-      await server.start();
-
-      await fetch(`http://localhost:${currentPort}/webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Twilio-Signature': 'test-signature',
-        },
-        body: 'From=%2B15551234567',
-      });
-
-      expect(mockValidateRequest).toHaveBeenCalledWith(
-        'test_token_123', // Auth token
-        'test-signature', // Signature header
-        expect.stringContaining('/webhook'), // URL
-        expect.objectContaining({ From: '+15551234567' }) // Parsed body params
-      );
-    });
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.error).toBe('Invalid webhook signature');
   });
 
-  describe('with validation disabled', () => {
-    it('should skip validation when validateWebhooks is false', async () => {
-      mockValidateRequest.mockReturnValue(false); // Would fail if called
+  it('should accept requests with valid signature', async () => {
+    mockValidateRequest.mockReturnValue(true);
 
-      server = new TACServer(tac, {
-        development: true,
-        validateWebhooks: false,
-        voice: { port: currentPort },
-      });
-
-      await server.start();
-
-      // Make request without valid signature
-      const response = await fetch(`http://localhost:${currentPort}/webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
-      });
-
-      // Should not be 403 since validation is disabled
-      expect(response.status).not.toBe(403);
-      // validateRequest should not be called
-      expect(mockValidateRequest).not.toHaveBeenCalled();
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
     });
+
+    await server.start();
+
+    const response = await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Twilio-Signature': 'valid-signature',
+      },
+      body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
+    });
+
+    expect(response.status).not.toBe(403);
+  });
+
+  it('should call validateRequest with correct parameters', async () => {
+    mockValidateRequest.mockReturnValue(true);
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Twilio-Signature': 'test-signature',
+      },
+      body: 'From=%2B15551234567',
+    });
+
+    expect(mockValidateRequest).toHaveBeenCalledWith(
+      'test_token_123',
+      'test-signature',
+      expect.stringContaining('/webhook'),
+      expect.objectContaining({ From: '+15551234567' })
+    );
   });
 
   describe('URL construction for validation', () => {
@@ -186,7 +149,6 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        validateWebhooks: true,
         voice: { port: currentPort },
       });
 
@@ -216,7 +178,6 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        validateWebhooks: true,
         voice: { port: currentPort },
       });
 
@@ -251,7 +212,6 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        validateWebhooks: true,
         voice: { port: endpointTestPort },
       });
 
@@ -330,7 +290,6 @@ describe('TACServer idempotency token', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -361,7 +320,6 @@ describe('TACServer idempotency token', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -430,7 +388,6 @@ describe('TACServer with conversationRelayConfig', () => {
     // Create server with conversationRelayConfig
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
       conversationRelayConfig: {
         welcomeGreeting: 'Hello from TACServer!',
@@ -454,7 +411,6 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
       conversationRelayConfig: {
         welcomeGreeting: 'Test greeting',
@@ -493,7 +449,6 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
       conversationRelayConfig: {
         welcomeGreeting: 'Dynamic merge test',
@@ -532,7 +487,6 @@ describe('TACServer with conversationRelayConfig', () => {
     // Create server without conversationRelayConfig
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
       // No conversationRelayConfig provided
     });
@@ -564,7 +518,6 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -594,7 +547,6 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -624,7 +576,6 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      validateWebhooks: false,
       voice: { port: currentPort },
       conversationRelayConfig: {
         welcomeGreeting: 'Full config test',
@@ -723,7 +674,6 @@ describe('TACServer customization', () => {
 
     server = new TACServer(tac, {
       fastifyInstance: customApp,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -743,7 +693,6 @@ describe('TACServer customization', () => {
 
     server = new TACServer(tac, {
       fastifyInstance: customApp,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -786,7 +735,6 @@ describe('TACServer customization', () => {
 
     server = new TACServer(tac, {
       fastifyInstance: customApp,
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -804,7 +752,6 @@ describe('TACServer customization', () => {
 
   it('creates a default Fastify instance when none is provided', () => {
     server = new TACServer(tac, {
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -814,7 +761,6 @@ describe('TACServer customization', () => {
 
   it('exposes the same Fastify instance before and after start()', async () => {
     server = new TACServer(tac, {
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -827,7 +773,6 @@ describe('TACServer customization', () => {
 
   it('allows adding a custom route to server.fastify after construction', async () => {
     server = new TACServer(tac, {
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -842,7 +787,6 @@ describe('TACServer customization', () => {
 
   it('allows adding a hook to server.fastify after construction', async () => {
     server = new TACServer(tac, {
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -861,7 +805,6 @@ describe('TACServer customization', () => {
 
   it('allows adding a custom error handler on server.fastify', async () => {
     server = new TACServer(tac, {
-      validateWebhooks: false,
       voice: { port: currentPort },
     });
 
@@ -884,5 +827,137 @@ describe('TACServer customization', () => {
     const resp = await fetch(`http://localhost:${currentPort}/boom`);
     expect(resp.status).toBe(418);
     expect(await resp.json()).toEqual({ handled: true });
+  });
+});
+
+describe('TACServer WebSocket signature validation', () => {
+  const getTestConfig = () => ({
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  let tac: TAC;
+  let server: TACServer;
+  let currentPort: number;
+
+  beforeEach(async () => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+
+    currentPort = getNextPort();
+
+    const config = new TACConfig(getTestConfig());
+    tac = await createTestTAC(config);
+
+    const smsChannel = new SMSChannel(tac);
+    const voiceChannel = new VoiceChannel(tac);
+    tac.registerChannel(smsChannel);
+    tac.registerChannel(voiceChannel);
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  it('should reject WebSocket without X-Twilio-Signature', async () => {
+    mockValidateRequest.mockReturnValue(false);
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    const ws = new WebSocket(`ws://localhost:${currentPort}/ws`);
+
+    const closeCode = await new Promise<number>((resolve, reject) => {
+      ws.on('close', (code: number) => resolve(code));
+      ws.on('error', (err: Error) => reject(err));
+    });
+
+    expect(closeCode).toBe(1008);
+  });
+
+  it('should reject WebSocket with invalid Twilio signature', async () => {
+    mockValidateRequest.mockReturnValue(false);
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    const ws = new WebSocket(`ws://localhost:${currentPort}/ws`, {
+      headers: { 'X-Twilio-Signature': 'invalid-signature' },
+    });
+
+    const closeCode = await new Promise<number>((resolve, reject) => {
+      ws.on('close', (code: number) => resolve(code));
+      ws.on('error', (err: Error) => reject(err));
+    });
+
+    expect(closeCode).toBe(1008);
+  });
+
+  it('should accept WebSocket with valid Twilio signature', async () => {
+    mockValidateRequest.mockReturnValue(true);
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    const ws = new WebSocket(`ws://localhost:${currentPort}/ws`, {
+      headers: { 'X-Twilio-Signature': 'valid-signature' },
+    });
+
+    const opened = await new Promise<boolean>(resolve => {
+      ws.on('open', () => resolve(true));
+      ws.on('close', () => resolve(false));
+      ws.on('error', () => resolve(false));
+    });
+
+    expect(opened).toBe(true);
+    ws.close();
+  });
+
+  it('should call validateRequest with correct params for WebSocket upgrade', async () => {
+    mockValidateRequest.mockReturnValue(true);
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    const ws = new WebSocket(`ws://localhost:${currentPort}/ws`, {
+      headers: { 'X-Twilio-Signature': 'test-ws-sig' },
+    });
+
+    await new Promise<void>(resolve => {
+      ws.on('open', () => resolve());
+      ws.on('error', () => resolve());
+    });
+
+    expect(mockValidateRequest).toHaveBeenCalledWith(
+      'test_token_123',
+      'test-ws-sig',
+      expect.stringContaining('/ws'),
+      {}
+    );
+
+    ws.close();
   });
 });

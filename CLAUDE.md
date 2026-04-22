@@ -91,7 +91,6 @@ The `TACServer` class (`packages/server/src/lib/server.ts`) provides a productio
     welcomeGreeting: 'Hello! How can I assist you today?',
   },
   development: false,
-  validateWebhooks: true,
 }
 ```
 
