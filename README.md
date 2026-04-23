@@ -221,6 +221,3 @@ npm run test:watch
 # Run all checks at once
 npm run build && npm run lint && npm run typecheck && npm test
 ```
-
-# TAC E2E Tests
-[![Build status](https://badge.buildkite.com/7d2c17fcc93d8f8cff917730fb17ce8fa935c4e9009b6084ec.svg?branch=main)](https://buildkite.com/twilio/tac-e2e-tests-typescript)
