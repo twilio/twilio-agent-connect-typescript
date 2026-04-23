@@ -185,13 +185,23 @@ export class TACServer {
     }
   }
 
+  private getForwardedProto(request: FastifyRequest): string {
+    const raw = request.headers['x-forwarded-proto'] as string | undefined;
+    return raw?.split(',')[0]?.trim() || 'https';
+  }
+
+  private getForwardedHost(request: FastifyRequest): string {
+    const raw = (request.headers['x-forwarded-host'] as string | undefined) || request.headers.host;
+    return raw?.split(',')[0]?.trim() || '';
+  }
+
   /**
    * Get the full URL for webhook validation
    * Handles X-Forwarded-* headers for proxy/ngrok scenarios
    */
   private getWebhookUrl(request: FastifyRequest): string {
-    const proto = (request.headers['x-forwarded-proto'] as string) || 'https';
-    const host = (request.headers['x-forwarded-host'] as string) || request.headers.host || '';
+    const proto = this.getForwardedProto(request);
+    const host = this.getForwardedHost(request);
     return `${proto}://${host}${request.url}`;
   }
 
@@ -214,8 +224,7 @@ export class TACServer {
 
       // Check if this is a JSON body webhook (has bodySHA256 in query string)
       if (request.url.includes('bodySHA256=')) {
-        // JSON body validation - use raw body string
-        const body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
+        const body = (request as FastifyRequest & { rawBody?: string }).rawBody ?? '';
         isValid = twilio.validateRequestWithBody(authToken, signature, url, body);
       } else {
         // Form-encoded validation - use parsed params
@@ -274,8 +283,8 @@ export class TACServer {
           const voiceChannel = this.voiceChannel;
 
           // Generate WebSocket URL
-          const protocol = (request.headers['x-forwarded-proto'] as string) || 'http';
-          const host = request.headers.host as string;
+          const protocol = this.getForwardedProto(request);
+          const host = this.getForwardedHost(request);
           const websocketUrl = `${protocol === 'https' ? 'wss' : 'ws'}://${host}${this.config.webhookPaths.ws || '/ws'}`;
           const callbackUrl = `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
 
@@ -350,9 +359,26 @@ export class TACServer {
         { websocket: true },
         (socket: WebSocket, request: FastifyRequest) => {
           const signature = request.headers['x-twilio-signature'] as string;
-          const url = this.getWebhookUrl(request);
           const authToken = this.tac.getConfig().authToken;
-          const isValid = twilio.validateRequest(authToken, signature, url, {});
+
+          const proto = this.getForwardedProto(request);
+          const host = this.getForwardedHost(request);
+
+          if (!host) {
+            this.fastify.log.warn('WebSocket connection rejected: missing host header');
+            socket.close(1008, 'Invalid request');
+            return;
+          }
+
+          const wsProto = proto === 'https' ? 'wss' : 'ws';
+          const fullUrl = new URL(`${wsProto}://${host}${request.url}`);
+          const params: Record<string, string> = {};
+          fullUrl.searchParams.forEach((value, key) => {
+            params[key] = value;
+          });
+          const url = fullUrl.origin + fullUrl.pathname;
+
+          const isValid = twilio.validateRequest(authToken, signature, url, params);
 
           if (!isValid) {
             this.fastify.log.warn(
@@ -435,6 +461,21 @@ export class TACServer {
       if (!this.fastify.hasDecorator('gracefulShutdown')) {
         await this.fastify.register(gracefulShutdown);
       }
+
+      // Replace the default JSON parser with one that stores the raw body string,
+      // needed by validateRequestWithBody for bodySHA256 signature validation.
+      const defaultJsonParser = this.fastify.getDefaultJsonParser('error', 'error');
+      if (this.fastify.hasContentTypeParser('application/json')) {
+        this.fastify.removeContentTypeParser('application/json');
+      }
+      this.fastify.addContentTypeParser(
+        'application/json',
+        { parseAs: 'string' },
+        (request, body: string, done) => {
+          (request as FastifyRequest & { rawBody?: string }).rawBody = body;
+          void defaultJsonParser(request, body, done);
+        }
+      );
 
       // Register webhook signature validation (must be after formbody for body access)
       this.registerWebhookValidation();

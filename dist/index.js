@@ -3966,13 +3966,21 @@ var TACServer = class {
       });
     }
   }
+  getForwardedProto(request) {
+    const raw = request.headers["x-forwarded-proto"];
+    return raw?.split(",")[0]?.trim() || "https";
+  }
+  getForwardedHost(request) {
+    const raw = request.headers["x-forwarded-host"] || request.headers.host;
+    return raw?.split(",")[0]?.trim() || "";
+  }
   /**
    * Get the full URL for webhook validation
    * Handles X-Forwarded-* headers for proxy/ngrok scenarios
    */
   getWebhookUrl(request) {
-    const proto = request.headers["x-forwarded-proto"] || "https";
-    const host = request.headers["x-forwarded-host"] || request.headers.host || "";
+    const proto = this.getForwardedProto(request);
+    const host = this.getForwardedHost(request);
     return `${proto}://${host}${request.url}`;
   }
   /**
@@ -3989,7 +3997,7 @@ var TACServer = class {
       const authToken = this.tac.getConfig().authToken;
       let isValid;
       if (request.url.includes("bodySHA256=")) {
-        const body = typeof request.body === "string" ? request.body : JSON.stringify(request.body);
+        const body = request.rawBody ?? "";
         isValid = twilio.validateRequestWithBody(authToken, signature, url, body);
       } else {
         const params = request.body || {};
@@ -4038,8 +4046,8 @@ var TACServer = class {
             return;
           }
           const voiceChannel = this.voiceChannel;
-          const protocol = request.headers["x-forwarded-proto"] || "http";
-          const host = request.headers.host;
+          const protocol = this.getForwardedProto(request);
+          const host = this.getForwardedHost(request);
           const websocketUrl = `${protocol === "https" ? "wss" : "ws"}://${host}${this.config.webhookPaths.ws || "/ws"}`;
           const callbackUrl = `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || "/conversation-relay-callback"}`;
           const twiml = voiceChannel.handleIncomingCall({
@@ -4099,9 +4107,22 @@ var TACServer = class {
         { websocket: true },
         (socket, request) => {
           const signature = request.headers["x-twilio-signature"];
-          const url = this.getWebhookUrl(request);
           const authToken = this.tac.getConfig().authToken;
-          const isValid = twilio.validateRequest(authToken, signature, url, {});
+          const proto = this.getForwardedProto(request);
+          const host = this.getForwardedHost(request);
+          if (!host) {
+            this.fastify.log.warn("WebSocket connection rejected: missing host header");
+            socket.close(1008, "Invalid request");
+            return;
+          }
+          const wsProto = proto === "https" ? "wss" : "ws";
+          const fullUrl = new URL(`${wsProto}://${host}${request.url}`);
+          const params = {};
+          fullUrl.searchParams.forEach((value, key) => {
+            params[key] = value;
+          });
+          const url = fullUrl.origin + fullUrl.pathname;
+          const isValid = twilio.validateRequest(authToken, signature, url, params);
           if (!isValid) {
             this.fastify.log.warn(
               { url, hasSignature: !!signature },
@@ -4172,6 +4193,18 @@ var TACServer = class {
       if (!this.fastify.hasDecorator("gracefulShutdown")) {
         await this.fastify.register(gracefulShutdown);
       }
+      const defaultJsonParser = this.fastify.getDefaultJsonParser("error", "error");
+      if (this.fastify.hasContentTypeParser("application/json")) {
+        this.fastify.removeContentTypeParser("application/json");
+      }
+      this.fastify.addContentTypeParser(
+        "application/json",
+        { parseAs: "string" },
+        (request, body, done) => {
+          request.rawBody = body;
+          void defaultJsonParser(request, body, done);
+        }
+      );
       this.registerWebhookValidation();
       await this.setupRoutes();
       this.fastify.gracefulShutdown(async (signal) => {

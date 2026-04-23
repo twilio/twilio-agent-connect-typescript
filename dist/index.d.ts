@@ -4922,6 +4922,8 @@ declare class TACServer {
     /** Voice channel instance */
     private readonly voiceChannel;
     constructor(tac: TAC, config?: TACServerConfig);
+    private getForwardedProto;
+    private getForwardedHost;
     /**
      * Get the full URL for webhook validation
      * Handles X-Forwarded-* headers for proxy/ngrok scenarios
