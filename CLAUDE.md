@@ -22,7 +22,8 @@ npm run typecheck      # tsc --noEmit
 ```
 packages/
   core/        # Central framework: TAC orchestrator, channels (SMS/Voice),
-               #   API clients (Memory, Conversation, Knowledge), config, types
+               #   API clients (Memory, Conversation, Knowledge), adapters
+               #   (MemoryPromptBuilder), config, types
   tools/       # Tool system: TACTool class, defineTool(), built-in tools
                #   (memory, messaging, handoff, knowledge)
   server/      # TACServer: Fastify wrapper with webhook + WebSocket handlers
@@ -65,6 +66,10 @@ getting_started/  # Example apps (OpenAI integration)
   - **Validation**: Zod schemas validate all responses at runtime
   - **Error logging**: Logs 4xx client errors as warnings, 5xx/network failures as errors via interceptors
   - Credentials consolidated at `TACConfig` level (apiKey/apiSecret shared across clients)
+- **Adapter utilities** (`packages/core/src/adapters/`):
+  - **MemoryPromptBuilder** (`prompt-builder.ts`): Builds formatted LLM prompts from memory and profile data
+  - **AdapterOptions** (`options.ts`): Configuration options for profile trait filtering
+  - **buildProfilePrompt** (`conversation-session-helpers.ts`): Helper to build profile section from ConversationSession
 - **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server with default `welcomeGreeting` for voice calls; customizable via `conversationRelayConfig`
 
 ## Dependencies

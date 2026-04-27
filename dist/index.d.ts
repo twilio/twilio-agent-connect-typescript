@@ -3866,6 +3866,19 @@ declare class TACMemoryResponse {
      * @returns Either MemoryRetrievalResponse or Communication[] depending on configuration
      */
     get rawData(): MemoryRetrievalResponse | Communication[];
+    /**
+     * Build formatted prompt sections from available memory data.
+     *
+     * Generates markdown-formatted sections for observations, summaries, and communications
+     * that can be injected into LLM prompts. Each section includes a heading and formatted content.
+     * Sections with no data are omitted from the result.
+     *
+     * @returns Array of formatted prompt sections, empty array if no memory data available
+     */
+    buildMemoryPrompts(): string[];
+    private buildObservationsPrompt;
+    private buildSummariesPrompt;
+    private buildCommunicationsPrompt;
 }
 
 /**
@@ -4923,6 +4936,77 @@ declare class OperatorResultProcessor {
 }
 
 /**
+ * Configuration options for adapter utilities like MemoryPromptBuilder.
+ */
+interface AdapterOptions {
+    /**
+     * Optional array of profile trait group names to include in the output.
+     *
+     * - If undefined or not provided, all available trait groups are included
+     * - If empty array ([]), no profile traits are included (profile section is omitted)
+     * - If populated array, only the specified trait groups are included
+     *
+     * @example
+     * ```typescript
+     * // Include only Contact and Preferences traits
+     * { profileTraits: ['Contact', 'Preferences'] }
+     *
+     * // Exclude all profile traits
+     * { profileTraits: [] }
+     *
+     * // Include all traits (default)
+     * { } // or undefined
+     * ```
+     */
+    profileTraits?: string[];
+}
+
+/**
+ * Utility class for building formatted LLM prompts from TAC memory and profile data.
+ *
+ * Generates markdown-formatted prompt sections that can be injected into LLM system messages,
+ * providing context about the customer from previous interactions.
+ *
+ * @example
+ * ```typescript
+ * // Basic usage - includes all available data
+ * const memoryPrompt = MemoryPromptBuilder.build(memoryResponse, session);
+ * const systemPrompt = 'You are a helpful assistant.' + (memoryPrompt && `\n\n${memoryPrompt}`);
+ *
+ * // With trait filtering - only include specific profile trait groups
+ * const memoryPrompt = MemoryPromptBuilder.build(
+ *   memoryResponse,
+ *   session,
+ *   { profileTraits: ['Contact', 'Preferences'] }
+ * );
+ * ```
+ */
+declare class MemoryPromptBuilder {
+    /**
+     * Build a formatted memory prompt from available memory and profile data.
+     *
+     * Generates a structured prompt with up to four sections:
+     * - **Customer Profile**: Profile traits (filtered by options if provided)
+     * - **Key Observations**: Important notes from previous interactions
+     * - **Past Conversation Summaries**: Summaries of previous conversations
+     * - **Recent Message History**: Recent communications with the customer
+     *
+     * Sections with no data are omitted. If no data is available at all, returns an empty string.
+     *
+     * @param memoryResponse - Memory data from TAC.retrieveMemory() containing observations,
+     *                         summaries, and communications. Optional.
+     * @param context - Conversation session containing profile data. Optional.
+     * @param options - Configuration options for filtering profile traits. If profileTraits is
+     *                  provided, only those trait groups will be included in the output. If an
+     *                  empty array is provided, profile section is omitted. Optional.
+     * @returns Formatted markdown prompt string ready for injection into LLM system messages.
+     *          Returns empty string if no memory or profile data is available.
+     */
+    static build(memoryResponse?: TACMemoryResponse | null, context?: ConversationSession | null, options?: AdapterOptions): string;
+    private static assemblePrompt;
+}
+
+/**
  * TAC Tool class with helper methods for LLM integration
  *
  * Matches Python's TACTool dataclass with conversion methods.
@@ -5191,4 +5275,4 @@ declare class TACServer {
     stop(): Promise<void>;
 }
 
-export { type ActionChannelSettings, ActionChannelSettingsSchema, type ActionParticipantRef, ActionParticipantRefSchema, type ActionResponse, ActionResponseSchema, type ActionTextContent, ActionTextContentSchema, type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, BaseClient, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type ConversationsV1Bridge, ConversationsV1BridgeSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type InitiateChatConversationOptions, type InitiateConversationResult, type InitiateMessagingConversationOptions, InitiateMessagingConversationOptionsSchema, type InitiateVoiceConversationOptions, InitiateVoiceConversationOptionsSchema, type InitiateVoiceConversationResult, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type ListCommunicationsResponse, ListCommunicationsResponseSchema, type ListConversationsResponse, ListConversationsResponseSchema, type ListParticipantsResponse, ListParticipantsResponseSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendMessageActionPayload, SendMessageActionPayloadSchema, type SendMessageActionRequest, SendMessageActionRequestSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type StreamTask, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, type TwilioMemoryConfig, TwilioMemoryConfigSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { type ActionChannelSettings, ActionChannelSettingsSchema, type ActionParticipantRef, ActionParticipantRefSchema, type ActionResponse, ActionResponseSchema, type ActionTextContent, ActionTextContentSchema, type AdapterOptions, type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, BaseClient, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type ConversationsV1Bridge, ConversationsV1BridgeSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type InitiateChatConversationOptions, type InitiateConversationResult, type InitiateMessagingConversationOptions, InitiateMessagingConversationOptionsSchema, type InitiateVoiceConversationOptions, InitiateVoiceConversationOptionsSchema, type InitiateVoiceConversationResult, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type ListCommunicationsResponse, ListCommunicationsResponseSchema, type ListConversationsResponse, ListConversationsResponseSchema, type ListParticipantsResponse, ListParticipantsResponseSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, MemoryPromptBuilder, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendMessageActionPayload, SendMessageActionPayloadSchema, type SendMessageActionRequest, SendMessageActionRequestSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type StreamTask, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, type TwilioMemoryConfig, TwilioMemoryConfigSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };

@@ -401,6 +401,72 @@ var TACMemoryResponse = class {
   get rawData() {
     return this._data;
   }
+  /**
+   * Build formatted prompt sections from available memory data.
+   *
+   * Generates markdown-formatted sections for observations, summaries, and communications
+   * that can be injected into LLM prompts. Each section includes a heading and formatted content.
+   * Sections with no data are omitted from the result.
+   *
+   * @returns Array of formatted prompt sections, empty array if no memory data available
+   */
+  buildMemoryPrompts() {
+    const sections = [];
+    const observationsSection = this.buildObservationsPrompt();
+    if (observationsSection) {
+      sections.push(observationsSection);
+    }
+    const summariesSection = this.buildSummariesPrompt();
+    if (summariesSection) {
+      sections.push(summariesSection);
+    }
+    const communicationsSection = this.buildCommunicationsPrompt();
+    if (communicationsSection) {
+      sections.push(communicationsSection);
+    }
+    return sections;
+  }
+  buildObservationsPrompt() {
+    if (this.observations.length === 0) {
+      return null;
+    }
+    const lines = [
+      "## Key Observations",
+      "Important notes about the customer from previous interactions:"
+    ];
+    for (const obs of this.observations) {
+      lines.push(`- ${obs.content}`);
+    }
+    return lines.join("\n");
+  }
+  buildSummariesPrompt() {
+    if (this.summaries.length === 0) {
+      return null;
+    }
+    const lines = [
+      "## Past Conversation Summaries",
+      "Summaries of previous conversations with this customer:"
+    ];
+    for (const summary of this.summaries) {
+      lines.push(`- ${summary.content}`);
+    }
+    return lines.join("\n");
+  }
+  buildCommunicationsPrompt() {
+    if (this.communications.length === 0) {
+      return null;
+    }
+    const lines = ["## Recent Message History", "Recent messages exchanged with this customer:"];
+    for (const comm of this.communications) {
+      const content = comm.content?.text;
+      if (typeof content !== "string" || content.trim().length === 0) {
+        continue;
+      }
+      const role = comm.author?.type === "CUSTOMER" ? "User" : "Assistant";
+      lines.push(`${role}: ${content}`);
+    }
+    return lines.length > 2 ? lines.join("\n") : null;
+  }
 };
 var MessageDirectionSchema = z.enum(["inbound", "outbound"]);
 var MemoryChannelTypeSchema = z.enum([
@@ -4062,6 +4128,116 @@ function handleFlexHandoffLogic(formData, flexWorkflowSid) {
   }
 }
 
+// packages/core/src/lib/conversation-session-helpers.ts
+function formatTraitValue(value) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value, (_key, replacerValue) => {
+      if (typeof replacerValue === "bigint") {
+        return String(replacerValue);
+      }
+      return replacerValue;
+    }) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+function buildProfilePrompt(context, traitGroups) {
+  if (!context.profile || !context.profile.traits) {
+    return null;
+  }
+  let filteredTraits;
+  if (traitGroups !== void 0) {
+    if (traitGroups.length === 0) {
+      return null;
+    }
+    filteredTraits = Object.fromEntries(
+      Object.entries(context.profile.traits).filter(
+        ([key, value]) => traitGroups.includes(key) && value != null
+      )
+    );
+  } else {
+    filteredTraits = Object.fromEntries(
+      Object.entries(context.profile.traits).filter(([, value]) => value != null)
+    );
+  }
+  if (Object.keys(filteredTraits).length === 0) {
+    return null;
+  }
+  const lines = ["## Customer Profile", "Information about this customer:"];
+  for (const [key, value] of Object.entries(filteredTraits)) {
+    lines.push(`- ${key}: ${formatTraitValue(value)}`);
+  }
+  return lines.join("\n");
+}
+
+// packages/core/src/adapters/options.ts
+function getProfileTraits(options) {
+  if (!options || options.profileTraits === void 0) {
+    return void 0;
+  }
+  if (options.profileTraits.length === 0) {
+    return [];
+  }
+  return options.profileTraits;
+}
+
+// packages/core/src/adapters/prompt-builder.ts
+var MemoryPromptBuilder = class {
+  /**
+   * Build a formatted memory prompt from available memory and profile data.
+   *
+   * Generates a structured prompt with up to four sections:
+   * - **Customer Profile**: Profile traits (filtered by options if provided)
+   * - **Key Observations**: Important notes from previous interactions
+   * - **Past Conversation Summaries**: Summaries of previous conversations
+   * - **Recent Message History**: Recent communications with the customer
+   *
+   * Sections with no data are omitted. If no data is available at all, returns an empty string.
+   *
+   * @param memoryResponse - Memory data from TAC.retrieveMemory() containing observations,
+   *                         summaries, and communications. Optional.
+   * @param context - Conversation session containing profile data. Optional.
+   * @param options - Configuration options for filtering profile traits. If profileTraits is
+   *                  provided, only those trait groups will be included in the output. If an
+   *                  empty array is provided, profile section is omitted. Optional.
+   * @returns Formatted markdown prompt string ready for injection into LLM system messages.
+   *          Returns empty string if no memory or profile data is available.
+   */
+  static build(memoryResponse, context, options) {
+    if (!memoryResponse && (!context || !context.profile)) {
+      return "";
+    }
+    const sections = [];
+    if (context) {
+      const traitGroups = getProfileTraits(options);
+      const profileSection = buildProfilePrompt(context, traitGroups);
+      if (profileSection) {
+        sections.push(profileSection);
+      }
+    }
+    if (memoryResponse) {
+      const memorySections = memoryResponse.buildMemoryPrompts();
+      sections.push(...memorySections);
+    }
+    if (sections.length === 0) {
+      return "";
+    }
+    return this.assemblePrompt(sections);
+  }
+  static assemblePrompt(sections) {
+    const header = [
+      "# Customer Context",
+      "You have access to the following information about this customer from previous interactions:",
+      ""
+    ];
+    const body = sections.join("\n\n");
+    return header.join("\n") + body;
+  }
+};
+
 // packages/tools/src/lib/builder.ts
 var TACTool = class {
   constructor(name, description, parameters, implementation) {
@@ -4766,6 +4942,6 @@ var TACServer = class {
   }
 };
 
-export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryPromptBuilder, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

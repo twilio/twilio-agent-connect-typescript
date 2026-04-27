@@ -61,5 +61,9 @@ export { OperatorResultProcessor } from './lib/operator-result-processor';
 // TAC Memory Response wrapper
 export { TACMemoryResponse } from './lib/tac-memory-response';
 
+// Adapter utilities
+export { MemoryPromptBuilder } from './adapters/prompt-builder';
+export type { AdapterOptions } from './adapters/options';
+
 // Re-export types for convenience
 export * from './types/index';

@@ -134,15 +134,16 @@ When Memory is configured, TAC automatically:
 - Includes profile traits (name, preferences, etc.) in the AI context
 - Loads recent conversation history for context continuity
 
-### Profile Personalization
+### MemoryPromptBuilder
 
-The example extracts profile traits and includes them as system messages to OpenAI:
+The example uses `MemoryPromptBuilder` to automatically format memory data into structured prompts that include:
 
-```typescript
-User Profile:
-Contact: {"firstName": "John", "lastName": "Doe"}
-Preferences: {"language": "en"}
-```
+- **Customer Profile**: Profile traits such as name, preferences, and other known customer details when available
+- **Key Observations**: Important notes from previous interactions
+- **Past Conversation Summaries**: Summaries of previous conversations
+- **Recent Message History**: Recent communications with the customer
+
+This context is injected as a system message to help the AI provide context-aware responses.
 
 ### Conversation History
 

@@ -76,6 +76,7 @@ import {
   VoiceChannel,
   SMSChannel,
   TACServer,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 config();
@@ -102,11 +103,19 @@ tac.onMessageReady(async ({ conversationId, message, memory, session }) => {
     conversationHistory[convId] = [];
   }
 
+  // Build system prompt with memory context
+  const basePrompt = 'You are a helpful customer service agent.';
+  const memoryContext = MemoryPromptBuilder.build(memory, session);
+  const systemPrompt = basePrompt + (memoryContext && `\n\n${memoryContext}`);
+
   conversationHistory[convId].push({ role: 'user', content: message });
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
-    messages: conversationHistory[convId]
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory[convId],
+    ],
   });
 
   const llmResponse = response.choices[0]?.message?.content ?? '';

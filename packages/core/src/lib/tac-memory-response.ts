@@ -130,4 +130,88 @@ export class TACMemoryResponse {
   get rawData(): MemoryRetrievalResponse | Communication[] {
     return this._data;
   }
+
+  /**
+   * Build formatted prompt sections from available memory data.
+   *
+   * Generates markdown-formatted sections for observations, summaries, and communications
+   * that can be injected into LLM prompts. Each section includes a heading and formatted content.
+   * Sections with no data are omitted from the result.
+   *
+   * @returns Array of formatted prompt sections, empty array if no memory data available
+   */
+  buildMemoryPrompts(): string[] {
+    const sections: string[] = [];
+
+    const observationsSection = this.buildObservationsPrompt();
+    if (observationsSection) {
+      sections.push(observationsSection);
+    }
+
+    const summariesSection = this.buildSummariesPrompt();
+    if (summariesSection) {
+      sections.push(summariesSection);
+    }
+
+    const communicationsSection = this.buildCommunicationsPrompt();
+    if (communicationsSection) {
+      sections.push(communicationsSection);
+    }
+
+    return sections;
+  }
+
+  private buildObservationsPrompt(): string | null {
+    if (this.observations.length === 0) {
+      return null;
+    }
+
+    const lines = [
+      '## Key Observations',
+      'Important notes about the customer from previous interactions:',
+    ];
+
+    for (const obs of this.observations) {
+      lines.push(`- ${obs.content}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private buildSummariesPrompt(): string | null {
+    if (this.summaries.length === 0) {
+      return null;
+    }
+
+    const lines = [
+      '## Past Conversation Summaries',
+      'Summaries of previous conversations with this customer:',
+    ];
+
+    for (const summary of this.summaries) {
+      lines.push(`- ${summary.content}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  private buildCommunicationsPrompt(): string | null {
+    if (this.communications.length === 0) {
+      return null;
+    }
+
+    const lines = ['## Recent Message History', 'Recent messages exchanged with this customer:'];
+
+    for (const comm of this.communications) {
+      const content = comm.content?.text;
+      if (typeof content !== 'string' || content.trim().length === 0) {
+        continue;
+      }
+      // Determine role - defaults to "Assistant" for undefined or non-CUSTOMER authors
+      const role = comm.author?.type === 'CUSTOMER' ? 'User' : 'Assistant';
+      lines.push(`${role}: ${content}`);
+    }
+
+    return lines.length > 2 ? lines.join('\n') : null;
+  }
 }
