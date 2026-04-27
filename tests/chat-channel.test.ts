@@ -242,7 +242,12 @@ describe('Chat Channel', () => {
     });
 
     it('should send response via Actions API with existing AI_AGENT', async () => {
-      // Setup conversation
+      // Start conversation, then receive message to populate session
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
         data: {
@@ -386,7 +391,11 @@ describe('Chat Channel', () => {
     });
 
     it('should create AI_AGENT participant if not exists', async () => {
-      // Setup conversation
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
         data: {
@@ -455,7 +464,11 @@ describe('Chat Channel', () => {
     });
 
     it('should handle race condition when creating AI_AGENT', async () => {
-      // Setup conversation
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
         data: {

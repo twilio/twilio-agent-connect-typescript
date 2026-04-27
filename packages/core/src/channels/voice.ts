@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
+import Twilio from 'twilio';
 import {
   ChannelType,
   ConversationId,
@@ -13,7 +14,10 @@ import {
   ConversationRelayConfig,
   ConversationRelayConfigSchema,
   ConversationRelayCallbackPayload,
+  InitiateVoiceConversationOptions,
+  InitiateVoiceConversationOptionsSchema,
 } from '../types/index';
+import type { InitiateVoiceConversationResult } from '../types/conversation';
 import { BaseChannel, BaseChannelEvents } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
@@ -26,7 +30,7 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
     callSid: string;
     from: string;
     to: string;
-    customParameters: CustomParameters | undefined;
+    customParameters: Record<string, unknown> | undefined;
   }) => void;
   onPrompt?: (data: {
     conversationId: ConversationId;
@@ -56,6 +60,7 @@ export class VoiceChannel extends BaseChannel {
   private readonly promptQueues: Map<ConversationId, Promise<void>>;
   private readonly initializationRetries: Map<string, number>;
   private readonly MAX_INITIALIZATION_RETRIES = 3;
+  private twilioClient: ReturnType<typeof Twilio> | undefined;
 
   constructor(tac: TAC) {
     super(tac);
@@ -64,6 +69,15 @@ export class VoiceChannel extends BaseChannel {
     this.streamTasks = new Map();
     this.promptQueues = new Map();
     this.initializationRetries = new Map();
+  }
+
+  private getTwilioClient(): ReturnType<typeof Twilio> {
+    if (!this.twilioClient) {
+      this.twilioClient = Twilio(this.config.apiKey, this.config.apiSecret, {
+        accountSid: this.config.accountSid,
+      });
+    }
+    return this.twilioClient;
   }
 
   public get channelType(): ChannelType {
@@ -149,7 +163,6 @@ export class VoiceChannel extends BaseChannel {
             case 'setup':
               callSid = message.callSid;
               fromNumber = message.from;
-
               if (this.voiceCallbacks.onSetup) {
                 this.voiceCallbacks.onSetup({
                   callSid,
@@ -178,14 +191,31 @@ export class VoiceChannel extends BaseChannel {
                     );
                   }
 
-                  const conversations = await this.conversationClient.listConversations({
-                    channelId: callSid,
-                  });
+                  // Poll for the conversation — CO may not have created it yet
+                  const POLL_ATTEMPTS = 5;
+                  const POLL_DELAY_MS = 500;
+                  let conversations: Awaited<
+                    ReturnType<typeof this.conversationClient.listConversations>
+                  > = [];
+
+                  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+                    conversations = await this.conversationClient.listConversations({
+                      channelId: callSid,
+                    });
+                    if (conversations.length === 1) break;
+                    if (attempt < POLL_ATTEMPTS - 1) {
+                      this.logger.debug(
+                        { call_sid: callSid, attempt: attempt + 1, found: conversations.length },
+                        'Conversation not ready yet, polling again'
+                      );
+                      await new Promise(resolve => setTimeout(resolve, POLL_DELAY_MS));
+                    }
+                  }
 
                   if (conversations.length !== 1) {
                     throw new Error(
                       `Expected exactly 1 conversation for callSid ${callSid}, ` +
-                        `but found ${conversations.length}`
+                        `but found ${conversations.length} after ${POLL_ATTEMPTS} attempts`
                     );
                   }
 
@@ -195,33 +225,21 @@ export class VoiceChannel extends BaseChannel {
                   const participants =
                     await this.conversationClient.listParticipants(conversationId);
 
-                  let profileId: ProfileId | undefined;
-                  if (fromNumber) {
-                    for (const participant of participants) {
-                      if (participant.addresses) {
-                        for (const address of participant.addresses) {
-                          if (
-                            address.channel === 'VOICE' &&
-                            address.address === fromNumber &&
-                            participant.profileId
-                          ) {
-                            profileId = participant.profileId as ProfileId;
-                            break;
-                          }
-                        }
-                      }
-                      if (profileId) {
-                        break;
-                      }
-                    }
-                  }
+                  const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
+                  const customerAddress =
+                    customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
+                    fromNumber ??
+                    undefined;
+                  const profileId: ProfileId | undefined = customerParticipant?.profileId
+                    ? (customerParticipant.profileId as ProfileId)
+                    : undefined;
 
                   this.webSocketConnections.set(conversationId, ws);
                   const session = this.startConversation(conversationId, profileId);
 
-                  if (fromNumber) {
+                  if (customerAddress) {
                     session.authorInfo = {
-                      address: fromNumber,
+                      address: customerAddress,
                     };
                   }
 
@@ -448,6 +466,68 @@ export class VoiceChannel extends BaseChannel {
   }
 
   // =========================================================================
+  // Outbound Call Handling
+  // =========================================================================
+
+  /**
+   * Initiate an outbound voice conversation
+   *
+   * Places an outbound call with inline TwiML that connects to ConversationRelay.
+   * The conversationConfiguration attribute tells CO to create and manage the
+   * conversation during passive hydration. The session is initialized lazily
+   * on the first prompt when the conversation is discovered by callSid.
+   *
+   * `conversationRelayConfig.url` must be the publicly accessible WebSocket
+   * endpoint (e.g., `wss://your-domain.ngrok.app/ws`). Unlike inbound calls
+   * where TACServer sets this automatically, outbound calls require it
+   * explicitly since there is no incoming HTTP request to derive the host from.
+   */
+  public async initiateOutboundConversation(
+    options: InitiateVoiceConversationOptions
+  ): Promise<InitiateVoiceConversationResult> {
+    const validated = InitiateVoiceConversationOptionsSchema.parse(options);
+    const fromNumber = validated.from ?? this.config.phoneNumber;
+
+    this.logger.info(
+      { to: validated.to, from: fromNumber },
+      'Initiating outbound voice conversation'
+    );
+
+    try {
+      // Generate TwiML — CO creates conversation via conversationConfiguration
+      const twiml = this.connectConversationRelay(
+        {
+          ...validated.conversationRelayConfig,
+          conversationConfiguration:
+            validated.conversationRelayConfig.conversationConfiguration ??
+            this.config.conversationConfigurationId,
+        },
+        {
+          ...(validated.actionUrl ? { actionUrl: validated.actionUrl } : {}),
+        }
+      );
+
+      // Place the outbound call with inline TwiML
+      const client = this.getTwilioClient();
+      const call = await client.calls.create({
+        to: validated.to,
+        from: fromNumber,
+        twiml,
+      });
+
+      this.logger.info({ call_sid: call.sid, to: validated.to }, 'Outbound voice call placed');
+
+      return { callSid: call.sid };
+    } catch (error) {
+      this.logger.error({ err: error, to: validated.to }, 'Failed to initiate outbound call');
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+        to: validated.to,
+      });
+      throw error;
+    }
+  }
+
+  // =========================================================================
   // ConversationRelay Callback Handling
   // =========================================================================
 
@@ -481,41 +561,7 @@ export class VoiceChannel extends BaseChannel {
       return { status: 501, content: 'No handoff handler registered', contentType: 'text/plain' };
     }
 
-    // On call completion, close associated conversations
-    if (payload.CallStatus === 'completed') {
-      await this.closeConversationsForCall(payload.CallSid);
-    }
-
     return { status: 200, content: 'OK', contentType: 'text/plain' };
-  }
-
-  /**
-   * Close all conversations associated with a call
-   */
-  private async closeConversationsForCall(callSid: string): Promise<void> {
-    try {
-      const conversationClient = this.tac.getConversationClient();
-      const conversations = await conversationClient.listConversations({ channelId: callSid });
-
-      this.logger.info(
-        { call_sid: callSid, count: conversations.length },
-        'Closing conversations for completed call'
-      );
-
-      for (const conversation of conversations) {
-        try {
-          await conversationClient.updateConversation(conversation.id, 'CLOSED');
-          this.logger.debug({ conversation_id: conversation.id }, 'Closed conversation');
-        } catch (error) {
-          this.logger.error(
-            { err: error, conversation_id: conversation.id },
-            'Failed to close conversation'
-          );
-        }
-      }
-    } catch (error) {
-      this.logger.error({ err: error, call_sid: callSid }, 'Failed to list conversations for call');
-    }
   }
 
   // =========================================================================
@@ -586,13 +632,13 @@ export class VoiceChannel extends BaseChannel {
    * Validates configuration with Zod before generating TwiML.
    *
    * @param config - ConversationRelay configuration (url, transcription, TTS, etc.)
-   * @param options - Optional settings for the Connect verb (e.g., actionUrl)
+   * @param options - Optional settings for parameters and the Connect verb
    * @returns TwiML XML string
    * @throws {Error} if config validation fails
    */
   public connectConversationRelay(
     config: ConversationRelayConfig,
-    options?: { actionUrl?: string }
+    options?: { parameters?: CustomParameters; actionUrl?: string }
   ): string {
     // Validate configuration with Zod schema (consistent with project pattern)
     const validationResult = ConversationRelayConfigSchema.safeParse(config);
@@ -624,6 +670,13 @@ export class VoiceChannel extends BaseChannel {
         // Type assertion is safe here because we've already validated with Zod
         const filteredLang = this.filterUnsetValues(lang);
         relay.language(filteredLang as Parameters<typeof relay.language>[0]);
+      }
+    }
+
+    // Add custom parameters as child <Parameter> elements
+    if (options?.parameters) {
+      for (const [name, value] of Object.entries(options.parameters)) {
+        relay.parameter({ name, value: String(value) });
       }
     }
 

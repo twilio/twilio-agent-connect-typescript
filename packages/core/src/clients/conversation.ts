@@ -17,6 +17,7 @@ import {
   ListConversationsResponse,
   ListConversationsResponseSchema,
 } from '../types';
+import axios from 'axios';
 import { TACConfig } from '../lib/config';
 import { Logger } from '../lib/logger';
 import { BaseClient } from './base';
@@ -84,20 +85,32 @@ export class ConversationClient extends BaseClient {
   }
 
   /**
-   * Create a new conversation
+   * Create a new conversation, optionally with inline participants.
    *
-   * @param name - Optional conversation name
-   * @returns Promise containing conversation response
+   * When participants are provided, CO creates them atomically with the
+   * conversation. If an active conversation with the same participant
+   * addresses already exists (respecting the configuration's group-by
+   * rules), CO returns 409 with a pointer to the existing conversation.
    */
-  public async createConversation(name?: string): Promise<ConversationResponse> {
+  public async createConversation(options?: {
+    name?: string;
+    participants?: Array<{
+      type: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT';
+      addresses: ConversationAddress[];
+    }>;
+  }): Promise<ConversationResponse> {
     const url = `/v2/Conversations`;
 
-    const requestBody: Record<string, string> = {
+    const requestBody: Record<string, unknown> = {
       configurationId: this.conversationConfigurationId,
     };
 
-    if (name) {
-      requestBody.name = name;
+    if (options?.name) {
+      requestBody.name = options.name;
+    }
+
+    if (options?.participants) {
+      requestBody.participants = options.participants;
     }
 
     try {
@@ -109,6 +122,50 @@ export class ConversationClient extends BaseClient {
         { cause: error }
       );
     }
+  }
+
+  /**
+   * Create a conversation with inline participants, reusing an existing active
+   * conversation if CO returns 409 (group-by dedup).
+   *
+   * On 409 CO returns the existing conversation ID in the
+   * X-Conflicting-Resource-Id response header.
+   */
+  public async createOrReuseConversation(
+    participants: Array<{
+      type: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT';
+      addresses: ConversationAddress[];
+    }>
+  ): Promise<{ conversation: { id: string }; reused: boolean }> {
+    try {
+      const conversation = await this.createConversation({ participants });
+      return { conversation, reused: false };
+    } catch (error) {
+      const existingId = this.extractConversationIdFrom409(error);
+      if (existingId) {
+        this.logger.info(
+          { conversation_id: existingId },
+          'Reusing existing active conversation (409 dedup)'
+        );
+        return { conversation: { id: existingId }, reused: true };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Extract conversation ID from a 409 response's X-Conflicting-Resource-Id header.
+   */
+  private extractConversationIdFrom409(error: unknown): string | null {
+    // Unwrap: createConversation wraps the axios error in a generic Error
+    const cause = error instanceof Error ? (error.cause ?? error) : error;
+    if (!axios.isAxiosError(cause) || cause.response?.status !== 409) {
+      return null;
+    }
+
+    const headers = cause.response.headers as Record<string, string> | undefined;
+    const conflictId = headers?.['x-conflicting-resource-id'];
+    return typeof conflictId === 'string' && conflictId.length > 0 ? conflictId : null;
   }
 
   /**

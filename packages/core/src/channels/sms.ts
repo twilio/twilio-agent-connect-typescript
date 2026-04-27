@@ -1,4 +1,11 @@
-import { ChannelType, ConversationId, SendMessageActionRequest } from '../types/index';
+import {
+  ChannelType,
+  ConversationId,
+  SendMessageActionRequest,
+  InitiateMessagingConversationOptions,
+  InitiateMessagingConversationOptionsSchema,
+  InitiateConversationResult,
+} from '../types/index';
 import { MessagingChannel } from './messaging';
 
 /**
@@ -12,10 +19,7 @@ export class SMSChannel extends MessagingChannel {
     return 'sms';
   }
 
-  /**
-   * Check if a message is from the bot itself (by phone number)
-   */
-  protected isOwnMessage(authorAddress: string): boolean {
+  protected isDefaultAgentAddress(authorAddress: string): boolean {
     return authorAddress === this.config.phoneNumber;
   }
 
@@ -54,20 +58,29 @@ export class SMSChannel extends MessagingChannel {
       // Fetch current participants from Conversation Orchestrator
       const participants = await this.conversationClient.listParticipants(conversationId);
 
-      // Find the CUSTOMER participant on the SMS channel
+      // Find the CUSTOMER participant by address on the SMS channel
       let customerParticipantId: string | undefined;
       for (const p of participants) {
         if (p.type !== 'CUSTOMER' || !Array.isArray(p.addresses)) continue;
-        const smsAddress = p.addresses.find(a => a.channel === 'SMS');
+        const smsAddress = p.addresses.find(
+          a => a.channel === 'SMS' && a.address === recipientAddress
+        );
         if (smsAddress) {
           customerParticipantId = p.id;
           break;
         }
       }
 
+      // Use fromAddress from session metadata (set during outbound initiation),
+      // falling back to the configured phone number for inbound conversations
+      const agentAddress =
+        typeof session.metadata?.fromAddress === 'string'
+          ? session.metadata.fromAddress
+          : this.config.phoneNumber;
+
       const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
         channel: 'SMS',
-        address: this.config.phoneNumber,
+        address: agentAddress,
       });
       if (!agentParticipant) {
         throw new Error(
@@ -90,7 +103,7 @@ export class SMSChannel extends MessagingChannel {
           recipient_address: recipientAddress,
           recipient_participant_id: customerParticipantId,
           agent_participant_id: agentParticipant.id,
-          from_number: this.config.phoneNumber,
+          from_number: agentAddress,
         },
         'Sending SMS via Actions API'
       );
@@ -128,5 +141,30 @@ export class SMSChannel extends MessagingChannel {
       });
       throw error;
     }
+  }
+
+  /**
+   * Initiate an outbound SMS conversation
+   *
+   * Creates a conversation via Conversation Orchestrator, adds customer and
+   * agent participants, then sends the initial message via the Actions API.
+   */
+  public async initiateOutboundConversation(
+    options: InitiateMessagingConversationOptions
+  ): Promise<InitiateConversationResult> {
+    const validated = InitiateMessagingConversationOptionsSchema.parse(options);
+
+    this.logger.info(
+      { to: validated.to, message_length: validated.message.length },
+      'Initiating outbound SMS conversation'
+    );
+
+    return this.initiateOutboundMessagingConversation({
+      channel: 'SMS',
+      to: validated.to,
+      from: validated.from ?? this.config.phoneNumber,
+      message: validated.message,
+      ...(validated.metadata ? { metadata: validated.metadata } : {}),
+    });
   }
 }

@@ -121,10 +121,10 @@ export type _SDKDriftGuards = {
 };
 
 /**
- * Custom parameters passed via TwiML
- * Can contain any key-value pairs with unknown values
+ * Custom parameters passed via TwiML <Parameter> elements.
+ * Values must be primitives — TwiML parameters are string-valued.
  */
-export const CustomParametersSchema = z.record(z.unknown());
+export const CustomParametersSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
 
 export type CustomParameters = z.infer<typeof CustomParametersSchema>;
 
@@ -288,3 +288,25 @@ export const HandoffDataSchema = z.object({
 });
 
 export type HandoffData = z.infer<typeof HandoffDataSchema>;
+
+// =========================================================================
+// Outbound Voice Conversation Types
+// =========================================================================
+
+/**
+ * Options for initiating an outbound voice conversation
+ */
+export interface InitiateVoiceConversationOptions {
+  to: string;
+  from?: string | undefined;
+  conversationRelayConfig: ConversationRelayConfig;
+  actionUrl?: string | undefined;
+}
+
+export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> =
+  z.object({
+    to: z.string().min(1, 'Recipient phone number is required'),
+    from: z.string().optional(),
+    conversationRelayConfig: ConversationRelayConfigSchema,
+    actionUrl: z.string().url().optional(),
+  });

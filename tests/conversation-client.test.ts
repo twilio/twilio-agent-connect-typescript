@@ -91,7 +91,7 @@ describe('ConversationClient', () => {
 
       mockAdapter.onPost('/v2/Conversations').reply(200, mockResponse);
 
-      const result = await conversationClient.createConversation('Test Conversation');
+      const result = await conversationClient.createConversation({ name: 'Test Conversation' });
 
       expect(result.id).toBe('CH123');
       expect(result.name).toBe('Test Conversation');

@@ -1,8 +1,11 @@
 import {
+  ActionChannelSettings,
   ConversationAddress,
   ConversationId,
   ConversationParticipant,
+  InitiateConversationResult,
   ProfileId,
+  SendMessageActionRequest,
   isConversationId,
   isProfileId,
 } from '../types/index';
@@ -111,10 +114,69 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Abstract method to check if a message is from the bot itself
-   * Subclasses implement channel-specific filtering (e.g., by phone number or agent address)
+   * Fast-path check: is the author address this channel's default agent address?
+   * (e.g., config.phoneNumber for SMS, agentAddress for Chat)
    */
-  protected abstract isOwnMessage(authorAddress: string): boolean;
+  protected abstract isDefaultAgentAddress(authorAddress: string): boolean;
+
+  /**
+   * Check if a message is from the bot itself.
+   *
+   * 1. Default agent address (stateless, no API call)
+   * 2. Session metadata fromAddress (works same-process for custom `from`)
+   * 3. API lookup: resolve participantId → participant type (works cross-process
+   *    for custom `from` when session is missing, e.g., after restart or on
+   *    another worker)
+   */
+  private async isOwnMessage(
+    authorAddress: string,
+    conversationId: ConversationId,
+    authorParticipantId: string | undefined
+  ): Promise<boolean> {
+    // Fast path: default agent address
+    if (this.isDefaultAgentAddress(authorAddress)) return true;
+
+    // Session path: custom fromAddress stored during outbound initiation
+    const session = this.activeConversations.get(conversationId);
+    if (session?.metadata?.fromAddress === authorAddress) return true;
+
+    // If we have a local session and neither fromAddress nor authorInfo
+    // matches, this is a normal inbound customer message — no API call needed.
+    // The fallback below is only for when there's no session (e.g., webhook
+    // arrived on a different process or after restart for a custom-from
+    // outbound conversation).
+    if (session) return false;
+
+    // Fallback: no local session — look up participant type via API.
+    if (authorParticipantId) {
+      try {
+        const participants = await this.conversationClient.listParticipants(conversationId);
+        const authorParticipant = participants.find(p => p.id === authorParticipantId);
+        if (authorParticipant) {
+          if (authorParticipant.type === undefined) {
+            this.logger.warn(
+              { conversation_id: conversationId, participant_id: authorParticipantId },
+              'Participant type is undefined — cannot determine if this is an agent message'
+            );
+          }
+          if (
+            authorParticipant.type === 'AI_AGENT' ||
+            authorParticipant.type === 'HUMAN_AGENT' ||
+            authorParticipant.type === 'AGENT'
+          ) {
+            return true;
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { err: error, conversation_id: conversationId, participant_id: authorParticipantId },
+          'Failed to look up participant type for self-message check; falling through'
+        );
+      }
+    }
+
+    return false;
+  }
 
   /**
    * Register event callbacks (override for messaging-specific events)
@@ -358,8 +420,24 @@ export abstract class MessagingChannel extends BaseChannel {
       return;
     }
 
-    // Filter out messages from the bot itself using subclass-specific logic
-    if (this.isOwnMessage(author)) {
+    // Per-conversation communication ID dedup stored in the in-memory
+    // ConversationSession metadata. This only prevents duplicate processing
+    // within the current process/session lifetime; it does not deduplicate
+    // across horizontally-scaled instances or after a restart.
+    const communicationId = payload.data?.id;
+    if (communicationId) {
+      const session = this.getConversationSession(conversationId);
+      if (session?.metadata?.lastCommunicationId === communicationId) {
+        this.logger.debug(
+          { conversation_id: conversationId, communication_id: communicationId },
+          'Skipping already-processed communication'
+        );
+        return;
+      }
+    }
+
+    // Filter out messages from the bot itself
+    if (await this.isOwnMessage(author, conversationId, payload.data?.author?.participantId)) {
       this.logger.info(
         {
           conversation_id: conversationId,
@@ -407,6 +485,14 @@ export abstract class MessagingChannel extends BaseChannel {
           { conversation_id: conversationId, channel_id: payload.data.channelId },
           'Stored channelId in session metadata'
         );
+      }
+
+      // Track communication ID for cross-process dedup
+      if (communicationId) {
+        if (!session.metadata) {
+          session.metadata = {};
+        }
+        session.metadata.lastCommunicationId = communicationId;
       }
     }
 
@@ -593,5 +679,143 @@ export abstract class MessagingChannel extends BaseChannel {
       );
     }
     return agent;
+  }
+
+  /**
+   * Shared outbound conversation initiation for messaging channels (SMS/Chat).
+   *
+   * Handles the full flow: create conversation → find participants → start
+   * session → send initial message → error cleanup.
+   */
+  protected async initiateOutboundMessagingConversation(params: {
+    channel: 'SMS' | 'CHAT';
+    to: string;
+    from: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+    channelId?: string;
+    channelSettings?: ActionChannelSettings;
+  }): Promise<InitiateConversationResult> {
+    const {
+      channel,
+      to,
+      from: fromAddress,
+      message,
+      metadata,
+      channelId,
+      channelSettings,
+    } = params;
+
+    let conversationId: string | undefined;
+    let conversationReused = false;
+
+    try {
+      const customerAddress: ConversationAddress = {
+        channel,
+        address: to,
+        ...(channelId ? { channelId } : {}),
+      };
+      const agentAddress: ConversationAddress = {
+        channel,
+        address: fromAddress,
+        ...(channelId ? { channelId } : {}),
+      };
+
+      const result = await this.conversationClient.createOrReuseConversation([
+        { type: 'CUSTOMER', addresses: [customerAddress] },
+        { type: 'AI_AGENT', addresses: [agentAddress] },
+      ]);
+      conversationId = result.conversation.id;
+      conversationReused = result.reused;
+
+      if (!isConversationId(conversationId)) {
+        throw new Error(`Invalid conversation ID returned: ${conversationId}`);
+      }
+
+      const participants = await this.conversationClient.listParticipants(conversationId);
+
+      const customerParticipant = participants.find(
+        p =>
+          p.type === 'CUSTOMER' &&
+          Array.isArray(p.addresses) &&
+          p.addresses.some(
+            a =>
+              a.channel === channel &&
+              a.address === to &&
+              (channelId === undefined || a.channelId === channelId)
+          )
+      );
+      if (!customerParticipant) {
+        throw new Error('Customer participant not found after conversation creation');
+      }
+
+      const agentParticipant = participants.find(
+        p =>
+          (p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT' || p.type === 'AGENT') &&
+          Array.isArray(p.addresses) &&
+          p.addresses.some(
+            a =>
+              a.channel === channel &&
+              a.address === fromAddress &&
+              (channelId === undefined || a.channelId === channelId)
+          )
+      );
+      if (!agentParticipant) {
+        throw new Error('Agent participant not found after conversation creation');
+      }
+
+      // Start local session BEFORE sending the initial message so the
+      // COMMUNICATION_CREATED webhook (triggered by createAction) finds a
+      // correctly-configured session instead of auto-starting one with wrong
+      // metadata.
+      const session = this.startConversation(conversationId);
+      session.authorInfo = {
+        address: to,
+        participantId: customerParticipant.id,
+      };
+      session.metadata = {
+        ...session.metadata,
+        ...(metadata ?? {}),
+        direction: 'outbound',
+        fromAddress,
+        ...(channelId ? { channelId } : {}),
+      };
+
+      const actionRequest: SendMessageActionRequest = {
+        type: 'SEND_MESSAGE',
+        payload: {
+          from: { channel, participantId: agentParticipant.id },
+          to: [{ channel, participantId: customerParticipant.id }],
+          content: { text: message },
+          ...(channelSettings ? { channelSettings } : {}),
+        },
+      };
+
+      await this.conversationClient.createAction(conversationId, actionRequest);
+
+      this.logger.info(
+        { conversation_id: conversationId, to },
+        `Outbound ${channel} conversation initiated`
+      );
+
+      return { conversationId, session };
+    } catch (error) {
+      if (conversationId) {
+        this.activeConversations.delete(conversationId as ConversationId);
+      }
+      if (conversationId && !conversationReused) {
+        await this.conversationClient
+          .updateConversation(conversationId, 'CLOSED')
+          .catch(closeErr => {
+            this.logger.warn(
+              { err: closeErr, conversation_id: conversationId },
+              'Failed to close orphaned conversation after initiation error'
+            );
+          });
+      }
+      this.logger.error({ err: error, to }, `Failed to initiate outbound ${channel}`);
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { to });
+      throw error;
+    }
   }
 }

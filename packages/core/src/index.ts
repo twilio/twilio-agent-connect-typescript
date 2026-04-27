@@ -43,7 +43,10 @@ export type {
 export { SMSChannel } from './channels/sms';
 
 export { ChatChannel } from './channels/chat';
-export type { ChatChannelConfig } from './channels/chat';
+export type {
+  ChatChannelConfig,
+  InitiateChatConversationOptions,
+} from './channels/chat';
 
 export { VoiceChannel } from './channels/voice';
 export type { VoiceChannelEvents } from './channels/voice';

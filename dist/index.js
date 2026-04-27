@@ -5,11 +5,11 @@ import axios from 'axios';
 import axiosRetry from 'axios-retry';
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
+import twilio from 'twilio';
 import Fastify from 'fastify';
 import formbody from '@fastify/formbody';
 import websocket from '@fastify/websocket';
 import gracefulShutdown from 'fastify-graceful-shutdown';
-import twilio from 'twilio';
 
 // packages/core/src/types/tac.ts
 var ChannelTypeSchema = z.enum(["sms", "voice", "chat"]);
@@ -234,6 +234,12 @@ var ConversationConfigurationSchema = z.object({
   createdAt: z.string().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   version: z.number().int().nullable().optional()
+});
+var InitiateMessagingConversationOptionsSchema = z.object({
+  to: z.string().min(1, "Recipient address is required"),
+  from: z.string().optional(),
+  message: z.string().min(1, "Initial message is required"),
+  metadata: z.record(z.unknown()).optional()
 });
 
 // packages/core/src/types/tac.ts
@@ -564,7 +570,7 @@ var ConversationRelayAttributesSchema = z.object({
   /** Twilio Conversation Orchestrator configuration ID */
   conversationConfiguration: z.string().optional()
 });
-var CustomParametersSchema = z.record(z.unknown());
+var CustomParametersSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
 var SetupMessageSchema = z.object({
   type: z.literal("setup"),
   sessionId: z.string(),
@@ -644,6 +650,12 @@ var HandoffDataSchema = z.object({
   reason: z.string(),
   call_summary: z.string(),
   sentiment: z.string()
+});
+var InitiateVoiceConversationOptionsSchema = z.object({
+  to: z.string().min(1, "Recipient phone number is required"),
+  from: z.string().optional(),
+  conversationRelayConfig: ConversationRelayConfigSchema,
+  actionUrl: z.string().url().optional()
 });
 var JSONSchemaSchema = z.object({
   type: z.enum(["object", "string", "number", "boolean", "array"]),
@@ -1159,8 +1171,6 @@ var MemoryClient = class extends BaseClient {
     }
   }
 };
-
-// packages/core/src/clients/conversation.ts
 var ConversationClient = class extends BaseClient {
   conversationConfigurationId;
   constructor(config, logger2) {
@@ -1210,18 +1220,23 @@ var ConversationClient = class extends BaseClient {
     }
   }
   /**
-   * Create a new conversation
+   * Create a new conversation, optionally with inline participants.
    *
-   * @param name - Optional conversation name
-   * @returns Promise containing conversation response
+   * When participants are provided, CO creates them atomically with the
+   * conversation. If an active conversation with the same participant
+   * addresses already exists (respecting the configuration's group-by
+   * rules), CO returns 409 with a pointer to the existing conversation.
    */
-  async createConversation(name) {
+  async createConversation(options) {
     const url = `/v2/Conversations`;
     const requestBody = {
       configurationId: this.conversationConfigurationId
     };
-    if (name) {
-      requestBody.name = name;
+    if (options?.name) {
+      requestBody.name = options.name;
+    }
+    if (options?.participants) {
+      requestBody.participants = options.participants;
     }
     try {
       const data = await this.makeRequest(url, "POST", requestBody);
@@ -1232,6 +1247,41 @@ var ConversationClient = class extends BaseClient {
         { cause: error }
       );
     }
+  }
+  /**
+   * Create a conversation with inline participants, reusing an existing active
+   * conversation if CO returns 409 (group-by dedup).
+   *
+   * On 409 CO returns the existing conversation ID in the
+   * X-Conflicting-Resource-Id response header.
+   */
+  async createOrReuseConversation(participants) {
+    try {
+      const conversation = await this.createConversation({ participants });
+      return { conversation, reused: false };
+    } catch (error) {
+      const existingId = this.extractConversationIdFrom409(error);
+      if (existingId) {
+        this.logger.info(
+          { conversation_id: existingId },
+          "Reusing existing active conversation (409 dedup)"
+        );
+        return { conversation: { id: existingId }, reused: true };
+      }
+      throw error;
+    }
+  }
+  /**
+   * Extract conversation ID from a 409 response's X-Conflicting-Resource-Id header.
+   */
+  extractConversationIdFrom409(error) {
+    const cause = error instanceof Error ? error.cause ?? error : error;
+    if (!axios.isAxiosError(cause) || cause.response?.status !== 409) {
+      return null;
+    }
+    const headers = cause.response.headers;
+    const conflictId = headers?.["x-conflicting-resource-id"];
+    return typeof conflictId === "string" && conflictId.length > 0 ? conflictId : null;
   }
   /**
    * Add a participant to a conversation
@@ -2422,6 +2472,44 @@ var MessagingChannel = class extends BaseChannel {
     return false;
   }
   /**
+   * Check if a message is from the bot itself.
+   *
+   * 1. Default agent address (stateless, no API call)
+   * 2. Session metadata fromAddress (works same-process for custom `from`)
+   * 3. API lookup: resolve participantId → participant type (works cross-process
+   *    for custom `from` when session is missing, e.g., after restart or on
+   *    another worker)
+   */
+  async isOwnMessage(authorAddress, conversationId, authorParticipantId) {
+    if (this.isDefaultAgentAddress(authorAddress)) return true;
+    const session = this.activeConversations.get(conversationId);
+    if (session?.metadata?.fromAddress === authorAddress) return true;
+    if (session) return false;
+    if (authorParticipantId) {
+      try {
+        const participants = await this.conversationClient.listParticipants(conversationId);
+        const authorParticipant = participants.find((p) => p.id === authorParticipantId);
+        if (authorParticipant) {
+          if (authorParticipant.type === void 0) {
+            this.logger.warn(
+              { conversation_id: conversationId, participant_id: authorParticipantId },
+              "Participant type is undefined \u2014 cannot determine if this is an agent message"
+            );
+          }
+          if (authorParticipant.type === "AI_AGENT" || authorParticipant.type === "HUMAN_AGENT" || authorParticipant.type === "AGENT") {
+            return true;
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { err: error, conversation_id: conversationId, participant_id: authorParticipantId },
+          "Failed to look up participant type for self-message check; falling through"
+        );
+      }
+    }
+    return false;
+  }
+  /**
    * Register event callbacks (override for messaging-specific events)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic event callback needs to accept any args
@@ -2625,7 +2713,18 @@ var MessagingChannel = class extends BaseChannel {
       this.logger.info({ conversation_id: conversationId }, "Ignoring empty message");
       return;
     }
-    if (this.isOwnMessage(author)) {
+    const communicationId = payload.data?.id;
+    if (communicationId) {
+      const session2 = this.getConversationSession(conversationId);
+      if (session2?.metadata?.lastCommunicationId === communicationId) {
+        this.logger.debug(
+          { conversation_id: conversationId, communication_id: communicationId },
+          "Skipping already-processed communication"
+        );
+        return;
+      }
+    }
+    if (await this.isOwnMessage(author, conversationId, payload.data?.author?.participantId)) {
       this.logger.info(
         {
           conversation_id: conversationId,
@@ -2667,6 +2766,12 @@ var MessagingChannel = class extends BaseChannel {
           { conversation_id: conversationId, channel_id: payload.data.channelId },
           "Stored channelId in session metadata"
         );
+      }
+      if (communicationId) {
+        if (!session.metadata) {
+          session.metadata = {};
+        }
+        session.metadata.lastCommunicationId = communicationId;
       }
     }
     let userMemory;
@@ -2818,6 +2923,97 @@ var MessagingChannel = class extends BaseChannel {
     }
     return agent;
   }
+  /**
+   * Shared outbound conversation initiation for messaging channels (SMS/Chat).
+   *
+   * Handles the full flow: create conversation → find participants → start
+   * session → send initial message → error cleanup.
+   */
+  async initiateOutboundMessagingConversation(params) {
+    const { channel, to, from: fromAddress, message, metadata, channelId, channelSettings } = params;
+    let conversationId;
+    let conversationReused = false;
+    try {
+      const customerAddress = {
+        channel,
+        address: to,
+        ...channelId ? { channelId } : {}
+      };
+      const agentAddress = {
+        channel,
+        address: fromAddress,
+        ...channelId ? { channelId } : {}
+      };
+      const result = await this.conversationClient.createOrReuseConversation([
+        { type: "CUSTOMER", addresses: [customerAddress] },
+        { type: "AI_AGENT", addresses: [agentAddress] }
+      ]);
+      conversationId = result.conversation.id;
+      conversationReused = result.reused;
+      if (!isConversationId(conversationId)) {
+        throw new Error(`Invalid conversation ID returned: ${conversationId}`);
+      }
+      const participants = await this.conversationClient.listParticipants(conversationId);
+      const customerParticipant = participants.find(
+        (p) => p.type === "CUSTOMER" && Array.isArray(p.addresses) && p.addresses.some(
+          (a) => a.channel === channel && a.address === to && (channelId === void 0 || a.channelId === channelId)
+        )
+      );
+      if (!customerParticipant) {
+        throw new Error("Customer participant not found after conversation creation");
+      }
+      const agentParticipant = participants.find(
+        (p) => (p.type === "AI_AGENT" || p.type === "HUMAN_AGENT" || p.type === "AGENT") && Array.isArray(p.addresses) && p.addresses.some(
+          (a) => a.channel === channel && a.address === fromAddress && (channelId === void 0 || a.channelId === channelId)
+        )
+      );
+      if (!agentParticipant) {
+        throw new Error("Agent participant not found after conversation creation");
+      }
+      const session = this.startConversation(conversationId);
+      session.authorInfo = {
+        address: to,
+        participantId: customerParticipant.id
+      };
+      session.metadata = {
+        ...session.metadata,
+        ...metadata ?? {},
+        direction: "outbound",
+        fromAddress,
+        ...channelId ? { channelId } : {}
+      };
+      const actionRequest = {
+        type: "SEND_MESSAGE",
+        payload: {
+          from: { channel, participantId: agentParticipant.id },
+          to: [{ channel, participantId: customerParticipant.id }],
+          content: { text: message },
+          ...channelSettings ? { channelSettings } : {}
+        }
+      };
+      await this.conversationClient.createAction(conversationId, actionRequest);
+      this.logger.info(
+        { conversation_id: conversationId, to },
+        `Outbound ${channel} conversation initiated`
+      );
+      return { conversationId, session };
+    } catch (error) {
+      if (conversationId) {
+        this.activeConversations.delete(conversationId);
+      }
+      if (conversationId && !conversationReused) {
+        await this.conversationClient.updateConversation(conversationId, "CLOSED").catch((closeErr) => {
+          this.logger.warn(
+            { err: closeErr, conversation_id: conversationId },
+            "Failed to close orphaned conversation after initiation error"
+          );
+        });
+      }
+      this.logger.error({ err: error, to }, `Failed to initiate outbound ${channel}`);
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { to });
+      throw error;
+    }
+  }
 };
 
 // packages/core/src/channels/sms.ts
@@ -2825,10 +3021,7 @@ var SMSChannel = class extends MessagingChannel {
   get channelType() {
     return "sms";
   }
-  /**
-   * Check if a message is from the bot itself (by phone number)
-   */
-  isOwnMessage(authorAddress) {
+  isDefaultAgentAddress(authorAddress) {
     return authorAddress === this.config.phoneNumber;
   }
   /**
@@ -2858,15 +3051,18 @@ var SMSChannel = class extends MessagingChannel {
       let customerParticipantId;
       for (const p of participants) {
         if (p.type !== "CUSTOMER" || !Array.isArray(p.addresses)) continue;
-        const smsAddress = p.addresses.find((a) => a.channel === "SMS");
+        const smsAddress = p.addresses.find(
+          (a) => a.channel === "SMS" && a.address === recipientAddress
+        );
         if (smsAddress) {
           customerParticipantId = p.id;
           break;
         }
       }
+      const agentAddress = typeof session.metadata?.fromAddress === "string" ? session.metadata.fromAddress : this.config.phoneNumber;
       const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
         channel: "SMS",
-        address: this.config.phoneNumber
+        address: agentAddress
       });
       if (!agentParticipant) {
         throw new Error(
@@ -2885,7 +3081,7 @@ var SMSChannel = class extends MessagingChannel {
           recipient_address: recipientAddress,
           recipient_participant_id: customerParticipantId,
           agent_participant_id: agentParticipant.id,
-          from_number: this.config.phoneNumber
+          from_number: agentAddress
         },
         "Sending SMS via Actions API"
       );
@@ -2921,9 +3117,39 @@ var SMSChannel = class extends MessagingChannel {
       throw error;
     }
   }
+  /**
+   * Initiate an outbound SMS conversation
+   *
+   * Creates a conversation via Conversation Orchestrator, adds customer and
+   * agent participants, then sends the initial message via the Actions API.
+   */
+  async initiateOutboundConversation(options) {
+    const validated = InitiateMessagingConversationOptionsSchema.parse(options);
+    this.logger.info(
+      { to: validated.to, message_length: validated.message.length },
+      "Initiating outbound SMS conversation"
+    );
+    return this.initiateOutboundMessagingConversation({
+      channel: "SMS",
+      to: validated.to,
+      from: validated.from ?? this.config.phoneNumber,
+      message: validated.message,
+      ...validated.metadata ? { metadata: validated.metadata } : {}
+    });
+  }
 };
-
-// packages/core/src/channels/chat.ts
+var InitiateChatConversationOptionsSchema = z.object({
+  to: z.string().min(1, "Recipient identity is required"),
+  /**
+   * Custom sender address. Defaults to agentAddress.
+   * Own-message filtering considers outbound sender values, including
+   * agentAddress and session metadata such as fromAddress.
+   */
+  from: z.string().optional(),
+  channelId: z.string().min(1, "Chat Channel SID is required"),
+  message: z.string().min(1, "Initial message is required"),
+  metadata: z.record(z.unknown()).optional()
+});
 var ChatChannel = class extends MessagingChannel {
   agentAddress;
   constructor(tac, config) {
@@ -2933,10 +3159,7 @@ var ChatChannel = class extends MessagingChannel {
   get channelType() {
     return "chat";
   }
-  /**
-   * Check if a message is from the bot itself (by agent address)
-   */
-  isOwnMessage(authorAddress) {
+  isDefaultAgentAddress(authorAddress) {
     return authorAddress === this.agentAddress;
   }
   /**
@@ -2972,9 +3195,10 @@ var ChatChannel = class extends MessagingChannel {
         );
       }
       const participants = await this.conversationClient.listParticipants(conversationId);
+      const effectiveAgentAddress = typeof session.metadata?.fromAddress === "string" ? session.metadata.fromAddress : this.agentAddress;
       const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
         channel: "CHAT",
-        address: this.agentAddress,
+        address: effectiveAgentAddress,
         channelId: chatChannelSid
       });
       if (!agentParticipant) {
@@ -2992,7 +3216,7 @@ var ChatChannel = class extends MessagingChannel {
           conversation_id: conversationId,
           recipient_participant_id: session.authorInfo.participantId,
           agent_participant_id: agentParticipant.id,
-          agent_address: this.agentAddress,
+          agent_address: effectiveAgentAddress,
           channel_id: chatChannelSid
         },
         "Sending chat message via Actions API"
@@ -3029,6 +3253,32 @@ var ChatChannel = class extends MessagingChannel {
       throw error;
     }
   }
+  /**
+   * Initiate an outbound chat conversation
+   *
+   * Creates a conversation via Conversation Orchestrator, adds customer and
+   * agent participants, then sends the initial message via the Actions API.
+   */
+  async initiateOutboundConversation(options) {
+    const validated = InitiateChatConversationOptionsSchema.parse(options);
+    this.logger.info(
+      { to: validated.to, channel_id: validated.channelId },
+      "Initiating outbound chat conversation"
+    );
+    const chatServiceSid = this.tac.conversationsV1ServiceSid;
+    return this.initiateOutboundMessagingConversation({
+      channel: "CHAT",
+      to: validated.to,
+      from: validated.from ?? this.agentAddress,
+      message: validated.message,
+      ...validated.metadata ? { metadata: validated.metadata } : {},
+      channelId: validated.channelId,
+      channelSettings: {
+        channelId: validated.channelId,
+        ...chatServiceSid ? { chatService: chatServiceSid } : {}
+      }
+    });
+  }
 };
 var VoiceChannel = class extends BaseChannel {
   webSocketConnections;
@@ -3037,6 +3287,7 @@ var VoiceChannel = class extends BaseChannel {
   promptQueues;
   initializationRetries;
   MAX_INITIALIZATION_RETRIES = 3;
+  twilioClient;
   constructor(tac) {
     super(tac);
     this.webSocketConnections = /* @__PURE__ */ new Map();
@@ -3044,6 +3295,14 @@ var VoiceChannel = class extends BaseChannel {
     this.streamTasks = /* @__PURE__ */ new Map();
     this.promptQueues = /* @__PURE__ */ new Map();
     this.initializationRetries = /* @__PURE__ */ new Map();
+  }
+  getTwilioClient() {
+    if (!this.twilioClient) {
+      this.twilioClient = twilio(this.config.apiKey, this.config.apiSecret, {
+        accountSid: this.config.accountSid
+      });
+    }
+    return this.twilioClient;
   }
   get channelType() {
     return "voice";
@@ -3143,38 +3402,38 @@ var VoiceChannel = class extends BaseChannel {
                       "Retrying conversation initialization after previous failure"
                     );
                   }
-                  const conversations = await this.conversationClient.listConversations({
-                    channelId: callSid
-                  });
+                  const POLL_ATTEMPTS = 5;
+                  const POLL_DELAY_MS = 500;
+                  let conversations = [];
+                  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+                    conversations = await this.conversationClient.listConversations({
+                      channelId: callSid
+                    });
+                    if (conversations.length === 1) break;
+                    if (attempt < POLL_ATTEMPTS - 1) {
+                      this.logger.debug(
+                        { call_sid: callSid, attempt: attempt + 1, found: conversations.length },
+                        "Conversation not ready yet, polling again"
+                      );
+                      await new Promise((resolve) => setTimeout(resolve, POLL_DELAY_MS));
+                    }
+                  }
                   if (conversations.length !== 1) {
                     throw new Error(
-                      `Expected exactly 1 conversation for callSid ${callSid}, but found ${conversations.length}`
+                      `Expected exactly 1 conversation for callSid ${callSid}, but found ${conversations.length} after ${POLL_ATTEMPTS} attempts`
                     );
                   }
                   const conversation = conversations[0];
                   conversationId = conversation.id;
                   const participants = await this.conversationClient.listParticipants(conversationId);
-                  let profileId;
-                  if (fromNumber) {
-                    for (const participant of participants) {
-                      if (participant.addresses) {
-                        for (const address of participant.addresses) {
-                          if (address.channel === "VOICE" && address.address === fromNumber && participant.profileId) {
-                            profileId = participant.profileId;
-                            break;
-                          }
-                        }
-                      }
-                      if (profileId) {
-                        break;
-                      }
-                    }
-                  }
+                  const customerParticipant = participants.find((p) => p.type === "CUSTOMER");
+                  const customerAddress = customerParticipant?.addresses?.find((a) => a.channel === "VOICE")?.address ?? fromNumber ?? void 0;
+                  const profileId = customerParticipant?.profileId ? customerParticipant.profileId : void 0;
                   this.webSocketConnections.set(conversationId, ws);
                   const session = this.startConversation(conversationId, profileId);
-                  if (fromNumber) {
+                  if (customerAddress) {
                     session.authorInfo = {
-                      address: fromNumber
+                      address: customerAddress
                     };
                   }
                   if (this.voiceCallbacks.onWebSocketConnected) {
@@ -3356,6 +3615,55 @@ var VoiceChannel = class extends BaseChannel {
     );
   }
   // =========================================================================
+  // Outbound Call Handling
+  // =========================================================================
+  /**
+   * Initiate an outbound voice conversation
+   *
+   * Places an outbound call with inline TwiML that connects to ConversationRelay.
+   * The conversationConfiguration attribute tells CO to create and manage the
+   * conversation during passive hydration. The session is initialized lazily
+   * on the first prompt when the conversation is discovered by callSid.
+   *
+   * `conversationRelayConfig.url` must be the publicly accessible WebSocket
+   * endpoint (e.g., `wss://your-domain.ngrok.app/ws`). Unlike inbound calls
+   * where TACServer sets this automatically, outbound calls require it
+   * explicitly since there is no incoming HTTP request to derive the host from.
+   */
+  async initiateOutboundConversation(options) {
+    const validated = InitiateVoiceConversationOptionsSchema.parse(options);
+    const fromNumber = validated.from ?? this.config.phoneNumber;
+    this.logger.info(
+      { to: validated.to, from: fromNumber },
+      "Initiating outbound voice conversation"
+    );
+    try {
+      const twiml = this.connectConversationRelay(
+        {
+          ...validated.conversationRelayConfig,
+          conversationConfiguration: validated.conversationRelayConfig.conversationConfiguration ?? this.config.conversationConfigurationId
+        },
+        {
+          ...validated.actionUrl ? { actionUrl: validated.actionUrl } : {}
+        }
+      );
+      const client = this.getTwilioClient();
+      const call = await client.calls.create({
+        to: validated.to,
+        from: fromNumber,
+        twiml
+      });
+      this.logger.info({ call_sid: call.sid, to: validated.to }, "Outbound voice call placed");
+      return { callSid: call.sid };
+    } catch (error) {
+      this.logger.error({ err: error, to: validated.to }, "Failed to initiate outbound call");
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+        to: validated.to
+      });
+      throw error;
+    }
+  }
+  // =========================================================================
   // ConversationRelay Callback Handling
   // =========================================================================
   /**
@@ -3382,36 +3690,7 @@ var VoiceChannel = class extends BaseChannel {
       }
       return { status: 501, content: "No handoff handler registered", contentType: "text/plain" };
     }
-    if (payload.CallStatus === "completed") {
-      await this.closeConversationsForCall(payload.CallSid);
-    }
     return { status: 200, content: "OK", contentType: "text/plain" };
-  }
-  /**
-   * Close all conversations associated with a call
-   */
-  async closeConversationsForCall(callSid) {
-    try {
-      const conversationClient = this.tac.getConversationClient();
-      const conversations = await conversationClient.listConversations({ channelId: callSid });
-      this.logger.info(
-        { call_sid: callSid, count: conversations.length },
-        "Closing conversations for completed call"
-      );
-      for (const conversation of conversations) {
-        try {
-          await conversationClient.updateConversation(conversation.id, "CLOSED");
-          this.logger.debug({ conversation_id: conversation.id }, "Closed conversation");
-        } catch (error) {
-          this.logger.error(
-            { err: error, conversation_id: conversation.id },
-            "Failed to close conversation"
-          );
-        }
-      }
-    } catch (error) {
-      this.logger.error({ err: error, call_sid: callSid }, "Failed to list conversations for call");
-    }
   }
   // =========================================================================
   // Stream Task Management
@@ -3472,7 +3751,7 @@ var VoiceChannel = class extends BaseChannel {
    * Validates configuration with Zod before generating TwiML.
    *
    * @param config - ConversationRelay configuration (url, transcription, TTS, etc.)
-   * @param options - Optional settings for the Connect verb (e.g., actionUrl)
+   * @param options - Optional settings for parameters and the Connect verb
    * @returns TwiML XML string
    * @throws {Error} if config validation fails
    */
@@ -3492,6 +3771,11 @@ var VoiceChannel = class extends BaseChannel {
       for (const lang of languages) {
         const filteredLang = this.filterUnsetValues(lang);
         relay.language(filteredLang);
+      }
+    }
+    if (options?.parameters) {
+      for (const [name, value] of Object.entries(options.parameters)) {
+        relay.parameter({ name, value: String(value) });
       }
     }
     return response.toString();
@@ -4288,6 +4572,6 @@ var TACServer = class {
   }
 };
 
-export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

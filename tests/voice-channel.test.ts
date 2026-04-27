@@ -424,9 +424,9 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
 
       // Trigger close and wait for callback
       mockWs._emit('close');
@@ -468,16 +468,16 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
 
       mockWs._emit('close');
       await ended;
       // Allow microtasks to finish cleanup after the thrown error
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      });
     });
 
     it('should support async callback', async () => {
@@ -512,7 +512,9 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
 
       mockWs._emit('close');
       await ended;
@@ -544,15 +546,15 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
 
       mockWs._emit('close');
-      // Flush microtask-based async chain (no callback to hook into)
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      // Wait for microtask-based async cleanup
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      });
     });
 
     it('should call onError when initialization fails and not close WebSocket', async () => {
@@ -582,10 +584,10 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async error handling
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(1);
+      });
 
-      // Should have captured the initialization error
-      expect(errorsCaptured).toHaveLength(1);
       expect(errorsCaptured[0].error.message).toContain('API 500 Server Error');
       expect(errorsCaptured[0].context).toMatchObject({
         callSid: 'CA_cb_test',
@@ -632,20 +634,22 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async error handling
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(1);
+      });
 
-      expect(errorsCaptured).toHaveLength(1);
       expect(errorsCaptured[0].error.message).toContain('API 500 Server Error');
 
       // Trigger second prompt (should retry and succeed)
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
 
       // Should have captured only the first error, second attempt succeeded
       expect(errorsCaptured).toHaveLength(1);
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
       // WebSocket should NOT be closed
       expect(mockWs.close).not.toHaveBeenCalled();
@@ -675,25 +679,29 @@ describe('VoiceChannel', () => {
 
       // Attempt 1
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
-      expect(errorsCaptured).toHaveLength(1);
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(1);
+      });
 
       // Attempt 2
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
-      expect(errorsCaptured).toHaveLength(2);
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(2);
+      });
 
       // Attempt 3
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
-      expect(errorsCaptured).toHaveLength(3);
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(3);
+      });
 
       // Attempt 4 (should hit retry limit)
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(4);
+      });
 
       // Last error should mention retry limit
-      expect(errorsCaptured).toHaveLength(4);
       expect(errorsCaptured[3].error.message).toContain('failed after 3 attempts');
 
       // WebSocket should still NOT be closed
@@ -737,14 +745,16 @@ describe('VoiceChannel', () => {
 
       // First prompt fails
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
-      expect(errorsCaptured).toHaveLength(1);
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(1);
+      });
 
       // Second prompt succeeds
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
       expect(errorsCaptured).toHaveLength(1); // No new errors
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
       // Verify subsequent prompts work fine (retry counter was cleared)
       const capturedPrompts: string[] = [];
@@ -758,9 +768,9 @@ describe('VoiceChannel', () => {
         lang: 'en-US',
         last: true,
       })));
-      await new Promise(resolve => setTimeout(resolve, 50));
-
-      expect(capturedPrompts).toContain('Test prompt after success');
+      await vi.waitFor(() => {
+        expect(capturedPrompts).toContain('Test prompt after success');
+      });
       expect(errorsCaptured).toHaveLength(1); // Still only one error
     });
 
@@ -781,11 +791,14 @@ describe('VoiceChannel', () => {
       // Trigger setup and failed prompt
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await vi.waitFor(() => {
+        // Wait for the error to be processed (retry counter incremented)
+        expect(tac.getConversationClient().listConversations).toHaveBeenCalled();
+      });
 
       // Trigger disconnect (should clean up retry counter)
       mockWs._emit('close');
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
       // Create a new WebSocket connection with same callSid
       const mockWs2 = createMockWebSocket();
@@ -804,10 +817,11 @@ describe('VoiceChannel', () => {
       voiceChannel.handleWebSocketConnection(mockWs2 as any);
       mockWs2._emit('message', Buffer.from(setupMessage));
       mockWs2._emit('message', Buffer.from(promptMessage));
-      await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should succeed because retry counter was cleared on disconnect
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      await vi.waitFor(() => {
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      });
     });
 
     it('should call onError when listParticipants fails and not close WebSocket', async () => {
@@ -837,10 +851,10 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
 
       // Wait for async error handling
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await vi.waitFor(() => {
+        expect(errorsCaptured).toHaveLength(1);
+      });
 
-      // Should have captured the error
-      expect(errorsCaptured).toHaveLength(1);
       expect(errorsCaptured[0].error.message).toContain('Failed to list participants');
       expect(errorsCaptured[0].context).toMatchObject({
         callSid: 'CA_cb_test',
@@ -935,15 +949,14 @@ describe('VoiceChannel', () => {
       expect(result.content).toBe('Handoff handler error');
     });
 
-    it('should close conversations on call completion', async () => {
+    it('should not close conversations on call completion (CO handles this)', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const mockConversation = { id: 'CH_test_conv' };
-      const listSpy = vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([mockConversation] as any);
-      const updateSpy = vi.spyOn(tac.getConversationClient(), 'updateConversation').mockResolvedValue({} as any);
+      const listSpy = vi.spyOn(tac.getConversationClient(), 'listConversations');
+      const updateSpy = vi.spyOn(tac.getConversationClient(), 'updateConversation');
 
-      await voiceChannel.handleConversationRelayCallback({
+      const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACtest123',
         CallSid: 'CA123',
         CallStatus: 'completed',
@@ -951,8 +964,9 @@ describe('VoiceChannel', () => {
         To: '+15559876543',
       });
 
-      expect(listSpy).toHaveBeenCalledWith({ channelId: 'CA123' });
-      expect(updateSpy).toHaveBeenCalledWith('CH_test_conv', 'CLOSED');
+      expect(result.status).toBe(200);
+      expect(listSpy).not.toHaveBeenCalled();
+      expect(updateSpy).not.toHaveBeenCalled();
     });
   });
 

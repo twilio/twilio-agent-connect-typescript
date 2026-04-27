@@ -3,9 +3,29 @@ import {
   ChannelType,
   ConversationId,
   SendMessageActionRequest,
+  InitiateConversationResult,
 } from '../types/index';
+import { z } from 'zod';
 import { MessagingChannel, MessagingChannelConfig } from './messaging';
 import type { TAC } from '../lib/tac';
+
+/**
+ * Options for initiating an outbound chat conversation
+ */
+export const InitiateChatConversationOptionsSchema = z.object({
+  to: z.string().min(1, 'Recipient identity is required'),
+  /**
+   * Custom sender address. Defaults to agentAddress.
+   * Own-message filtering considers outbound sender values, including
+   * agentAddress and session metadata such as fromAddress.
+   */
+  from: z.string().optional(),
+  channelId: z.string().min(1, 'Chat Channel SID is required'),
+  message: z.string().min(1, 'Initial message is required'),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export type InitiateChatConversationOptions = z.infer<typeof InitiateChatConversationOptionsSchema>;
 
 /**
  * Chat channel configuration options
@@ -34,10 +54,7 @@ export class ChatChannel extends MessagingChannel {
     return 'chat';
   }
 
-  /**
-   * Check if a message is from the bot itself (by agent address)
-   */
-  protected isOwnMessage(authorAddress: string): boolean {
+  protected isDefaultAgentAddress(authorAddress: string): boolean {
     return authorAddress === this.agentAddress;
   }
 
@@ -94,9 +111,16 @@ export class ChatChannel extends MessagingChannel {
       // Fetch current participants from Conversation Orchestrator
       const participants = await this.conversationClient.listParticipants(conversationId);
 
+      // Use fromAddress from session metadata (set during outbound initiation),
+      // falling back to the default agent address for inbound conversations
+      const effectiveAgentAddress =
+        typeof session.metadata?.fromAddress === 'string'
+          ? session.metadata.fromAddress
+          : this.agentAddress;
+
       const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
         channel: 'CHAT',
-        address: this.agentAddress,
+        address: effectiveAgentAddress,
         channelId: chatChannelSid,
       });
       if (!agentParticipant) {
@@ -120,7 +144,7 @@ export class ChatChannel extends MessagingChannel {
           conversation_id: conversationId,
           recipient_participant_id: session.authorInfo.participantId,
           agent_participant_id: agentParticipant.id,
-          agent_address: this.agentAddress,
+          agent_address: effectiveAgentAddress,
           channel_id: chatChannelSid,
         },
         'Sending chat message via Actions API'
@@ -159,5 +183,37 @@ export class ChatChannel extends MessagingChannel {
       });
       throw error;
     }
+  }
+
+  /**
+   * Initiate an outbound chat conversation
+   *
+   * Creates a conversation via Conversation Orchestrator, adds customer and
+   * agent participants, then sends the initial message via the Actions API.
+   */
+  public async initiateOutboundConversation(
+    options: InitiateChatConversationOptions
+  ): Promise<InitiateConversationResult> {
+    const validated = InitiateChatConversationOptionsSchema.parse(options);
+
+    this.logger.info(
+      { to: validated.to, channel_id: validated.channelId },
+      'Initiating outbound chat conversation'
+    );
+
+    const chatServiceSid = this.tac.conversationsV1ServiceSid;
+
+    return this.initiateOutboundMessagingConversation({
+      channel: 'CHAT',
+      to: validated.to,
+      from: validated.from ?? this.agentAddress,
+      message: validated.message,
+      ...(validated.metadata ? { metadata: validated.metadata } : {}),
+      channelId: validated.channelId,
+      channelSettings: {
+        channelId: validated.channelId,
+        ...(chatServiceSid ? { chatService: chatServiceSid } : {}),
+      },
+    });
   }
 }

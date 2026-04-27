@@ -416,3 +416,39 @@ export const ConversationConfigurationSchema = z.object({
 });
 
 export type ConversationConfiguration = z.infer<typeof ConversationConfigurationSchema>;
+
+// =========================================================================
+// Outbound Conversation Types
+// =========================================================================
+
+/**
+ * Options for initiating an outbound SMS conversation
+ */
+export const InitiateMessagingConversationOptionsSchema = z.object({
+  to: z.string().min(1, 'Recipient address is required'),
+  from: z.string().optional(),
+  message: z.string().min(1, 'Initial message is required'),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export type InitiateMessagingConversationOptions = z.infer<
+  typeof InitiateMessagingConversationOptionsSchema
+>;
+
+/**
+ * Result of initiating an outbound conversation
+ */
+export interface InitiateConversationResult {
+  conversationId: ConversationId;
+  session: ConversationSession;
+}
+
+/**
+ * Result of initiating an outbound voice conversation.
+ * Note: conversationId is not included because the conversation is created by
+ * Conversation Orchestrator during passive hydration — the SDK discovers it
+ * lazily on the first prompt via callSid lookup.
+ */
+export interface InitiateVoiceConversationResult {
+  callSid: string;
+}
