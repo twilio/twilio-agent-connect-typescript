@@ -67,10 +67,26 @@ describe('Integration Tests', () => {
     tac = await createTestTAC(getTestConfig());
     channel = new SMSChannel(tac);
     tac.registerChannel(channel);
+    // BaseClient uses axios, which the fetch spy above doesn't intercept — so
+    // memory retrieval still reaches Twilio and returns 401 on fake creds. Stub
+    // at the HTTP boundary (not tac.retrieveMemory) so the real handleMessageReady
+    // flow still runs end-to-end — callbacks depend on its async timing.
+    const memoryClient = tac.getMemoryClient();
+    vi.spyOn(memoryClient, 'lookupProfile').mockResolvedValue({
+      normalizedValue: '',
+      profiles: [],
+    } as never);
+    vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue({
+      observations: [],
+      summaries: [],
+      communications: [],
+    } as never);
+    vi.spyOn(tac.getConversationClient(), 'listCommunications').mockResolvedValue([]);
   });
 
   afterEach(() => {
     fetchSpy.mockRestore();
+    vi.restoreAllMocks();
   });
 
   describe('SMS end-to-end workflow', () => {

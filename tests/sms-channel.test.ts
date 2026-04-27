@@ -26,6 +26,9 @@ describe('SMS Channel', () => {
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
     channel = new SMSChannel(tac);
+    // Short-circuit memory retrieval so webhook processing tests don't hit
+    // real Twilio APIs with fake credentials and spam the logs with 401s.
+    vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
   });
 
   describe('initialization', () => {
@@ -488,9 +491,6 @@ describe('SMS Channel', () => {
       // Reset history to clear the getConfiguration call from TAC initialization
       mockAdapter.resetHistory();
 
-      // Stub retrieveMemory to avoid HTTP calls during webhook processing
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
-
       // Mock listParticipants call
       mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
         participants: [
@@ -749,7 +749,6 @@ describe('SMS Channel', () => {
   describe('callback auto-send behavior', () => {
     beforeEach(() => {
       tac.registerChannel(channel);
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
     });
 
     it('should auto-send when callback returns string', async () => {

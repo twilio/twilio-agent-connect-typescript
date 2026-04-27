@@ -27,6 +27,9 @@ describe('Chat Channel', () => {
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
     channel = new ChatChannel(tac);
+    // Short-circuit memory retrieval so webhook processing tests don't hit
+    // real Twilio APIs with fake credentials and spam the logs with 401s.
+    vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
   });
 
   describe('initialization', () => {
@@ -236,9 +239,6 @@ describe('Chat Channel', () => {
       mockAdapter = new MockAdapter(conversationClient.axiosInstance);
       // Reset history to clear the getConfiguration call from TAC initialization
       mockAdapter.resetHistory();
-
-      // Stub retrieveMemory to avoid HTTP calls during webhook processing
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
     });
 
     it('should send response via Actions API with existing AI_AGENT', async () => {
