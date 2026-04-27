@@ -1,5 +1,6 @@
 import {
   MemoryRetrievalRequest,
+  MemoryRetrievalRequestSchema,
   MemoryRetrievalResponse,
   MemoryRetrievalResponseSchema,
   EMPTY_MEMORY_RESPONSE,
@@ -52,13 +53,18 @@ export class MemoryClient extends BaseClient {
         'Retrieving memories'
       );
 
+      // Validate and apply defaults through schema
+      const validatedRequest = MemoryRetrievalRequestSchema.parse(request);
+
+      // Serialize request to Memory API wire format (camelCase)
       const requestBody = {
-        query: request.query,
-        start_date: request.start_date,
-        end_date: request.end_date,
-        observation_limit: request.observation_limit ?? 10,
-        summary_limit: request.summary_limit ?? 5,
-        session_limit: request.session_limit ?? 3,
+        query: validatedRequest.query,
+        beginDate: validatedRequest.beginDate,
+        endDate: validatedRequest.endDate,
+        observationsLimit: validatedRequest.observationsLimit,
+        summariesLimit: validatedRequest.summariesLimit,
+        communicationsLimit: validatedRequest.communicationsLimit,
+        relevanceThreshold: validatedRequest.relevanceThreshold,
       };
 
       // Remove undefined values

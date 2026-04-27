@@ -146,14 +146,18 @@ export type SummaryInfo = z.infer<typeof SummaryInfoSchema>;
 
 /**
  * Memory retrieval request parameters
+ *
+ * Note: Internal representation uses camelCase. The client layer is responsible
+ * for serializing to the wire format expected by the Memory API.
  */
 export const MemoryRetrievalRequestSchema = z.object({
   query: z.string().optional(),
-  start_date: z.string().datetime().optional(),
-  end_date: z.string().datetime().optional(),
-  observation_limit: z.number().int().positive().optional().default(10),
-  summary_limit: z.number().int().positive().optional().default(5),
-  session_limit: z.number().int().positive().optional().default(3),
+  beginDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  observationsLimit: z.number().int().min(0).max(100).optional().default(20),
+  summariesLimit: z.number().int().min(0).max(100).optional().default(5),
+  communicationsLimit: z.number().int().min(0).max(100).optional().default(0),
+  relevanceThreshold: z.number().min(0.0).max(1.0).optional().default(0.0),
 });
 
 export type MemoryRetrievalRequest = z.infer<typeof MemoryRetrievalRequestSchema>;

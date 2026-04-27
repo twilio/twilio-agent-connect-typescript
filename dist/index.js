@@ -13,13 +13,20 @@ import gracefulShutdown from 'fastify-graceful-shutdown';
 
 // packages/core/src/types/tac.ts
 var ChannelTypeSchema = z.enum(["sms", "voice", "chat"]);
+var TwilioMemoryConfigSchema = z.object({
+  traitGroups: z.array(z.string()).optional(),
+  observationsLimit: z.number().int().min(0).max(100).default(20),
+  summariesLimit: z.number().int().min(0).max(100).default(5),
+  communicationsLimit: z.number().int().min(0).max(100).default(0),
+  relevanceThreshold: z.number().min(0).max(1).default(0)
+});
 var TACConfigSchema = z.object({
   accountSid: z.string().min(1, "Twilio Account SID is required"),
   authToken: z.string().min(1, "Twilio Auth Token is required"),
   apiKey: z.string().min(1, "Twilio API Key is required"),
   apiSecret: z.string().min(1, "Twilio API Secret is required"),
   phoneNumber: z.string().min(1, "Twilio Phone Number is required"),
-  traitGroups: z.array(z.string()).optional(),
+  memoryConfig: TwilioMemoryConfigSchema.default({}),
   conversationConfigurationId: z.string().regex(/^conv_configuration_[0-9a-z]{26}$/, "Invalid Conversation Configuration ID format"),
   voicePublicDomain: z.string().url().optional(),
   cintelConfigurationId: z.string().optional(),
@@ -36,7 +43,11 @@ var EnvironmentVariables = {
   TWILIO_API_KEY: "TWILIO_API_KEY",
   TWILIO_API_SECRET: "TWILIO_API_SECRET",
   TWILIO_PHONE_NUMBER: "TWILIO_PHONE_NUMBER",
-  TRAIT_GROUPS: "TRAIT_GROUPS",
+  TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: "TWILIO_MEMORY_PROFILE_TRAIT_GROUPS",
+  TWILIO_MEMORY_OBSERVATIONS_LIMIT: "TWILIO_MEMORY_OBSERVATIONS_LIMIT",
+  TWILIO_MEMORY_SUMMARIES_LIMIT: "TWILIO_MEMORY_SUMMARIES_LIMIT",
+  TWILIO_MEMORY_COMMUNICATIONS_LIMIT: "TWILIO_MEMORY_COMMUNICATIONS_LIMIT",
+  TWILIO_MEMORY_RELEVANCE_THRESHOLD: "TWILIO_MEMORY_RELEVANCE_THRESHOLD",
   TWILIO_CONVERSATION_CONFIGURATION_ID: "TWILIO_CONVERSATION_CONFIGURATION_ID",
   VOICE_PUBLIC_DOMAIN: "VOICE_PUBLIC_DOMAIN",
   TWILIO_TAC_CI_CONFIGURATION_ID: "TWILIO_TAC_CI_CONFIGURATION_ID",
@@ -464,11 +475,12 @@ var SummaryInfoSchema = z.object({
 });
 var MemoryRetrievalRequestSchema = z.object({
   query: z.string().optional(),
-  start_date: z.string().datetime().optional(),
-  end_date: z.string().datetime().optional(),
-  observation_limit: z.number().int().positive().optional().default(10),
-  summary_limit: z.number().int().positive().optional().default(5),
-  session_limit: z.number().int().positive().optional().default(3)
+  beginDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  observationsLimit: z.number().int().min(0).max(100).optional().default(20),
+  summariesLimit: z.number().int().min(0).max(100).optional().default(5),
+  communicationsLimit: z.number().int().min(0).max(100).optional().default(0),
+  relevanceThreshold: z.number().min(0).max(1).optional().default(0)
 });
 var MemoryRetrievalResponseSchema = z.object({
   observations: z.array(ObservationInfoSchema),
@@ -769,7 +781,7 @@ var TACConfig = class _TACConfig {
   apiKey;
   apiSecret;
   phoneNumber;
-  traitGroups;
+  memoryConfig;
   conversationConfigurationId;
   voicePublicDomain;
   cintelConfigurationId;
@@ -784,9 +796,7 @@ var TACConfig = class _TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
-    if (validatedConfig.traitGroups) {
-      this.traitGroups = validatedConfig.traitGroups;
-    }
+    this.memoryConfig = validatedConfig.memoryConfig;
     this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
@@ -807,16 +817,24 @@ var TACConfig = class _TACConfig {
   /**
    * Create TACConfig from environment variables.
    *
-   * Loads configuration from the following environment variables:
-   * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
-   * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
-   * - TWILIO_API_KEY: Twilio API Key (required)
-   * - TWILIO_API_SECRET: Twilio API Secret (required)
-   * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
-   * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
-   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
-   * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
-   * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+   * Required environment variables:
+   * - TWILIO_ACCOUNT_SID: Twilio Account SID
+   * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
+   * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
+   * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
+   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
+   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
+   *
+   * Optional environment variables:
+   * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
+   * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+   *
+   * Memory Configuration:
+   * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
+   * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval. Default: 20
+   * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval. Default: 5
+   * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval. Default: 0
+   * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0). Default: 0.0
    *
    * @throws Error if required environment variables are not set or invalid
    *
@@ -846,13 +864,76 @@ var TACConfig = class _TACConfig {
         throw new Error(`Missing required environment variable: ${name}`);
       }
     }
+    const traitGroupsStr = process.env[EnvironmentVariables.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS];
+    const trimmedTraitGroups = traitGroupsStr?.trim();
+    const parsedTraitGroups = trimmedTraitGroups && trimmedTraitGroups.length > 0 ? trimmedTraitGroups.split(",").map((g) => g.trim()).filter((g) => g.length > 0) : void 0;
+    const traitGroups = parsedTraitGroups && parsedTraitGroups.length > 0 ? parsedTraitGroups : void 0;
+    const parseIntEnv = (envVarName, value, defaultValue, min, max) => {
+      if (!value) return defaultValue;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return defaultValue;
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid ${envVarName}: expected an integer, got "${value}"`);
+      }
+      if (!Number.isInteger(parsed)) {
+        throw new Error(`Invalid ${envVarName}: expected an integer, got "${value}"`);
+      }
+      if (parsed < min || parsed > max) {
+        throw new Error(`Invalid ${envVarName}: must be between ${min} and ${max}, got ${parsed}`);
+      }
+      return parsed;
+    };
+    const parseFloatEnv = (envVarName, value, defaultValue, min, max) => {
+      if (!value) return defaultValue;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return defaultValue;
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid ${envVarName}: expected a number, got "${value}"`);
+      }
+      if (parsed < min || parsed > max) {
+        throw new Error(`Invalid ${envVarName}: must be between ${min} and ${max}, got ${parsed}`);
+      }
+      return parsed;
+    };
     const rawConfig = {
       accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID],
       authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN],
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY],
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET],
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER],
-      traitGroups: process.env[EnvironmentVariables.TRAIT_GROUPS]?.split(","),
+      memoryConfig: {
+        traitGroups,
+        observationsLimit: parseIntEnv(
+          "TWILIO_MEMORY_OBSERVATIONS_LIMIT",
+          process.env[EnvironmentVariables.TWILIO_MEMORY_OBSERVATIONS_LIMIT],
+          20,
+          0,
+          100
+        ),
+        summariesLimit: parseIntEnv(
+          "TWILIO_MEMORY_SUMMARIES_LIMIT",
+          process.env[EnvironmentVariables.TWILIO_MEMORY_SUMMARIES_LIMIT],
+          5,
+          0,
+          100
+        ),
+        communicationsLimit: parseIntEnv(
+          "TWILIO_MEMORY_COMMUNICATIONS_LIMIT",
+          process.env[EnvironmentVariables.TWILIO_MEMORY_COMMUNICATIONS_LIMIT],
+          0,
+          0,
+          100
+        ),
+        relevanceThreshold: parseFloatEnv(
+          "TWILIO_MEMORY_RELEVANCE_THRESHOLD",
+          process.env[EnvironmentVariables.TWILIO_MEMORY_RELEVANCE_THRESHOLD],
+          0,
+          0,
+          1
+        )
+      },
       conversationConfigurationId: process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID],
       voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
@@ -999,13 +1080,15 @@ var MemoryClient = class extends BaseClient {
         },
         "Retrieving memories"
       );
+      const validatedRequest = MemoryRetrievalRequestSchema.parse(request);
       const requestBody = {
-        query: request.query,
-        start_date: request.start_date,
-        end_date: request.end_date,
-        observation_limit: request.observation_limit ?? 10,
-        summary_limit: request.summary_limit ?? 5,
-        session_limit: request.session_limit ?? 3
+        query: validatedRequest.query,
+        beginDate: validatedRequest.beginDate,
+        endDate: validatedRequest.endDate,
+        observationsLimit: validatedRequest.observationsLimit,
+        summariesLimit: validatedRequest.summariesLimit,
+        communicationsLimit: validatedRequest.communicationsLimit,
+        relevanceThreshold: validatedRequest.relevanceThreshold
       };
       const cleanedBody = Object.fromEntries(
         Object.entries(requestBody).filter(([_, value]) => value !== void 0)
@@ -2234,7 +2317,13 @@ var TAC = class _TAC {
       const memoryResponse = await this.memoryClient.retrieveMemories(
         this.memoryStoreId,
         session.profileId,
-        { query }
+        {
+          query,
+          observationsLimit: this.config.memoryConfig.observationsLimit,
+          summariesLimit: this.config.memoryConfig.summariesLimit,
+          communicationsLimit: this.config.memoryConfig.communicationsLimit,
+          relevanceThreshold: this.config.memoryConfig.relevanceThreshold
+        }
       );
       return new TACMemoryResponse(memoryResponse);
     } catch (error) {
@@ -2265,7 +2354,7 @@ var TAC = class _TAC {
       return void 0;
     }
     try {
-      const traitGroups = this.config.traitGroups;
+      const traitGroups = this.config.memoryConfig.traitGroups;
       const profileResponse = await this.memoryClient.getProfile(
         this.memoryStoreId,
         profileId,
@@ -2930,7 +3019,15 @@ var MessagingChannel = class extends BaseChannel {
    * session → send initial message → error cleanup.
    */
   async initiateOutboundMessagingConversation(params) {
-    const { channel, to, from: fromAddress, message, metadata, channelId, channelSettings } = params;
+    const {
+      channel,
+      to,
+      from: fromAddress,
+      message,
+      metadata,
+      channelId,
+      channelSettings
+    } = params;
     let conversationId;
     let conversationReused = false;
     try {
@@ -3949,25 +4046,37 @@ function createMemoryRetrievalTool(memoryClient, serviceSid, profileId) {
           type: "string",
           description: "Optional semantic search query to filter memories"
         },
-        start_date: {
+        beginDate: {
           type: "string",
           description: "Optional start date for filtering memories (ISO 8601 format)"
         },
-        end_date: {
+        endDate: {
           type: "string",
           description: "Optional end date for filtering memories (ISO 8601 format)"
         },
-        observation_limit: {
-          type: "number",
-          description: "Maximum number of observations to retrieve (default: 10)"
+        observationsLimit: {
+          type: "integer",
+          minimum: 0,
+          maximum: 100,
+          description: "Maximum number of observations to retrieve (0-100, default: 20)"
         },
-        summary_limit: {
-          type: "number",
-          description: "Maximum number of summaries to retrieve (default: 5)"
+        summariesLimit: {
+          type: "integer",
+          minimum: 0,
+          maximum: 100,
+          description: "Maximum number of summaries to retrieve (0-100, default: 5)"
         },
-        session_limit: {
+        communicationsLimit: {
+          type: "integer",
+          minimum: 0,
+          maximum: 100,
+          description: "Maximum number of communications to retrieve (0-100, default: 0)"
+        },
+        relevanceThreshold: {
           type: "number",
-          description: "Maximum number of sessions to retrieve (default: 3)"
+          minimum: 0,
+          maximum: 1,
+          description: "Minimum relevance score threshold for observations and summaries (0.0-1.0, default: 0.0)"
         }
       },
       required: [],
@@ -3978,14 +4087,17 @@ function createMemoryRetrievalTool(memoryClient, serviceSid, profileId) {
       if (!profileId) {
         throw new Error("No profile ID available for memory retrieval");
       }
-      const request = {
-        query: params.query,
-        start_date: params.start_date,
-        end_date: params.end_date,
-        observation_limit: params.observation_limit ?? 10,
-        summary_limit: params.summary_limit ?? 5,
-        session_limit: params.session_limit ?? 3
-      };
+      const request = Object.fromEntries(
+        Object.entries({
+          query: params.query,
+          beginDate: params.beginDate,
+          endDate: params.endDate,
+          observationsLimit: params.observationsLimit,
+          summariesLimit: params.summariesLimit,
+          communicationsLimit: params.communicationsLimit,
+          relevanceThreshold: params.relevanceThreshold
+        }).filter(([_, value]) => value !== void 0)
+      );
       return memoryClient.retrieveMemories(serviceSid, profileId, request);
     }
   );
@@ -4572,6 +4684,6 @@ var TACServer = class {
   }
 };
 
-export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

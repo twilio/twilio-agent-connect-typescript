@@ -66,7 +66,13 @@ describe('Memory Functionality', () => {
       expect(memoryClient!.retrieveMemories).toHaveBeenCalledWith(
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_existing',
-        { query: 'test query' }
+        {
+          query: 'test query',
+          observationsLimit: 20,
+          summariesLimit: 5,
+          communicationsLimit: 0,
+          relevanceThreshold: 0.0,
+        }
       );
     });
 
@@ -124,7 +130,13 @@ describe('Memory Functionality', () => {
       expect(memoryClient!.retrieveMemories).toHaveBeenCalledWith(
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_00000000000000000000000001',
-        { query: 'test query' }
+        {
+          query: 'test query',
+          observationsLimit: 20,
+          summariesLimit: 5,
+          communicationsLimit: 0,
+          relevanceThreshold: 0.0,
+        }
       );
 
       // Result is wrapped in TACMemoryResponse
@@ -177,7 +189,13 @@ describe('Memory Functionality', () => {
       expect(memoryClient!.retrieveMemories).toHaveBeenCalledWith(
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_00000000000000000000000001',
-        { query: undefined }
+        {
+          query: undefined,
+          observationsLimit: 20,
+          summariesLimit: 5,
+          communicationsLimit: 0,
+          relevanceThreshold: 0.0,
+        }
       );
     });
 

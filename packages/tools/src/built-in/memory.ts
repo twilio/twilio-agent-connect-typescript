@@ -11,11 +11,12 @@ import { TACTool, defineTool } from '../lib/builder';
  */
 interface MemoryRetrievalParams {
   query?: string;
-  start_date?: string;
-  end_date?: string;
-  observation_limit?: number;
-  summary_limit?: number;
-  session_limit?: number;
+  beginDate?: string;
+  endDate?: string;
+  observationsLimit?: number;
+  summariesLimit?: number;
+  communicationsLimit?: number;
+  relevanceThreshold?: number;
 }
 
 /**
@@ -36,25 +37,38 @@ export function createMemoryRetrievalTool(
           type: 'string',
           description: 'Optional semantic search query to filter memories',
         },
-        start_date: {
+        beginDate: {
           type: 'string',
           description: 'Optional start date for filtering memories (ISO 8601 format)',
         },
-        end_date: {
+        endDate: {
           type: 'string',
           description: 'Optional end date for filtering memories (ISO 8601 format)',
         },
-        observation_limit: {
-          type: 'number',
-          description: 'Maximum number of observations to retrieve (default: 10)',
+        observationsLimit: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 100,
+          description: 'Maximum number of observations to retrieve (0-100, default: 20)',
         },
-        summary_limit: {
-          type: 'number',
-          description: 'Maximum number of summaries to retrieve (default: 5)',
+        summariesLimit: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 100,
+          description: 'Maximum number of summaries to retrieve (0-100, default: 5)',
         },
-        session_limit: {
+        communicationsLimit: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 100,
+          description: 'Maximum number of communications to retrieve (0-100, default: 0)',
+        },
+        relevanceThreshold: {
           type: 'number',
-          description: 'Maximum number of sessions to retrieve (default: 3)',
+          minimum: 0.0,
+          maximum: 1.0,
+          description:
+            'Minimum relevance score threshold for observations and summaries (0.0-1.0, default: 0.0)',
         },
       },
       required: [], // No required parameters
@@ -65,14 +79,18 @@ export function createMemoryRetrievalTool(
         throw new Error('No profile ID available for memory retrieval');
       }
 
-      const request: Partial<MemoryRetrievalRequest> = {
-        query: params.query,
-        start_date: params.start_date,
-        end_date: params.end_date,
-        observation_limit: params.observation_limit ?? 10,
-        summary_limit: params.summary_limit ?? 5,
-        session_limit: params.session_limit ?? 3,
-      };
+      // Filter out undefined values to satisfy exactOptionalPropertyTypes
+      const request = Object.fromEntries(
+        Object.entries({
+          query: params.query,
+          beginDate: params.beginDate,
+          endDate: params.endDate,
+          observationsLimit: params.observationsLimit,
+          summariesLimit: params.summariesLimit,
+          communicationsLimit: params.communicationsLimit,
+          relevanceThreshold: params.relevanceThreshold,
+        }).filter(([_, value]) => value !== undefined)
+      ) as Partial<MemoryRetrievalRequest>;
 
       return memoryClient.retrieveMemories(serviceSid, profileId, request);
     }

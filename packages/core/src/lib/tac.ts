@@ -613,7 +613,13 @@ export class TAC {
       const memoryResponse = await this.memoryClient.retrieveMemories(
         this.memoryStoreId,
         session.profileId!,
-        { query }
+        {
+          query,
+          observationsLimit: this.config.memoryConfig.observationsLimit,
+          summariesLimit: this.config.memoryConfig.summariesLimit,
+          communicationsLimit: this.config.memoryConfig.communicationsLimit,
+          relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+        }
       );
       return new TACMemoryResponse(memoryResponse);
     } catch (error) {
@@ -648,7 +654,7 @@ export class TAC {
     }
 
     try {
-      const traitGroups = this.config.traitGroups;
+      const traitGroups = this.config.memoryConfig.traitGroups;
       const profileResponse = await this.memoryClient.getProfile(
         this.memoryStoreId,
         profileId,

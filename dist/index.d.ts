@@ -12,6 +12,29 @@ import { FastifyInstance, FastifyServerOptions } from 'fastify';
 declare const ChannelTypeSchema: z.ZodEnum<["sms", "voice", "chat"]>;
 type ChannelType = z.infer<typeof ChannelTypeSchema>;
 /**
+ * Twilio Memory configuration schema
+ */
+declare const TwilioMemoryConfigSchema: z.ZodObject<{
+    traitGroups: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    observationsLimit: z.ZodDefault<z.ZodNumber>;
+    summariesLimit: z.ZodDefault<z.ZodNumber>;
+    communicationsLimit: z.ZodDefault<z.ZodNumber>;
+    relevanceThreshold: z.ZodDefault<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    observationsLimit: number;
+    summariesLimit: number;
+    communicationsLimit: number;
+    relevanceThreshold: number;
+    traitGroups?: string[] | undefined;
+}, {
+    traitGroups?: string[] | undefined;
+    observationsLimit?: number | undefined;
+    summariesLimit?: number | undefined;
+    communicationsLimit?: number | undefined;
+    relevanceThreshold?: number | undefined;
+}>;
+type TwilioMemoryConfig = z.infer<typeof TwilioMemoryConfigSchema>;
+/**
  * TAC configuration schema
  */
 declare const TACConfigSchema: z.ZodObject<{
@@ -20,7 +43,25 @@ declare const TACConfigSchema: z.ZodObject<{
     apiKey: z.ZodString;
     apiSecret: z.ZodString;
     phoneNumber: z.ZodString;
-    traitGroups: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    memoryConfig: z.ZodDefault<z.ZodObject<{
+        traitGroups: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        observationsLimit: z.ZodDefault<z.ZodNumber>;
+        summariesLimit: z.ZodDefault<z.ZodNumber>;
+        communicationsLimit: z.ZodDefault<z.ZodNumber>;
+        relevanceThreshold: z.ZodDefault<z.ZodNumber>;
+    }, "strip", z.ZodTypeAny, {
+        observationsLimit: number;
+        summariesLimit: number;
+        communicationsLimit: number;
+        relevanceThreshold: number;
+        traitGroups?: string[] | undefined;
+    }, {
+        traitGroups?: string[] | undefined;
+        observationsLimit?: number | undefined;
+        summariesLimit?: number | undefined;
+        communicationsLimit?: number | undefined;
+        relevanceThreshold?: number | undefined;
+    }>>;
     conversationConfigurationId: z.ZodString;
     voicePublicDomain: z.ZodOptional<z.ZodString>;
     cintelConfigurationId: z.ZodOptional<z.ZodString>;
@@ -33,8 +74,14 @@ declare const TACConfigSchema: z.ZodObject<{
     apiKey: string;
     apiSecret: string;
     phoneNumber: string;
+    memoryConfig: {
+        observationsLimit: number;
+        summariesLimit: number;
+        communicationsLimit: number;
+        relevanceThreshold: number;
+        traitGroups?: string[] | undefined;
+    };
     conversationConfigurationId: string;
-    traitGroups?: string[] | undefined;
     voicePublicDomain?: string | undefined;
     cintelConfigurationId?: string | undefined;
     cintelObservationOperatorSid?: string | undefined;
@@ -47,7 +94,13 @@ declare const TACConfigSchema: z.ZodObject<{
     apiSecret: string;
     phoneNumber: string;
     conversationConfigurationId: string;
-    traitGroups?: string[] | undefined;
+    memoryConfig?: {
+        traitGroups?: string[] | undefined;
+        observationsLimit?: number | undefined;
+        summariesLimit?: number | undefined;
+        communicationsLimit?: number | undefined;
+        relevanceThreshold?: number | undefined;
+    } | undefined;
     voicePublicDomain?: string | undefined;
     cintelConfigurationId?: string | undefined;
     cintelObservationOperatorSid?: string | undefined;
@@ -64,7 +117,11 @@ declare const EnvironmentVariables: {
     readonly TWILIO_API_KEY: "TWILIO_API_KEY";
     readonly TWILIO_API_SECRET: "TWILIO_API_SECRET";
     readonly TWILIO_PHONE_NUMBER: "TWILIO_PHONE_NUMBER";
-    readonly TRAIT_GROUPS: "TRAIT_GROUPS";
+    readonly TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: "TWILIO_MEMORY_PROFILE_TRAIT_GROUPS";
+    readonly TWILIO_MEMORY_OBSERVATIONS_LIMIT: "TWILIO_MEMORY_OBSERVATIONS_LIMIT";
+    readonly TWILIO_MEMORY_SUMMARIES_LIMIT: "TWILIO_MEMORY_SUMMARIES_LIMIT";
+    readonly TWILIO_MEMORY_COMMUNICATIONS_LIMIT: "TWILIO_MEMORY_COMMUNICATIONS_LIMIT";
+    readonly TWILIO_MEMORY_RELEVANCE_THRESHOLD: "TWILIO_MEMORY_RELEVANCE_THRESHOLD";
     readonly TWILIO_CONVERSATION_CONFIGURATION_ID: "TWILIO_CONVERSATION_CONFIGURATION_ID";
     readonly VOICE_PUBLIC_DOMAIN: "VOICE_PUBLIC_DOMAIN";
     readonly TWILIO_TAC_CI_CONFIGURATION_ID: "TWILIO_TAC_CI_CONFIGURATION_ID";
@@ -415,28 +472,34 @@ declare const SummaryInfoSchema: z.ZodObject<{
 type SummaryInfo = z.infer<typeof SummaryInfoSchema>;
 /**
  * Memory retrieval request parameters
+ *
+ * Note: Internal representation uses camelCase. The client layer is responsible
+ * for serializing to the wire format expected by the Memory API.
  */
 declare const MemoryRetrievalRequestSchema: z.ZodObject<{
     query: z.ZodOptional<z.ZodString>;
-    start_date: z.ZodOptional<z.ZodString>;
-    end_date: z.ZodOptional<z.ZodString>;
-    observation_limit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
-    summary_limit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
-    session_limit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    beginDate: z.ZodOptional<z.ZodString>;
+    endDate: z.ZodOptional<z.ZodString>;
+    observationsLimit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    summariesLimit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    communicationsLimit: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    relevanceThreshold: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
 }, "strip", z.ZodTypeAny, {
-    observation_limit: number;
-    summary_limit: number;
-    session_limit: number;
+    observationsLimit: number;
+    summariesLimit: number;
+    communicationsLimit: number;
+    relevanceThreshold: number;
     query?: string | undefined;
-    start_date?: string | undefined;
-    end_date?: string | undefined;
+    beginDate?: string | undefined;
+    endDate?: string | undefined;
 }, {
+    observationsLimit?: number | undefined;
+    summariesLimit?: number | undefined;
+    communicationsLimit?: number | undefined;
+    relevanceThreshold?: number | undefined;
     query?: string | undefined;
-    start_date?: string | undefined;
-    end_date?: string | undefined;
-    observation_limit?: number | undefined;
-    summary_limit?: number | undefined;
-    session_limit?: number | undefined;
+    beginDate?: string | undefined;
+    endDate?: string | undefined;
 }>;
 type MemoryRetrievalRequest = z.infer<typeof MemoryRetrievalRequestSchema>;
 /**
@@ -3826,7 +3889,7 @@ declare class TACConfig {
     readonly apiKey: string;
     readonly apiSecret: string;
     readonly phoneNumber: string;
-    readonly traitGroups?: string[];
+    readonly memoryConfig: TACConfigData['memoryConfig'];
     readonly conversationConfigurationId: string;
     readonly voicePublicDomain?: string;
     readonly cintelConfigurationId?: string;
@@ -3838,16 +3901,24 @@ declare class TACConfig {
     /**
      * Create TACConfig from environment variables.
      *
-     * Loads configuration from the following environment variables:
-     * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
-     * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
-     * - TWILIO_API_KEY: Twilio API Key (required)
-     * - TWILIO_API_SECRET: Twilio API Secret (required)
-     * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
-     * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
-     * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
-     * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
-     * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+     * Required environment variables:
+     * - TWILIO_ACCOUNT_SID: Twilio Account SID
+     * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
+     * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
+     * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
+     * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
+     * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
+     *
+     * Optional environment variables:
+     * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
+     * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+     *
+     * Memory Configuration:
+     * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
+     * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval. Default: 20
+     * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval. Default: 5
+     * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval. Default: 0
+     * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0). Default: 0.0
      *
      * @throws Error if required environment variables are not set or invalid
      *
@@ -4868,11 +4939,12 @@ declare function defineTool<TParams = any, TResult = any>(name: string, descript
  */
 interface MemoryRetrievalParams {
     query?: string;
-    start_date?: string;
-    end_date?: string;
-    observation_limit?: number;
-    summary_limit?: number;
-    session_limit?: number;
+    beginDate?: string;
+    endDate?: string;
+    observationsLimit?: number;
+    summariesLimit?: number;
+    communicationsLimit?: number;
+    relevanceThreshold?: number;
 }
 /**
  * Create memory retrieval tool
@@ -5099,4 +5171,4 @@ declare class TACServer {
     stop(): Promise<void>;
 }
 
-export { type ActionChannelSettings, ActionChannelSettingsSchema, type ActionParticipantRef, ActionParticipantRefSchema, type ActionResponse, ActionResponseSchema, type ActionTextContent, ActionTextContentSchema, type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, BaseClient, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type ConversationsV1Bridge, ConversationsV1BridgeSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type InitiateChatConversationOptions, type InitiateConversationResult, type InitiateMessagingConversationOptions, InitiateMessagingConversationOptionsSchema, type InitiateVoiceConversationOptions, InitiateVoiceConversationOptionsSchema, type InitiateVoiceConversationResult, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type ListCommunicationsResponse, ListCommunicationsResponseSchema, type ListConversationsResponse, ListConversationsResponseSchema, type ListParticipantsResponse, ListParticipantsResponseSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendMessageActionPayload, SendMessageActionPayloadSchema, type SendMessageActionRequest, SendMessageActionRequestSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { type ActionChannelSettings, ActionChannelSettingsSchema, type ActionParticipantRef, ActionParticipantRefSchema, type ActionResponse, ActionResponseSchema, type ActionTextContent, ActionTextContentSchema, type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, BaseClient, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type ConversationsV1Bridge, ConversationsV1BridgeSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type InitiateChatConversationOptions, type InitiateConversationResult, type InitiateMessagingConversationOptions, InitiateMessagingConversationOptionsSchema, type InitiateVoiceConversationOptions, InitiateVoiceConversationOptionsSchema, type InitiateVoiceConversationResult, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type ListCommunicationsResponse, ListCommunicationsResponseSchema, type ListConversationsResponse, ListConversationsResponseSchema, type ListParticipantsResponse, ListParticipantsResponseSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendMessageActionPayload, SendMessageActionPayloadSchema, type SendMessageActionRequest, SendMessageActionRequestSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, type TwilioMemoryConfig, TwilioMemoryConfigSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };

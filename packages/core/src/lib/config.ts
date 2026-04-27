@@ -21,7 +21,7 @@ export class TACConfig {
   public readonly apiKey: string;
   public readonly apiSecret: string;
   public readonly phoneNumber: string;
-  public readonly traitGroups?: string[];
+  public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId: string;
   public readonly voicePublicDomain?: string;
   public readonly cintelConfigurationId?: string;
@@ -39,9 +39,8 @@ export class TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
-    if (validatedConfig.traitGroups) {
-      this.traitGroups = validatedConfig.traitGroups;
-    }
+    // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
+    this.memoryConfig = validatedConfig.memoryConfig;
     this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
@@ -63,16 +62,24 @@ export class TACConfig {
   /**
    * Create TACConfig from environment variables.
    *
-   * Loads configuration from the following environment variables:
-   * - TWILIO_ACCOUNT_SID: Twilio Account SID (required)
-   * - TWILIO_AUTH_TOKEN: Twilio Auth Token (required)
-   * - TWILIO_API_KEY: Twilio API Key (required)
-   * - TWILIO_API_SECRET: Twilio API Secret (required)
-   * - TWILIO_PHONE_NUMBER: Twilio Phone Number (required)
-   * - TRAIT_GROUPS: Comma-separated trait group names (optional, for profile fetching)
-   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Twilio Conversation Configuration ID (required)
-   * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks (optional)
-   * - TWILIO_REGION: Twilio region subdomain for API routing (optional, e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+   * Required environment variables:
+   * - TWILIO_ACCOUNT_SID: Twilio Account SID
+   * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
+   * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
+   * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
+   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
+   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
+   *
+   * Optional environment variables:
+   * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
+   * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+   *
+   * Memory Configuration:
+   * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
+   * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval. Default: 20
+   * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval. Default: 5
+   * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval. Default: 0
+   * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0). Default: 0.0
    *
    * @throws Error if required environment variables are not set or invalid
    *
@@ -106,13 +113,105 @@ export class TACConfig {
       }
     }
 
+    // Parse memory configuration from environment variables
+    const traitGroupsStr = process.env[EnvironmentVariables.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS];
+    // Parse trait groups, filtering out empty strings from malformed CSV (e.g., "A,,B,")
+    // Treat empty/whitespace-only strings and delimiter-only inputs as undefined for consistency
+    const trimmedTraitGroups = traitGroupsStr?.trim();
+    const parsedTraitGroups =
+      trimmedTraitGroups && trimmedTraitGroups.length > 0
+        ? trimmedTraitGroups
+            .split(',')
+            .map(g => g.trim())
+            .filter(g => g.length > 0)
+        : undefined;
+    const traitGroups =
+      parsedTraitGroups && parsedTraitGroups.length > 0 ? parsedTraitGroups : undefined;
+
+    // Helper to parse integer from env var with validation and bounds checking
+    const parseIntEnv = (
+      envVarName: string,
+      value: string | undefined,
+      defaultValue: number,
+      min: number,
+      max: number
+    ): number => {
+      if (!value) return defaultValue;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return defaultValue;
+
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid ${envVarName}: expected an integer, got "${value}"`);
+      }
+      if (!Number.isInteger(parsed)) {
+        throw new Error(`Invalid ${envVarName}: expected an integer, got "${value}"`);
+      }
+      if (parsed < min || parsed > max) {
+        throw new Error(`Invalid ${envVarName}: must be between ${min} and ${max}, got ${parsed}`);
+      }
+      return parsed;
+    };
+
+    // Helper to parse float from env var with validation and bounds checking
+    const parseFloatEnv = (
+      envVarName: string,
+      value: string | undefined,
+      defaultValue: number,
+      min: number,
+      max: number
+    ): number => {
+      if (!value) return defaultValue;
+      const trimmed = value.trim();
+      if (trimmed.length === 0) return defaultValue;
+
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed)) {
+        throw new Error(`Invalid ${envVarName}: expected a number, got "${value}"`);
+      }
+      if (parsed < min || parsed > max) {
+        throw new Error(`Invalid ${envVarName}: must be between ${min} and ${max}, got ${parsed}`);
+      }
+      return parsed;
+    };
+
     const rawConfig: TACConfigData = {
       accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
       authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
-      traitGroups: process.env[EnvironmentVariables.TRAIT_GROUPS]?.split(','),
+      memoryConfig: {
+        traitGroups,
+        observationsLimit: parseIntEnv(
+          'TWILIO_MEMORY_OBSERVATIONS_LIMIT',
+          process.env[EnvironmentVariables.TWILIO_MEMORY_OBSERVATIONS_LIMIT],
+          20,
+          0,
+          100
+        ),
+        summariesLimit: parseIntEnv(
+          'TWILIO_MEMORY_SUMMARIES_LIMIT',
+          process.env[EnvironmentVariables.TWILIO_MEMORY_SUMMARIES_LIMIT],
+          5,
+          0,
+          100
+        ),
+        communicationsLimit: parseIntEnv(
+          'TWILIO_MEMORY_COMMUNICATIONS_LIMIT',
+          process.env[EnvironmentVariables.TWILIO_MEMORY_COMMUNICATIONS_LIMIT],
+          0,
+          0,
+          100
+        ),
+        relevanceThreshold: parseFloatEnv(
+          'TWILIO_MEMORY_RELEVANCE_THRESHOLD',
+          process.env[EnvironmentVariables.TWILIO_MEMORY_RELEVANCE_THRESHOLD],
+          0.0,
+          0.0,
+          1.0
+        ),
+      },
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID]!,
       voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],

@@ -7,6 +7,19 @@ export const ChannelTypeSchema = z.enum(['sms', 'voice', 'chat']);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
 /**
+ * Twilio Memory configuration schema
+ */
+export const TwilioMemoryConfigSchema = z.object({
+  traitGroups: z.array(z.string()).optional(),
+  observationsLimit: z.number().int().min(0).max(100).default(20),
+  summariesLimit: z.number().int().min(0).max(100).default(5),
+  communicationsLimit: z.number().int().min(0).max(100).default(0),
+  relevanceThreshold: z.number().min(0.0).max(1.0).default(0.0),
+});
+
+export type TwilioMemoryConfig = z.infer<typeof TwilioMemoryConfigSchema>;
+
+/**
  * TAC configuration schema
  */
 export const TACConfigSchema = z.object({
@@ -15,7 +28,7 @@ export const TACConfigSchema = z.object({
   apiKey: z.string().min(1, 'Twilio API Key is required'),
   apiSecret: z.string().min(1, 'Twilio API Secret is required'),
   phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
-  traitGroups: z.array(z.string()).optional(),
+  memoryConfig: TwilioMemoryConfigSchema.default({}),
   conversationConfigurationId: z
     .string()
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format'),
@@ -44,7 +57,11 @@ export const EnvironmentVariables = {
   TWILIO_API_KEY: 'TWILIO_API_KEY',
   TWILIO_API_SECRET: 'TWILIO_API_SECRET',
   TWILIO_PHONE_NUMBER: 'TWILIO_PHONE_NUMBER',
-  TRAIT_GROUPS: 'TRAIT_GROUPS',
+  TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: 'TWILIO_MEMORY_PROFILE_TRAIT_GROUPS',
+  TWILIO_MEMORY_OBSERVATIONS_LIMIT: 'TWILIO_MEMORY_OBSERVATIONS_LIMIT',
+  TWILIO_MEMORY_SUMMARIES_LIMIT: 'TWILIO_MEMORY_SUMMARIES_LIMIT',
+  TWILIO_MEMORY_COMMUNICATIONS_LIMIT: 'TWILIO_MEMORY_COMMUNICATIONS_LIMIT',
+  TWILIO_MEMORY_RELEVANCE_THRESHOLD: 'TWILIO_MEMORY_RELEVANCE_THRESHOLD',
   TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
   VOICE_PUBLIC_DOMAIN: 'VOICE_PUBLIC_DOMAIN',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',

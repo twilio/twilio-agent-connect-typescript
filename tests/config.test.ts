@@ -24,6 +24,11 @@ describe('TACConfig', () => {
       TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
       VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
+      TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS,
+      TWILIO_MEMORY_OBSERVATIONS_LIMIT: process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT,
+      TWILIO_MEMORY_SUMMARIES_LIMIT: process.env.TWILIO_MEMORY_SUMMARIES_LIMIT,
+      TWILIO_MEMORY_COMMUNICATIONS_LIMIT: process.env.TWILIO_MEMORY_COMMUNICATIONS_LIMIT,
+      TWILIO_MEMORY_RELEVANCE_THRESHOLD: process.env.TWILIO_MEMORY_RELEVANCE_THRESHOLD,
     };
   });
 
@@ -229,6 +234,167 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.region).toBeUndefined();
+    });
+
+    it('should use default memory configuration values when env vars not set', () => {
+      setRequiredEnvVars();
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.observationsLimit).toBe(20);
+      expect(config.memoryConfig.summariesLimit).toBe(5);
+      expect(config.memoryConfig.communicationsLimit).toBe(0);
+      expect(config.memoryConfig.relevanceThreshold).toBe(0.0);
+      expect(config.memoryConfig.traitGroups).toBeUndefined();
+    });
+
+    it('should parse custom memory configuration from env vars', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS = 'Contact,Preferences';
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = '10';
+      process.env.TWILIO_MEMORY_SUMMARIES_LIMIT = '3';
+      process.env.TWILIO_MEMORY_COMMUNICATIONS_LIMIT = '5';
+      process.env.TWILIO_MEMORY_RELEVANCE_THRESHOLD = '0.7';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.traitGroups).toEqual(['Contact', 'Preferences']);
+      expect(config.memoryConfig.observationsLimit).toBe(10);
+      expect(config.memoryConfig.summariesLimit).toBe(3);
+      expect(config.memoryConfig.communicationsLimit).toBe(5);
+      expect(config.memoryConfig.relevanceThreshold).toBe(0.7);
+    });
+
+    it('should handle whitespace in trait groups', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS = ' Contact , Preferences , Custom ';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.traitGroups).toEqual(['Contact', 'Preferences', 'Custom']);
+    });
+
+    it('should filter empty strings from trait groups', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS = 'Contact,,Preferences,';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.traitGroups).toEqual(['Contact', 'Preferences']);
+    });
+
+    it('should handle empty trait groups string', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS = '';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.traitGroups).toBeUndefined();
+    });
+
+    it('should handle whitespace-only trait groups string', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS = '   ';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.traitGroups).toBeUndefined();
+    });
+
+    it('should handle delimiter-only trait groups string', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS = ',,,';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.traitGroups).toBeUndefined();
+    });
+
+    it('should handle whitespace-only memory limit env vars', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = '   ';
+      process.env.TWILIO_MEMORY_SUMMARIES_LIMIT = '  ';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.observationsLimit).toBe(20);
+      expect(config.memoryConfig.summariesLimit).toBe(5);
+    });
+
+    it('should accept zero values for memory limits', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = '0';
+      process.env.TWILIO_MEMORY_SUMMARIES_LIMIT = '0';
+      process.env.TWILIO_MEMORY_COMMUNICATIONS_LIMIT = '0';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.memoryConfig.observationsLimit).toBe(0);
+      expect(config.memoryConfig.summariesLimit).toBe(0);
+      expect(config.memoryConfig.communicationsLimit).toBe(0);
+    });
+
+    it('should throw error for invalid observations limit', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = 'abc';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_OBSERVATIONS_LIMIT: expected an integer, got "abc"');
+    });
+
+    it('should throw error for out of range observations limit', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = '150';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_OBSERVATIONS_LIMIT: must be between 0 and 100, got 150');
+    });
+
+    it('should throw error for invalid relevance threshold', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_RELEVANCE_THRESHOLD = 'not_a_number';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_RELEVANCE_THRESHOLD: expected a number, got "not_a_number"');
+    });
+
+    it('should throw error for out of range relevance threshold', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_RELEVANCE_THRESHOLD = '1.5';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_RELEVANCE_THRESHOLD: must be between 0 and 1, got 1.5');
+    });
+
+    it('should reject partially valid integer values', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = '10abc';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_OBSERVATIONS_LIMIT: expected an integer, got "10abc"');
+    });
+
+    it('should reject float values for integer fields', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT = '10.5';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_OBSERVATIONS_LIMIT: expected an integer, got "10.5"');
+    });
+
+    it('should reject partially valid float values', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_MEMORY_RELEVANCE_THRESHOLD = '0.5abc';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Invalid TWILIO_MEMORY_RELEVANCE_THRESHOLD: expected a number, got "0.5abc"');
     });
   });
 
