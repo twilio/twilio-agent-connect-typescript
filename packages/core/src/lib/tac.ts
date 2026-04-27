@@ -32,12 +32,13 @@ export type MessageReadyCallback = (params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
+  abortSignal?: AbortSignal;
 }) => Promise<string | null | void> | string | null | void;
 
 export type InterruptCallback = (params: {
   conversationId: ConversationId;
-  reason: string;
-  transcript: string | undefined;
+  utteranceUntilInterrupt: string | undefined;
+  durationUntilInterruptMs: number | undefined;
   session: ConversationSession;
 }) => Promise<void> | void;
 
@@ -212,11 +213,13 @@ export class TAC {
         transcript,
         userMemory,
         session,
+        abortSignal,
       }: {
         conversationId: ConversationId;
         transcript: string;
         userMemory?: TACMemoryResponse;
         session?: ConversationSession;
+        abortSignal: AbortSignal;
       }): Promise<void> => {
         // Use session from event if available, otherwise get from channel
         const eventSession = session || channel.getConversationSession(conversationId);
@@ -228,6 +231,7 @@ export class TAC {
             author: 'user',
             userMemory,
             channelType: channel.channelType,
+            abortSignal,
           });
         }
       }
@@ -239,20 +243,20 @@ export class TAC {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
       async ({
         conversationId,
-        reason,
-        transcript,
+        utteranceUntilInterrupt,
+        durationUntilInterruptMs,
       }: {
         conversationId: ConversationId;
-        reason: string;
-        transcript: string | undefined;
+        utteranceUntilInterrupt: string | undefined;
+        durationUntilInterruptMs: number | undefined;
       }) => {
         const session = channel.getConversationSession(conversationId);
         if (session && this.interruptCallback) {
           try {
             await this.interruptCallback({
               conversationId,
-              reason,
-              transcript: transcript ?? undefined,
+              utteranceUntilInterrupt,
+              durationUntilInterruptMs,
               session,
             });
           } catch (error) {
@@ -294,6 +298,7 @@ export class TAC {
     author: string;
     userMemory: TACMemoryResponse | undefined;
     channelType: ChannelType;
+    abortSignal?: AbortSignal;
   }): Promise<void> {
     this.logger.debug(
       {
@@ -363,6 +368,7 @@ export class TAC {
           memory: memory ?? undefined,
           session,
           channel: channel.channelType,
+          ...(data.abortSignal !== undefined && { abortSignal: data.abortSignal }),
         });
         this.logger.debug(
           { conversation_id: data.conversationId },

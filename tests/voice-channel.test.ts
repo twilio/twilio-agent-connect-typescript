@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestTAC } from './helpers/tac';
 import { VoiceChannel, TAC, TACConfig, ConversationSession } from '@twilio/tac-core';
+import { InterruptMessageSchema } from '@twilio/tac-core';
 
 describe('VoiceChannel', () => {
   const getTestConfig = () => ({
@@ -82,9 +83,10 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const conversationId = 'CH_test_123' as any;
 
-      const controller = voiceChannel.startStreamTask(conversationId);
+      const task = voiceChannel.startStreamTask(conversationId);
 
-      expect(controller).toBeInstanceOf(AbortController);
+      expect(task.controller).toBeInstanceOf(AbortController);
+      expect(task.hasSentTokens).toBe(false);
       expect(voiceChannel.hasActiveStreamTask(conversationId)).toBe(true);
     });
 
@@ -93,11 +95,11 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const conversationId = 'CH_test_123' as any;
 
-      const controller = voiceChannel.startStreamTask(conversationId);
+      const task = voiceChannel.startStreamTask(conversationId);
       const cancelled = voiceChannel.cancelStreamTask(conversationId);
 
       expect(cancelled).toBe(true);
-      expect(controller.signal.aborted).toBe(true);
+      expect(task.controller.signal.aborted).toBe(true);
       expect(voiceChannel.hasActiveStreamTask(conversationId)).toBe(false);
     });
 
@@ -127,11 +129,11 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const conversationId = 'CH_test_123' as any;
 
-      const firstController = voiceChannel.startStreamTask(conversationId);
-      const secondController = voiceChannel.startStreamTask(conversationId);
+      const firstTask = voiceChannel.startStreamTask(conversationId);
+      const secondTask = voiceChannel.startStreamTask(conversationId);
 
-      expect(firstController.signal.aborted).toBe(true);
-      expect(secondController.signal.aborted).toBe(false);
+      expect(firstTask.controller.signal.aborted).toBe(true);
+      expect(secondTask.controller.signal.aborted).toBe(false);
       expect(voiceChannel.hasActiveStreamTask(conversationId)).toBe(true);
     });
 
@@ -967,6 +969,553 @@ describe('VoiceChannel', () => {
       expect(result.status).toBe(200);
       expect(listSpy).not.toHaveBeenCalled();
       expect(updateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('InterruptMessage schema', () => {
+    it('should parse utteranceUntilInterrupt', () => {
+      const result = InterruptMessageSchema.parse({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello, I was say',
+      });
+
+      expect(result.utteranceUntilInterrupt).toBe('Hello, I was say');
+      expect(result.durationUntilInterruptMs).toBeUndefined();
+    });
+
+    it('should parse durationUntilInterruptMs', () => {
+      const result = InterruptMessageSchema.parse({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Test',
+        durationUntilInterruptMs: 1500,
+      });
+
+      expect(result.durationUntilInterruptMs).toBe(1500);
+    });
+
+    it('should parse minimal interrupt (no optional fields)', () => {
+      const result = InterruptMessageSchema.parse({ type: 'interrupt' });
+
+      expect(result.utteranceUntilInterrupt).toBeUndefined();
+      expect(result.durationUntilInterruptMs).toBeUndefined();
+    });
+  });
+
+  describe('sendStreamingResponse()', () => {
+    const createStreamingMockWebSocket = () => {
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      return {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          if (!handlers[event]) handlers[event] = [];
+          handlers[event].push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1, // WebSocket.OPEN
+        _handlers: handlers,
+        _emit(event: string, ...args: any[]) {
+          for (const h of handlers[event] || []) {
+            h(...args);
+          }
+        },
+      };
+    };
+
+    const setupForStreaming = async () => {
+      const tac = await createTestTAC({
+        accountSid: 'ACtest123',
+        authToken: 'test_token_123',
+        apiKey: 'test_api_key',
+        apiSecret: 'test_api_token',
+        phoneNumber: '+15551234567',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHstream_test', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
+      ] as any);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createStreamingMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'setup',
+        sessionId: 'sess_stream',
+        callSid: 'CA_stream',
+        from: '+15551234567',
+        to: '+15559876543',
+        direction: 'inbound',
+        callType: 'PSTN',
+        callStatus: 'ringing',
+        accountSid: 'ACtest123',
+      })));
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'prompt',
+        voicePrompt: 'Hello',
+        lang: 'en-US',
+        last: true,
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      return { tac, voiceChannel, mockWs };
+    };
+
+    async function* makeTokenStream(tokens: string[]): AsyncGenerator<string> {
+      for (const token of tokens) {
+        yield token;
+      }
+    }
+
+    it('should stream tokens with last: false and end with last: true', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      const result = await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        makeTokenStream(['Hello', ' ', 'world']),
+      );
+
+      expect(result).toBe('Hello world');
+
+      const sendCalls = mockWs.send.mock.calls;
+      const streamCalls = sendCalls.filter((call: any[]) => {
+        const parsed = JSON.parse(call[0] as string);
+        return parsed.type === 'text';
+      });
+
+      expect(streamCalls.length).toBeGreaterThanOrEqual(4);
+
+      const tokens = streamCalls.map((call: any[]) => JSON.parse(call[0] as string));
+      const intermediateTokens = tokens.filter((t: any) => t.last === false);
+      const finalMarker = tokens.find((t: any) => t.last === true && t.token === '');
+
+      expect(intermediateTokens).toHaveLength(3);
+      expect(intermediateTokens[0].token).toBe('Hello');
+      expect(intermediateTokens[1].token).toBe(' ');
+      expect(intermediateTokens[2].token).toBe('world');
+      expect(finalMarker).toBeDefined();
+    });
+
+    it('should stop streaming when AbortSignal is aborted', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      const controller = new AbortController();
+
+      async function* abortableStream(): AsyncGenerator<string> {
+        yield 'First';
+        controller.abort();
+        yield 'Second';
+        yield 'Third';
+      }
+
+      const result = await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        abortableStream(),
+        { signal: controller.signal },
+      );
+
+      expect(result).toBe('First');
+
+      const sendCalls = mockWs.send.mock.calls;
+      const textMessages = sendCalls
+        .map((call: any[]) => JSON.parse(call[0] as string))
+        .filter((m: any) => m.type === 'text');
+
+      const hasSecondToken = textMessages.some((m: any) => m.token === 'Second');
+      expect(hasSecondToken).toBe(false);
+
+      const hasFinalMarker = textMessages.some(
+        (m: any) => m.last === true && m.token === ''
+      );
+      expect(hasFinalMarker).toBe(false);
+    });
+
+    it('should stop streaming when WebSocket closes mid-stream', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      let sendCount = 0;
+      mockWs.send = vi.fn(() => {
+        sendCount++;
+        if (sendCount >= 2) {
+          (mockWs as any).readyState = 3; // WebSocket.CLOSED
+        }
+      });
+
+      const result = await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        makeTokenStream(['One', 'Two', 'Three']),
+      );
+
+      expect(result).toBe('OneTwo');
+    });
+
+    it('should throw for missing WebSocket connection', async () => {
+      const tac = await createTestTAC({
+        accountSid: 'ACtest123',
+        authToken: 'test_token_123',
+        apiKey: 'test_api_key',
+        apiSecret: 'test_api_token',
+        phoneNumber: '+15551234567',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+
+      await expect(
+        voiceChannel.sendStreamingResponse(
+          'CH_nonexistent' as any,
+          makeTokenStream(['test']),
+        )
+      ).rejects.toThrow('No active WebSocket connection');
+    });
+
+    it('should clean up stream task when ws.send throws', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      voiceChannel.startStreamTask('CHstream_test' as any);
+      mockWs.send = vi.fn(() => { throw new Error('socket write failed'); });
+
+      await expect(
+        voiceChannel.sendStreamingResponse(
+          'CHstream_test' as any,
+          makeTokenStream(['boom']),
+        )
+      ).rejects.toThrow('socket write failed');
+
+      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(false);
+    });
+
+    it('should complete stream task on successful completion', async () => {
+      const { voiceChannel } = await setupForStreaming();
+
+      voiceChannel.startStreamTask('CHstream_test' as any);
+      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(true);
+
+      await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        makeTokenStream(['test']),
+      );
+
+      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(false);
+    });
+
+    it('should fall back to active stream task signal when no explicit signal passed', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      const task = voiceChannel.startStreamTask('CHstream_test' as any);
+
+      async function* slowStream(): AsyncGenerator<string> {
+        yield 'First';
+        task.controller.abort();
+        yield 'Second';
+      }
+
+      const result = await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        slowStream(),
+      );
+
+      expect(result).toBe('First');
+
+      const textMessages = mockWs.send.mock.calls
+        .map((call: any[]) => JSON.parse(call[0] as string))
+        .filter((m: any) => m.type === 'text');
+
+      const hasSecondToken = textMessages.some((m: any) => m.token === 'Second');
+      expect(hasSecondToken).toBe(false);
+    });
+
+    it('should stop streaming when explicit signal is aborted via cancelStreamTask', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      const task = voiceChannel.startStreamTask('CHstream_test' as any);
+      let yieldCount = 0;
+
+      async function* slowStream(): AsyncGenerator<string> {
+        yield 'First';
+        yieldCount++;
+        // Simulate interrupt cancelling the stream task externally
+        voiceChannel.cancelStreamTask('CHstream_test' as any);
+        yield 'Second';
+        yieldCount++;
+      }
+
+      const result = await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        slowStream(),
+        { signal: task.controller.signal },
+      );
+
+      expect(result).toBe('First');
+
+      const textMessages = mockWs.send.mock.calls
+        .map((call: any[]) => JSON.parse(call[0] as string))
+        .filter((m: any) => m.type === 'text');
+
+      const hasSecondToken = textMessages.some((m: any) => m.token === 'Second');
+      expect(hasSecondToken).toBe(false);
+
+      const hasFinalMarker = textMessages.some(
+        (m: any) => m.last === true && m.token === ''
+      );
+      expect(hasFinalMarker).toBe(false);
+    });
+  });
+
+  describe('interrupt handling', () => {
+    const createInterruptMockWebSocket = () => {
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      return {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          if (!handlers[event]) handlers[event] = [];
+          handlers[event].push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+        _handlers: handlers,
+        _emit(event: string, ...args: any[]) {
+          for (const h of handlers[event] || []) {
+            h(...args);
+          }
+        },
+      };
+    };
+
+    const setupForInterrupt = async () => {
+      const tac = await createTestTAC({
+        accountSid: 'ACtest123',
+        authToken: 'test_token_123',
+        apiKey: 'test_api_key',
+        apiSecret: 'test_api_token',
+        phoneNumber: '+15551234567',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHinterrupt_test', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
+      ] as any);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createInterruptMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'setup',
+        sessionId: 'sess_int',
+        callSid: 'CA_int',
+        from: '+15551234567',
+        to: '+15559876543',
+        direction: 'inbound',
+        callType: 'PSTN',
+        callStatus: 'ringing',
+        accountSid: 'ACtest123',
+      })));
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'prompt',
+        voicePrompt: 'Hello',
+        lang: 'en-US',
+        last: true,
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      return { tac, voiceChannel, mockWs };
+    };
+
+    it('should send stream finalization when interrupt cancels an active stream with tokens sent', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
+
+      // Actually send a streaming token so the stream is considered active
+      voiceChannel.sendStreamingResponse(
+        'CHinterrupt_test' as any,
+        (async function* () { yield 'Hello'; yield new Promise(() => {}) as never; })(),
+      ).catch(() => {});
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+      mockWs.send.mockClear();
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello, I was',
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const ackCall = mockWs.send.mock.calls.find((call: any[]) => {
+        const parsed = JSON.parse(call[0] as string);
+        return parsed.type === 'text' && parsed.token === '' && parsed.last === true;
+      });
+
+      expect(ackCall).toBeDefined();
+    });
+
+    it('should not send stream finalization when stream task exists but no tokens sent', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
+      mockWs.send.mockClear();
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello',
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const ackCall = mockWs.send.mock.calls.find((call: any[]) => {
+        const parsed = JSON.parse(call[0] as string);
+        return parsed.type === 'text' && parsed.token === '' && parsed.last === true;
+      });
+
+      expect(ackCall).toBeUndefined();
+    });
+
+    it('should not send stream finalization when no stream is active', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      voiceChannel.completeStreamTask('CHinterrupt_test' as any);
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
+      mockWs.send.mockClear();
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello again',
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const ackCall = mockWs.send.mock.calls.find((call: any[]) => {
+        const parsed = JSON.parse(call[0] as string);
+        return parsed.type === 'text' && parsed.token === '' && parsed.last === true;
+      });
+
+      expect(ackCall).toBeUndefined();
+    });
+
+    it('should pass utteranceUntilInterrupt through onInterrupt callback', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      const captured: { utteranceUntilInterrupt: string | undefined; durationUntilInterruptMs: number | undefined }[] = [];
+      voiceChannel.on('interrupt', (data: any) => {
+        captured.push({
+          utteranceUntilInterrupt: data.utteranceUntilInterrupt,
+          durationUntilInterruptMs: data.durationUntilInterruptMs,
+        });
+      });
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello, I was say',
+        durationUntilInterruptMs: 2500,
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].utteranceUntilInterrupt).toBe('Hello, I was say');
+      expect(captured[0].durationUntilInterruptMs).toBe(2500);
+    });
+
+    it('should propagate utteranceUntilInterrupt through tac.onInterrupt callback', async () => {
+      const { tac, mockWs } = await setupForInterrupt();
+
+      const captured: { utteranceUntilInterrupt: string | undefined; durationUntilInterruptMs: number | undefined }[] = [];
+      tac.onInterrupt(({ utteranceUntilInterrupt, durationUntilInterruptMs }) => {
+        captured.push({ utteranceUntilInterrupt, durationUntilInterruptMs });
+      });
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello, I was saying',
+        durationUntilInterruptMs: 3200,
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].utteranceUntilInterrupt).toBe('Hello, I was saying');
+      expect(captured[0].durationUntilInterruptMs).toBe(3200);
+    });
+
+    it('should auto-start stream task on prompt and pass abortSignal', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      const capturedSignals: AbortSignal[] = [];
+      voiceChannel.on('prompt', (data: any) => {
+        capturedSignals.push(data.abortSignal);
+      });
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'prompt',
+        voicePrompt: 'Another prompt',
+        lang: 'en-US',
+        last: true,
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(capturedSignals).toHaveLength(1);
+      expect(capturedSignals[0]).toBeInstanceOf(AbortSignal);
+      expect(capturedSignals[0].aborted).toBe(false);
+    });
+
+    it('should abort stream task signal on interrupt', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      const capturedSignals: AbortSignal[] = [];
+      voiceChannel.on('prompt', (data: any) => {
+        capturedSignals.push(data.abortSignal);
+      });
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'prompt',
+        voicePrompt: 'Start talking',
+        lang: 'en-US',
+        last: true,
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(capturedSignals).toHaveLength(1);
+      expect(capturedSignals[0].aborted).toBe(false);
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({
+        type: 'interrupt',
+        utteranceUntilInterrupt: 'Hello',
+      })));
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(capturedSignals[0].aborted).toBe(true);
+    });
+
+    it('should cancel stream task on WebSocket disconnect', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
+
+      mockWs._emit('close');
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
     });
   });
 

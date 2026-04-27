@@ -607,8 +607,8 @@ var PromptMessageSchema = z.object({
 });
 var InterruptMessageSchema = z.object({
   type: z.literal("interrupt"),
-  reason: z.string().optional(),
-  transcript: z.string().optional()
+  utteranceUntilInterrupt: z.string().optional(),
+  durationUntilInterruptMs: z.number().int().nonnegative().optional()
 });
 var WebSocketMessageSchema = z.union([
   SetupMessageSchema,
@@ -1990,7 +1990,8 @@ var TAC = class _TAC {
         conversationId,
         transcript,
         userMemory,
-        session
+        session,
+        abortSignal
       }) => {
         const eventSession = session || channel.getConversationSession(conversationId);
         if (eventSession) {
@@ -2000,7 +2001,8 @@ var TAC = class _TAC {
             message: transcript,
             author: "user",
             userMemory,
-            channelType: channel.channelType
+            channelType: channel.channelType,
+            abortSignal
           });
         }
       }
@@ -2010,16 +2012,16 @@ var TAC = class _TAC {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
       async ({
         conversationId,
-        reason,
-        transcript
+        utteranceUntilInterrupt,
+        durationUntilInterruptMs
       }) => {
         const session = channel.getConversationSession(conversationId);
         if (session && this.interruptCallback) {
           try {
             await this.interruptCallback({
               conversationId,
-              reason,
-              transcript: transcript ?? void 0,
+              utteranceUntilInterrupt,
+              durationUntilInterruptMs,
               session
             });
           } catch (error) {
@@ -2109,7 +2111,8 @@ var TAC = class _TAC {
           author: data.author,
           memory: memory ?? void 0,
           session,
-          channel: channel.channelType
+          channel: channel.channelType,
+          ...data.abortSignal !== void 0 && { abortSignal: data.abortSignal }
         });
         this.logger.debug(
           { conversation_id: data.conversationId },
@@ -3610,7 +3613,7 @@ var VoiceChannel = class extends BaseChannel {
    */
   async handlePromptMessage(conversationId, message) {
     const transcript = message.voicePrompt;
-    this.cancelStreamTask(conversationId);
+    const streamTask = this.startStreamTask(conversationId);
     const session = this.getConversationSession(conversationId);
     let userMemory;
     if (session) {
@@ -3625,9 +3628,10 @@ var VoiceChannel = class extends BaseChannel {
       }
     }
     if (this.voiceCallbacks.onPrompt) {
-      this.voiceCallbacks.onPrompt({
+      await this.voiceCallbacks.onPrompt({
         conversationId,
         transcript,
+        abortSignal: streamTask.controller.signal,
         ...userMemory !== void 0 && { userMemory },
         ...session !== void 0 && { session }
       });
@@ -3637,7 +3641,9 @@ var VoiceChannel = class extends BaseChannel {
    * Handle WebSocket interrupt message
    */
   handleInterruptMessage(conversationId, message) {
-    const { reason, transcript } = message;
+    const { utteranceUntilInterrupt, durationUntilInterruptMs } = message;
+    const streamTask = this.streamTasks.get(conversationId);
+    const wasStreaming = streamTask?.hasSentTokens ?? false;
     const cancelled = this.cancelStreamTask(conversationId);
     if (cancelled) {
       this.logger.info(
@@ -3645,11 +3651,24 @@ var VoiceChannel = class extends BaseChannel {
         "Cancelled stream task due to interrupt"
       );
     }
+    if (cancelled && wasStreaming) {
+      const ws = this.webSocketConnections.get(conversationId);
+      if (ws?.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: "text", token: "", last: true }));
+        } catch (err) {
+          this.logger.debug(
+            { conversation_id: conversationId, err },
+            "WebSocket closed before sending stream finalization"
+          );
+        }
+      }
+    }
     if (this.voiceCallbacks.onInterrupt) {
       this.voiceCallbacks.onInterrupt({
         conversationId,
-        reason: reason ?? "unknown",
-        transcript: transcript ?? void 0
+        utteranceUntilInterrupt,
+        durationUntilInterruptMs
       });
     }
   }
@@ -3657,6 +3676,7 @@ var VoiceChannel = class extends BaseChannel {
    * Handle WebSocket disconnection
    */
   async handleWebSocketDisconnect(conversationId) {
+    this.cancelStreamTask(conversationId);
     this.webSocketConnections.delete(conversationId);
     this.promptQueues.delete(conversationId);
     if (this.voiceCallbacks.onWebSocketDisconnected) {
@@ -3688,6 +3708,68 @@ var VoiceChannel = class extends BaseChannel {
       });
       throw error;
     }
+  }
+  /**
+   * Send a streaming voice response via WebSocket, token by token.
+   *
+   * Each chunk from the iterable is sent as a text token message with last: false.
+   * After the iterable completes, a final empty marker with last: true is sent
+   * only if at least one token was emitted. If the AbortSignal fires (e.g., user
+   * interrupted), iteration stops and no final marker is sent (the interrupt
+   * handler sends the finalization instead).
+   *
+   * @returns The accumulated full response text.
+   */
+  async sendStreamingResponse(conversationId, stream, options) {
+    const ws = this.webSocketConnections.get(conversationId);
+    if (ws?.readyState !== WebSocket.OPEN) {
+      throw new Error(`No active WebSocket connection for conversation ${conversationId}`);
+    }
+    const activeTask = this.streamTasks.get(conversationId);
+    const signal = options?.signal ?? activeTask?.controller.signal;
+    let fullResponse = "";
+    let hasSentTokens = false;
+    if (signal?.aborted) {
+      return fullResponse;
+    }
+    try {
+      for await (const chunk of stream) {
+        if (signal?.aborted) {
+          break;
+        }
+        if (ws.readyState !== WebSocket.OPEN) {
+          this.logger.info(
+            { conversation_id: conversationId },
+            "WebSocket closed during streaming"
+          );
+          break;
+        }
+        fullResponse += chunk;
+        const tokenMessage = {
+          type: "text",
+          token: chunk,
+          last: false
+        };
+        ws.send(JSON.stringify(tokenMessage));
+        hasSentTokens = true;
+        if (activeTask) {
+          activeTask.hasSentTokens = true;
+        }
+      }
+      if (!signal?.aborted && hasSentTokens && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "text", token: "", last: true }));
+      }
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+        conversationId
+      });
+      throw error;
+    } finally {
+      if (activeTask && this.streamTasks.get(conversationId) === activeTask) {
+        this.completeStreamTask(conversationId);
+      }
+    }
+    return fullResponse;
   }
   // =========================================================================
   // Incoming Call Handling
@@ -3796,14 +3878,14 @@ var VoiceChannel = class extends BaseChannel {
    * Start tracking a streaming task for a conversation
    *
    * @param conversationId - The conversation ID
-   * @returns AbortController for the task
+   * @returns The stream task with its AbortController
    */
   startStreamTask(conversationId) {
     this.cancelStreamTask(conversationId);
-    const controller = new AbortController();
-    this.streamTasks.set(conversationId, controller);
+    const task = { controller: new AbortController(), hasSentTokens: false };
+    this.streamTasks.set(conversationId, task);
     this.logger.debug({ conversation_id: conversationId }, "Started stream task");
-    return controller;
+    return task;
   }
   /**
    * Cancel an active streaming task
@@ -3812,9 +3894,9 @@ var VoiceChannel = class extends BaseChannel {
    * @returns true if a task was cancelled, false otherwise
    */
   cancelStreamTask(conversationId) {
-    const controller = this.streamTasks.get(conversationId);
-    if (controller) {
-      controller.abort();
+    const task = this.streamTasks.get(conversationId);
+    if (task) {
+      task.controller.abort();
       this.streamTasks.delete(conversationId);
       this.logger.debug({ conversation_id: conversationId }, "Cancelled stream task");
       return true;
@@ -3837,8 +3919,8 @@ var VoiceChannel = class extends BaseChannel {
    * @returns true if an active task exists
    */
   hasActiveStreamTask(conversationId) {
-    const controller = this.streamTasks.get(conversationId);
-    return controller !== void 0 && !controller.signal.aborted;
+    const task = this.streamTasks.get(conversationId);
+    return task !== void 0 && !task.controller.signal.aborted;
   }
   // =========================================================================
   // ConversationRelay TwiML Generation

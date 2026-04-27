@@ -167,8 +167,8 @@ export type PromptMessage = z.infer<typeof PromptMessageSchema>;
  */
 export const InterruptMessageSchema = z.object({
   type: z.literal('interrupt'),
-  reason: z.string().optional(),
-  transcript: z.string().optional(),
+  utteranceUntilInterrupt: z.string().optional(),
+  durationUntilInterruptMs: z.number().int().nonnegative().optional(),
 });
 
 export type InterruptMessage = z.infer<typeof InterruptMessageSchema>;

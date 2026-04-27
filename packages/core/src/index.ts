@@ -49,7 +49,7 @@ export type {
 } from './channels/chat';
 
 export { VoiceChannel } from './channels/voice';
-export type { VoiceChannelEvents } from './channels/voice';
+export type { VoiceChannelEvents, StreamTask } from './channels/voice';
 
 // Utility functions
 export { handleFlexHandoffLogic } from './util/flex';
