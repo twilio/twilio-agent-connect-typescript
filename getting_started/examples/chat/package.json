@@ -12,7 +12,7 @@
     "twilio-agent-connect": "file:../../..",
     "openai": "^4.0.0",
     "twilio": "^5.0.0",
-    "fastify": "^5.0.0",
+    "fastify": "^5.8.5",
     "@fastify/static": "^9.1.1",
     "dotenv": "^16.0.0",
     "pino-pretty": "^13.0.0"
