@@ -21,32 +21,40 @@ import { BaseClient } from './base';
  * Memory client for interacting with Twilio Memory Service
  */
 export class MemoryClient extends BaseClient {
-  constructor(config: TACConfig, logger?: Logger) {
+  private readonly storeId: string;
+
+  constructor(config: TACConfig, storeId: string, logger?: Logger) {
     const baseUrl = config.region
       ? `https://memory.${config.region}.twilio.com`
       : 'https://memory.twilio.com';
     super(baseUrl, config, logger);
+    this.storeId = storeId;
+  }
+
+  /**
+   * Get the store ID this client is configured for
+   */
+  public getStoreId(): string {
+    return this.storeId;
   }
 
   /**
    * Retrieve memories for a specific profile
    *
-   * @param serviceSid - The memory service SID
    * @param profileId - The profile ID to retrieve memories for
    * @param request - Optional request parameters for filtering results
    * @returns Promise containing memory retrieval response
    */
   public async retrieveMemories(
-    serviceSid: string,
     profileId: string,
     request: Partial<MemoryRetrievalRequest> = {}
   ): Promise<MemoryRetrievalResponse> {
     try {
-      const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/Recall`;
+      const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}/Recall`;
 
       this.logger.debug(
         {
-          memory_store_id: serviceSid,
+          memory_store_id: this.storeId,
           profile_id: profileId,
           request,
         },
@@ -77,7 +85,7 @@ export class MemoryClient extends BaseClient {
 
       this.logger.debug(
         {
-          memory_store_id: serviceSid,
+          memory_store_id: this.storeId,
           profile_id: profileId,
         },
         'Raw memory response received'
@@ -90,7 +98,7 @@ export class MemoryClient extends BaseClient {
         this.logger.warn(
           {
             profile_id: profileId,
-            memory_store_id: serviceSid,
+            memory_store_id: this.storeId,
             validation_errors: validatedResponse.error.errors,
           },
           'Invalid memory response format'
@@ -100,7 +108,7 @@ export class MemoryClient extends BaseClient {
 
       this.logger.debug(
         {
-          memory_store_id: serviceSid,
+          memory_store_id: this.storeId,
           profile_id: profileId,
           observation_count: validatedResponse.data.observations.length,
           summary_count: validatedResponse.data.summaries.length,
@@ -114,7 +122,7 @@ export class MemoryClient extends BaseClient {
         {
           error: error instanceof Error ? error.message : String(error),
           profile_id: profileId,
-          memory_store_id: serviceSid,
+          memory_store_id: this.storeId,
         },
         'Memory retrieval error'
       );
@@ -125,17 +133,12 @@ export class MemoryClient extends BaseClient {
   /**
    * Find profiles that contain a specific identifier value
    *
-   * @param serviceSid - The memory service SID
    * @param idType - Identifier type (e.g., 'phone', 'email')
    * @param value - Raw value captured for the identifier
    * @returns Promise containing profile lookup response with normalized value and matching profile IDs
    */
-  public async lookupProfile(
-    serviceSid: string,
-    idType: string,
-    value: string
-  ): Promise<ProfileLookupResponse> {
-    const url = `/v1/Stores/${serviceSid}/Profiles/Lookup`;
+  public async lookupProfile(idType: string, value: string): Promise<ProfileLookupResponse> {
+    const url = `/v1/Stores/${this.storeId}/Profiles/Lookup`;
 
     const requestBody = {
       idType,
@@ -156,17 +159,12 @@ export class MemoryClient extends BaseClient {
   /**
    * Fetch profile information with traits
    *
-   * @param serviceSid - The memory service SID
    * @param profileId - The profile ID to fetch
    * @param traitGroups - Optional list of trait group names to include
    * @returns Promise containing profile response with ID, created timestamp, and traits
    */
-  public async getProfile(
-    serviceSid: string,
-    profileId: string,
-    traitGroups?: string[]
-  ): Promise<ProfileResponse> {
-    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}`;
+  public async getProfile(profileId: string, traitGroups?: string[]): Promise<ProfileResponse> {
+    const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}`;
 
     const params: Record<string, string> = {};
     if (traitGroups && traitGroups.length > 0) {
@@ -192,7 +190,6 @@ export class MemoryClient extends BaseClient {
   /**
    * Create an observation for a profile
    *
-   * @param serviceSid - The memory service SID
    * @param profileId - The profile ID to create the observation for
    * @param content - The observation content
    * @param source - Source of the observation (default: 'conversation-intelligence')
@@ -201,14 +198,13 @@ export class MemoryClient extends BaseClient {
    * @returns Promise containing the created observation
    */
   public async createObservation(
-    serviceSid: string,
     profileId: string,
     content: string,
     source: string = 'conversation-intelligence',
     conversationIds?: string[],
     occurredAt?: string
   ): Promise<CreateObservationResponse> {
-    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/Observations`;
+    const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}/Observations`;
 
     const requestBody: Record<string, unknown> = {
       content,
@@ -237,13 +233,11 @@ export class MemoryClient extends BaseClient {
   /**
    * Create conversation summaries for a profile
    *
-   * @param serviceSid - The memory service SID
    * @param profileId - The profile ID to create summaries for
    * @param summaries - Array of summary items to create
    * @returns Promise containing a success message for the created conversation summaries
    */
   public async createConversationSummaries(
-    serviceSid: string,
     profileId: string,
     summaries: Array<{
       content: string;
@@ -252,7 +246,7 @@ export class MemoryClient extends BaseClient {
       source?: string;
     }>
   ): Promise<CreateConversationSummariesResponse> {
-    const url = `/v1/Stores/${serviceSid}/Profiles/${profileId}/ConversationSummaries`;
+    const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}/ConversationSummaries`;
 
     const requestBody = {
       summaries: summaries.map(s => ({

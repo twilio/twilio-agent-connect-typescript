@@ -60,7 +60,7 @@ describe('User-Agent Header', () => {
   });
 
   it('should include User-Agent header in MemoryClient requests', async () => {
-    const client = new MemoryClient(config);
+    const client = new MemoryClient(config, 'test_store_id');
     mockAdapter = new MockAdapter((client as any).axiosInstance);
 
     let capturedHeaders: any;
