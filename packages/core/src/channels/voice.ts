@@ -172,14 +172,13 @@ export class VoiceChannel extends BaseChannel {
           break;
 
         default:
-          this.logger.warn(
+          this.logger.debug(
             {
               event_type: eventType,
               raw_event_type: webhookData.eventType,
               conversation_id: conversationId,
-              payload,
             },
-            'Unhandled event type - this event will be ignored'
+            'Ignoring unsupported VOICE event type'
           );
       }
 
