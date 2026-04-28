@@ -11,6 +11,7 @@ import {
 } from '../types/index';
 import { BaseChannel, BaseChannelEvents } from './base';
 import type { TAC } from '../lib/tac';
+import { maskAddress } from '../util/log-redaction';
 
 /**
  * Messaging webhook event types from Twilio Conversations Service
@@ -223,7 +224,7 @@ export abstract class MessagingChannel extends BaseChannel {
    * Process messaging channel webhook from Twilio Conversations Service
    */
   public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
-    this.logger.debug({ operation: 'webhook_processing', payload }, 'Processing webhook');
+    this.logger.debug({ operation: 'webhook_processing' }, 'Processing webhook');
 
     try {
       if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
@@ -293,7 +294,6 @@ export abstract class MessagingChannel extends BaseChannel {
               event_type: eventType,
               raw_event_type: webhookData.eventType,
               conversation_id: conversationId,
-              payload,
             },
             'Unhandled event type - this event will be ignored'
           );
@@ -309,7 +309,7 @@ export abstract class MessagingChannel extends BaseChannel {
         { err: error, operation: 'webhook_processing' },
         'Webhook processing error'
       );
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
+      this.handleError(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -322,7 +322,7 @@ export abstract class MessagingChannel extends BaseChannel {
 
     if (!conversationId) {
       this.logger.warn(
-        { payload, operation: 'handle_conversation_created' },
+        { operation: 'handle_conversation_created' },
         'Missing conversation ID in conversation.created event'
       );
       throw new Error('Missing conversation ID in conversation.created event');
@@ -340,7 +340,7 @@ export abstract class MessagingChannel extends BaseChannel {
 
     if (!conversationId) {
       this.logger.warn(
-        { payload, operation: 'handle_participant_added' },
+        { operation: 'handle_participant_added' },
         'Missing conversation ID in participant.added event'
       );
       throw new Error('Missing conversation ID in participant.added event');
@@ -399,8 +399,7 @@ export abstract class MessagingChannel extends BaseChannel {
       {
         conversation_id: conversationId,
         profile_id: profileId,
-        author,
-        message,
+        author: maskAddress(author),
         message_length: message?.length,
         operation: 'handle_communication_created',
       },
@@ -409,7 +408,7 @@ export abstract class MessagingChannel extends BaseChannel {
 
     if (!conversationId) {
       this.logger.warn(
-        { payload, operation: 'handle_communication_created' },
+        { operation: 'handle_communication_created' },
         'Missing conversation ID in communication.created event'
       );
       throw new Error('Missing conversation ID in communication.created event');
@@ -441,7 +440,7 @@ export abstract class MessagingChannel extends BaseChannel {
       this.logger.info(
         {
           conversation_id: conversationId,
-          author_address: author,
+          author_address: maskAddress(author),
         },
         'Ignoring message from AI agent'
       );
@@ -499,7 +498,10 @@ export abstract class MessagingChannel extends BaseChannel {
     // Retrieve user memory using tac.retrieveMemory, which handles profile lookup by address (e.g., phone number or email)
     let userMemory;
     if (session) {
-      this.logger.debug({ conversation_id: conversationId, author }, 'Retrieving user memory');
+      this.logger.debug(
+        { conversation_id: conversationId, author: maskAddress(author) },
+        'Retrieving user memory'
+      );
       try {
         userMemory = await this.tac.retrieveMemory(session, message);
         this.logger.debug(
@@ -631,7 +633,7 @@ export abstract class MessagingChannel extends BaseChannel {
       {
         conversation_id: conversationId,
         channel: agentAddress.channel,
-        address: agentAddress.address,
+        address: maskAddress(agentAddress.address),
       },
       'No agent participant found, creating AI_AGENT'
     );
@@ -794,7 +796,7 @@ export abstract class MessagingChannel extends BaseChannel {
       await this.conversationClient.createAction(conversationId, actionRequest);
 
       this.logger.info(
-        { conversation_id: conversationId, to },
+        { conversation_id: conversationId, to: maskAddress(to) },
         `Outbound ${channel} conversation initiated`
       );
 
@@ -813,8 +815,13 @@ export abstract class MessagingChannel extends BaseChannel {
             );
           });
       }
-      this.logger.error({ err: error, to }, `Failed to initiate outbound ${channel}`);
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { to });
+      this.logger.error(
+        { err: error, to: maskAddress(to) },
+        `Failed to initiate outbound ${channel}`
+      );
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+        to: maskAddress(to),
+      });
       throw error;
     }
   }

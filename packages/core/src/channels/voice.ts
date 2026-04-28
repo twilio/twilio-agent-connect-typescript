@@ -21,6 +21,7 @@ import type { InitiateVoiceConversationResult } from '../types/conversation';
 import { BaseChannel, BaseChannelEvents } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
+import { maskAddress } from '../util/log-redaction';
 
 /**
  * Voice channel event callbacks extending base callbacks
@@ -152,7 +153,6 @@ export class VoiceChannel extends BaseChannel {
           if (!result.success) {
             this.logger.debug(
               {
-                raw_message: messageData,
                 validation_errors: result.error.errors.map(error => ({
                   path: error.path.join('.'),
                   message: error.message,
@@ -278,7 +278,6 @@ export class VoiceChannel extends BaseChannel {
                   .catch((err: unknown) => {
                     this.handleError(err instanceof Error ? err : new Error(String(err)), {
                       conversationId,
-                      message: data.toString(),
                     });
                   });
                 this.promptQueues.set(conversationId, currentPrompt);
@@ -295,7 +294,10 @@ export class VoiceChannel extends BaseChannel {
 
             default:
               this.logger.debug(
-                { conversation_id: conversationId, message: messageData },
+                {
+                  conversation_id: conversationId,
+                  message_type: (messageData as Record<string, unknown>)?.type,
+                },
                 'Unhandled WebSocket event type'
               );
               break;
@@ -304,7 +306,6 @@ export class VoiceChannel extends BaseChannel {
           this.handleError(error instanceof Error ? error : new Error(String(error)), {
             conversationId,
             callSid,
-            message: data.toString(),
           });
         }
       })().catch((err: unknown) => {
@@ -439,7 +440,7 @@ export class VoiceChannel extends BaseChannel {
   public sendResponse(
     conversationId: ConversationId,
     message: string,
-    metadata?: Record<string, unknown>
+    _metadata?: Record<string, unknown>
   ): Promise<void> {
     try {
       const ws = this.webSocketConnections.get(conversationId);
@@ -475,8 +476,6 @@ export class VoiceChannel extends BaseChannel {
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
         conversationId,
-        message,
-        metadata,
       });
       throw error;
     }
@@ -638,13 +637,19 @@ export class VoiceChannel extends BaseChannel {
         twiml,
       });
 
-      this.logger.info({ call_sid: call.sid, to: validated.to }, 'Outbound voice call placed');
+      this.logger.info(
+        { call_sid: call.sid, to: maskAddress(validated.to) },
+        'Outbound voice call placed'
+      );
 
       return { callSid: call.sid };
     } catch (error) {
-      this.logger.error({ err: error, to: validated.to }, 'Failed to initiate outbound call');
+      this.logger.error(
+        { err: error, to: maskAddress(validated.to) },
+        'Failed to initiate outbound call'
+      );
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
-        to: validated.to,
+        to: maskAddress(validated.to),
       });
       throw error;
     }

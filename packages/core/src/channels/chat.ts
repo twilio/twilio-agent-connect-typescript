@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import { MessagingChannel, MessagingChannelConfig } from './messaging';
 import type { TAC } from '../lib/tac';
+import { maskAddress } from '../util/log-redaction';
 
 /**
  * Options for initiating an outbound chat conversation
@@ -64,7 +65,7 @@ export class ChatChannel extends MessagingChannel {
   public async sendResponse(
     conversationId: ConversationId,
     message: string,
-    metadata?: Record<string, unknown>
+    _metadata?: Record<string, unknown>
   ): Promise<void> {
     this.logger.debug(
       {
@@ -178,8 +179,6 @@ export class ChatChannel extends MessagingChannel {
       this.logger.error({ err: error, conversation_id: conversationId }, 'Send response error');
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
         conversationId,
-        message,
-        metadata,
       });
       throw error;
     }
@@ -197,7 +196,7 @@ export class ChatChannel extends MessagingChannel {
     const validated = InitiateChatConversationOptionsSchema.parse(options);
 
     this.logger.info(
-      { to: validated.to, channel_id: validated.channelId },
+      { to: maskAddress(validated.to), channel_id: validated.channelId },
       'Initiating outbound chat conversation'
     );
 

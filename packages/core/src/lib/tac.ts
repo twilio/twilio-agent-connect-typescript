@@ -14,6 +14,7 @@ import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
 import { Logger, createLogger } from './logger';
+import { maskAddress } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
 
 export interface TACOptions {
@@ -300,7 +301,7 @@ export class TAC {
       {
         conversation_id: data.conversationId,
         profile_id: data.profileId,
-        author: data.author,
+        author: maskAddress(data.author),
         message_length: data.message.length,
         channel: data.channelType,
         operation: 'handle_message_ready',
@@ -545,12 +546,12 @@ export class TAC {
           identityType = 'phone';
         } else {
           throw new Error(
-            `Unsupported authorInfo.address format '${address}'. ` +
+            `Unsupported authorInfo.address format '${maskAddress(address)}'. ` +
               "Expected an email address containing '@' or a phone number starting with '+'."
           );
         }
         this.logger.debug(
-          { identityType, address, channel: session.channel },
+          { identityType, address: maskAddress(address), channel: session.channel },
           'profileId not found, attempting to lookup profile'
         );
 
@@ -563,7 +564,7 @@ export class TAC {
         // Check if any profiles were found
         if (!lookupResponse.profiles || lookupResponse.profiles.length === 0) {
           throw new Error(
-            `No profile found for ${identityType} ${session.authorInfo.address}. ` +
+            `No profile found for ${identityType} ${maskAddress(session.authorInfo.address)}. ` +
               'Profile lookup returned no results. Ensure the identity ' +
               'is registered in the identity resolution system.'
           );
