@@ -5,7 +5,6 @@ import type { MemoryRetrievalResponse } from '@twilio/tac-core';
 
 describe('Memory Retrieval Tool', () => {
   let mockMemoryClient: MemoryClient;
-  const serviceSid = 'mem_service_test123';
   const profileId = 'mem_profile_test456';
 
   beforeEach(() => {
@@ -17,7 +16,7 @@ describe('Memory Retrieval Tool', () => {
 
   describe('createMemoryRetrievalTool', () => {
     it('should create a tool with correct name and description', () => {
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
 
       expect(tool.name).toBe('retrieve_profile_memory');
       expect(tool.description).toBe(
@@ -26,7 +25,7 @@ describe('Memory Retrieval Tool', () => {
     });
 
     it('should have correct parameter schema with camelCase names', () => {
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
 
       expect(tool.parameters.properties).toHaveProperty('query');
       expect(tool.parameters.properties).toHaveProperty('beginDate');
@@ -46,10 +45,10 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
       await tool.implementation({});
 
-      expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(serviceSid, profileId, {});
+      expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(profileId, {});
     });
 
     it('should call retrieveMemories with custom values when params provided', async () => {
@@ -61,7 +60,7 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
       await tool.implementation({
         query: 'test query',
         observationsLimit: 10,
@@ -71,7 +70,6 @@ describe('Memory Retrieval Tool', () => {
       });
 
       expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(
-        serviceSid,
         profileId,
         expect.objectContaining({
           query: 'test query',
@@ -92,14 +90,13 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
       await tool.implementation({
         beginDate: '2024-01-01T00:00:00Z',
         endDate: '2024-12-31T23:59:59Z',
       });
 
       expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(
-        serviceSid,
         profileId,
         expect.objectContaining({
           beginDate: '2024-01-01T00:00:00Z',
@@ -109,7 +106,7 @@ describe('Memory Retrieval Tool', () => {
     });
 
     it('should throw error when profileId is missing', async () => {
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid);
+      const tool = createMemoryRetrievalTool(mockMemoryClient);
 
       await expect(tool.implementation({})).rejects.toThrow('No profile ID available for memory retrieval');
     });
@@ -135,7 +132,7 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
       const result = await tool.implementation({});
 
       expect(result).toEqual(mockResponse);
@@ -152,13 +149,12 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
       await tool.implementation({
         query: 'customer preferences',
       });
 
       expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(
-        serviceSid,
         profileId,
         expect.objectContaining({
           query: 'customer preferences',
@@ -175,7 +171,7 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
       await tool.implementation({
         observationsLimit: 0,
         summariesLimit: 0,
@@ -183,7 +179,6 @@ describe('Memory Retrieval Tool', () => {
       });
 
       expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(
-        serviceSid,
         profileId,
         expect.objectContaining({
           observationsLimit: 0,
@@ -202,12 +197,11 @@ describe('Memory Retrieval Tool', () => {
 
       vi.mocked(mockMemoryClient.retrieveMemories).mockResolvedValue(mockResponse);
 
-      const tool = createMemoryRetrievalTool(mockMemoryClient, serviceSid, profileId);
+      const tool = createMemoryRetrievalTool(mockMemoryClient, profileId);
 
       // Test minimum boundary
       await tool.implementation({ relevanceThreshold: 0.0 });
       expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(
-        serviceSid,
         profileId,
         expect.objectContaining({
           relevanceThreshold: 0.0,
@@ -217,7 +211,6 @@ describe('Memory Retrieval Tool', () => {
       // Test maximum boundary
       await tool.implementation({ relevanceThreshold: 1.0 });
       expect(mockMemoryClient.retrieveMemories).toHaveBeenCalledWith(
-        serviceSid,
         profileId,
         expect.objectContaining({
           relevanceThreshold: 1.0,

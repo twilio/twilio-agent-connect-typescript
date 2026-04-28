@@ -190,7 +190,7 @@ describe('OperatorResultProcessor', () => {
 
   beforeEach(() => {
     const config = new TACConfig(getTestConfig());
-    memoryClient = new MemoryClient(config);
+    memoryClient = new MemoryClient(config, 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
     processor = new OperatorResultProcessor(memoryClient, cintelConfig);
     mockAdapter = new MockAdapter((memoryClient as any).axiosInstance);
   });
@@ -516,7 +516,7 @@ describe('Memory Client Write Methods', () => {
 
   beforeEach(() => {
     const config = new TACConfig(getTestConfig());
-    memoryClient = new MemoryClient(config);
+    memoryClient = new MemoryClient(config, 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
     mockAdapter = new MockAdapter((memoryClient as any).axiosInstance);
   });
 
@@ -538,7 +538,6 @@ describe('Memory Client Write Methods', () => {
         .reply(200, mockResponse);
 
       const result = await memoryClient.createObservation(
-        'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'profile_123',
         'Test observation',
         'conversation-intelligence',
@@ -562,7 +561,6 @@ describe('Memory Client Write Methods', () => {
 
       await expect(
         memoryClient.createObservation(
-          'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
           'profile_123',
           'Test observation'
         )
@@ -580,7 +578,6 @@ describe('Memory Client Write Methods', () => {
         .reply(200, mockResponse);
 
       const result = await memoryClient.createConversationSummaries(
-        'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'profile_123',
         [
           {
@@ -608,7 +605,6 @@ describe('Memory Client Write Methods', () => {
 
       await expect(
         memoryClient.createConversationSummaries(
-          'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
           'profile_123',
           [
             {

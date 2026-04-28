@@ -21,7 +21,7 @@ describe('MemoryClient', () => {
 
   beforeEach(() => {
     const config = new TACConfig(getTestConfig());
-    memoryClient = new MemoryClient(config);
+    memoryClient = new MemoryClient(config, 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
     mockAdapter = new MockAdapter((memoryClient as any).axiosInstance);
   });
 
@@ -41,7 +41,6 @@ describe('MemoryClient', () => {
         .reply(200, mockResponse);
 
       const result = await memoryClient.lookupProfile(
-        'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'phone',
         '+1 (317) 555-6789'
       );
@@ -55,7 +54,7 @@ describe('MemoryClient', () => {
         .reply(500);
 
       await expect(
-        memoryClient.lookupProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', 'phone', '+1234567890')
+        memoryClient.lookupProfile('phone', '+1234567890')
       ).rejects.toThrow(/Failed to lookup profile/);
     });
   });
@@ -73,7 +72,6 @@ describe('MemoryClient', () => {
         .reply(200, mockResponse);
 
       const result = await memoryClient.getProfile(
-        'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_00000000000000000000000001'
       );
 
@@ -95,7 +93,6 @@ describe('MemoryClient', () => {
         .reply(200, mockResponse);
 
       const result = await memoryClient.getProfile(
-        'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_00000000000000000000000001',
         ['group1']
       );
@@ -109,7 +106,7 @@ describe('MemoryClient', () => {
         .reply(404);
 
       await expect(
-        memoryClient.getProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', 'mem_profile_00000000000000000000000001')
+        memoryClient.getProfile('mem_profile_00000000000000000000000001')
       ).rejects.toThrow(/Failed to get profile/);
     });
   });
@@ -117,7 +114,7 @@ describe('MemoryClient', () => {
   describe('region support', () => {
     it('should use region in base URL when configured', () => {
       const config = new TACConfig({ ...getTestConfig(), region: 'test-region' });
-      const regionClient = new MemoryClient(config);
+      const regionClient = new MemoryClient(config, 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg');
 
       expect((regionClient as any).baseUrl).toBe('https://memory.test-region.twilio.com');
     });

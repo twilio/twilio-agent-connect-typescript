@@ -22,6 +22,9 @@ interface MemoryRetrievalParams {
 /**
  * Create memory retrieval tool.
  *
+ * @param memoryClient - Memory client instance (must be initialized with storeId)
+ * @param profileId - Optional profile ID for memory retrieval
+ * @param conversationId - Optional conversation ID for memory retrieval
  * @param options - Optional overrides for tool metadata.
  * @param options.name - Tool name exposed to the LLM. Defaults to `retrieve_profile_memory`.
  * @param options.description - Tool description exposed to the LLM. Defaults to a
@@ -29,7 +32,6 @@ interface MemoryRetrievalParams {
  */
 export function createMemoryRetrievalTool(
   memoryClient: MemoryClient,
-  serviceSid: string,
   profileId?: string,
   conversationId?: string,
   options: { name?: string; description?: string } = {}
@@ -104,18 +106,17 @@ export function createMemoryRetrievalTool(
         }).filter(([_, value]) => value !== undefined)
       ) as Partial<MemoryRetrievalRequest>;
 
-      return memoryClient.retrieveMemories(serviceSid, profileId, request);
+      return memoryClient.retrieveMemories(profileId, request);
     }
   );
 }
 
 /**
  * Create factory function for memory tools
+ *
+ * @param memoryClient - Memory client instance (must be initialized with storeId)
  */
-export function createMemoryTools(
-  memoryClient: MemoryClient,
-  serviceSid: string
-): {
+export function createMemoryTools(memoryClient: MemoryClient): {
   forProfile: (
     profileId: string,
     conversationId?: string
@@ -127,9 +128,9 @@ export function createMemoryTools(
 } {
   return {
     forProfile: (profileId: string, conversationId?: string) =>
-      createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId),
+      createMemoryRetrievalTool(memoryClient, profileId, conversationId),
 
     forSession: (profileId?: string, conversationId?: string) =>
-      createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId),
+      createMemoryRetrievalTool(memoryClient, profileId, conversationId),
   };
 }

@@ -122,7 +122,11 @@ export class TAC {
       // server-side — see the conversationsV1ServiceSid field comment above.
       tac.conversationsV1ServiceSid =
         conversationConfig.conversationsV1Bridge?.serviceId ?? undefined;
-      tac.memoryClient = new MemoryClient(tac.config, tac.logger.child({ component: 'memory' }));
+      tac.memoryClient = new MemoryClient(
+        tac.config,
+        conversationConfig.memoryStoreId,
+        tac.logger.child({ component: 'memory' })
+      );
 
       tac.knowledgeClient = new KnowledgeClient(
         tac.config,
@@ -335,17 +339,13 @@ export class TAC {
           'Retrieving memory for profile'
         );
         try {
-          const memoryResponse = await this.memoryClient.retrieveMemories(
-            this.memoryStoreId,
-            data.profileId,
-            {
-              conversationId: data.conversationId,
-              observationsLimit: this.config.memoryConfig.observationsLimit,
-              summariesLimit: this.config.memoryConfig.summariesLimit,
-              communicationsLimit: this.config.memoryConfig.communicationsLimit,
-              relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
-            }
-          );
+          const memoryResponse = await this.memoryClient.retrieveMemories(data.profileId, {
+            conversationId: data.conversationId,
+            observationsLimit: this.config.memoryConfig.observationsLimit,
+            summariesLimit: this.config.memoryConfig.summariesLimit,
+            communicationsLimit: this.config.memoryConfig.communicationsLimit,
+            relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+          });
           memory = new TACMemoryResponse(memoryResponse);
           this.logger.debug({ profile_id: data.profileId }, 'Memory retrieved');
         } catch (error) {
@@ -556,7 +556,6 @@ export class TAC {
 
         // Lookup profile using appropriate identity type
         const lookupResponse = await this.memoryClient.lookupProfile(
-          this.memoryStoreId,
           identityType,
           session.authorInfo.address
         );
@@ -574,19 +573,18 @@ export class TAC {
         session.profileId = lookupResponse.profiles[0];
       }
 
-      // At this point, profileId is guaranteed to be defined (either provided or looked up)
-      const memoryResponse = await this.memoryClient.retrieveMemories(
-        this.memoryStoreId,
-        session.profileId!,
-        {
-          conversationId: session.conversationId,
-          query,
-          observationsLimit: this.config.memoryConfig.observationsLimit,
-          summariesLimit: this.config.memoryConfig.summariesLimit,
-          communicationsLimit: this.config.memoryConfig.communicationsLimit,
-          relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
-        }
-      );
+      if (!session.profileId) {
+        throw new Error('Profile ID is required but was not resolved');
+      }
+
+      const memoryResponse = await this.memoryClient.retrieveMemories(session.profileId, {
+        conversationId: session.conversationId,
+        query,
+        observationsLimit: this.config.memoryConfig.observationsLimit,
+        summariesLimit: this.config.memoryConfig.summariesLimit,
+        communicationsLimit: this.config.memoryConfig.communicationsLimit,
+        relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+      });
       return new TACMemoryResponse(memoryResponse);
     } catch (error) {
       this.logger.warn(
@@ -621,11 +619,7 @@ export class TAC {
 
     try {
       const traitGroups = this.config.memoryConfig.traitGroups;
-      const profileResponse = await this.memoryClient.getProfile(
-        this.memoryStoreId,
-        profileId,
-        traitGroups
-      );
+      const profileResponse = await this.memoryClient.getProfile(profileId, traitGroups);
       return profileResponse;
     } catch (error) {
       this.logger.error({ err: error }, `Failed to fetch profile for ${profileId}`);

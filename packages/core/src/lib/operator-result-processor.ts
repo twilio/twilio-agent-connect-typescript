@@ -161,6 +161,35 @@ export class OperatorResultProcessor {
       };
     }
 
+    // Check for memory store ID and verify it matches the client's store ID
+    if (!event.memoryStoreId) {
+      this.logger.warn({ conversation_id: event.conversationId }, 'No memory store ID in event');
+      return {
+        success: false,
+        skipped: false,
+        error: 'No memory store ID provided in event',
+        createdCount: 0,
+      };
+    }
+
+    const clientStoreId = this.memoryClient.getStoreId();
+    if (event.memoryStoreId !== clientStoreId) {
+      this.logger.debug(
+        {
+          conversation_id: event.conversationId,
+          event_store_id: event.memoryStoreId,
+          client_store_id: clientStoreId,
+        },
+        'Skipping event from different memory store'
+      );
+      return {
+        success: true,
+        skipped: true,
+        skipReason: `Event from different memory store: ${event.memoryStoreId} (expected ${clientStoreId})`,
+        createdCount: 0,
+      };
+    }
+
     // Process each operator result
     const results: OperatorProcessingResult[] = [];
 
@@ -288,17 +317,6 @@ export class OperatorResultProcessor {
       };
     }
 
-    // Check for memory store ID
-    if (!event.memoryStoreId) {
-      this.logger.warn({ conversation_id: event.conversationId }, 'No memory store ID in event');
-      return {
-        success: false,
-        skipped: false,
-        error: 'No memory store ID provided in event',
-        createdCount: 0,
-      };
-    }
-
     // Process based on operator type
     if (isObservationOperator) {
       return this.processObservationEvent(event, operatorResult, content, profileIds);
@@ -340,7 +358,6 @@ export class OperatorResultProcessor {
       for (const observation of observations) {
         try {
           await this.memoryClient.createObservation(
-            event.memoryStoreId!,
             profileId,
             observation,
             'conversation-intelligence',
@@ -423,11 +440,7 @@ export class OperatorResultProcessor {
           source: 'conversation-intelligence',
         }));
 
-        await this.memoryClient.createConversationSummaries(
-          event.memoryStoreId!,
-          profileId,
-          summaryItems
-        );
+        await this.memoryClient.createConversationSummaries(profileId, summaryItems);
         createdCount += summaries.length;
 
         this.logger.debug(
