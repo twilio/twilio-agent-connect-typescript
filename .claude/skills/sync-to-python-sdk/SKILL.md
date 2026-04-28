@@ -14,7 +14,7 @@ This skill analyzes changes from the TypeScript SDK (`twilio-agent-connect-types
 
 The skill accepts the following arguments (can be combined):
 
-1. **GitHub PR URL**: `https://github.com/twilio-innovation/twilio-agent-connect-typescript/pull/123`
+1. **GitHub PR URL**: `https://github.com/twilio/twilio-agent-connect-typescript/pull/123`
 2. **No commit flag**: `--no-commit` (makes and stages changes, but skips commit/push/PR)
 
 **Examples:**
@@ -30,7 +30,7 @@ The skill accepts the following arguments (can be combined):
 
 - TypeScript SDK (source): Current working directory (this repo)
 - Python SDK (target): Clone to `~/.claude/cache/sync-to-python-sdk/twilio-agent-connect-python` (user's home directory)
-- GitHub org: `twilio-innovation`
+- GitHub org: `twilio`
 
 ## Determine Input Mode
 
@@ -68,12 +68,12 @@ Arguments: $ARGUMENTS (the full argument string)
 Before doing anything else, verify that the `gh` CLI is installed and authenticated with access to the target repo:
 
 ```bash
-gh repo view twilio-innovation/twilio-agent-connect-python --json name --jq '.name'
+gh repo view twilio/twilio-agent-connect-python --json name --jq '.name'
 ```
 
 - If this command succeeds (prints `twilio-agent-connect-python`), proceed to Phase 1.
 - If it fails for **any reason** (gh not installed, not authenticated, no repo access, network error, etc.), **STOP the skill immediately** and tell the user:
-  > This skill requires the GitHub CLI (`gh`) to be installed and authenticated with access to `twilio-innovation/twilio-agent-connect-python`.
+  > This skill requires the GitHub CLI (`gh`) to be installed and authenticated with access to `twilio/twilio-agent-connect-python`.
   >
   > Run `gh auth status` to check your authentication, or `gh auth login` to authenticate.
 
@@ -100,7 +100,7 @@ CACHE_VALID=false
 if [ -d "$LOCAL_PY_SDK_DIR/.git" ]; then
   cd "$LOCAL_PY_SDK_DIR"
   REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-  if echo "$REMOTE_URL" | grep -qE "(twilio-innovation|twilio)/twilio-agent-connect-python"; then
+  if echo "$REMOTE_URL" | grep -qE "twilio/twilio-agent-connect-python"; then
     echo "✓ Found valid local Python SDK at: $LOCAL_PY_SDK_DIR"
     LOCAL_VALID=true
   fi
@@ -110,7 +110,7 @@ fi
 if [ -d "$CACHE_PY_SDK_DIR/.git" ]; then
   cd "$CACHE_PY_SDK_DIR"
   REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")
-  if echo "$REMOTE_URL" | grep -qE "(twilio-innovation|twilio)/twilio-agent-connect-python"; then
+  if echo "$REMOTE_URL" | grep -qE "twilio/twilio-agent-connect-python"; then
     echo "✓ Found valid cache Python SDK at: $CACHE_PY_SDK_DIR"
     CACHE_VALID=true
   fi
@@ -184,7 +184,7 @@ Only proceed with this step if either:
 
 ```bash
 mkdir -p "$(dirname "$PY_SDK_DIR")"
-gh repo clone twilio-innovation/twilio-agent-connect-python "$PY_SDK_DIR"
+gh repo clone twilio/twilio-agent-connect-python "$PY_SDK_DIR"
 ```
 
 **Else (update and reset existing repo):**
@@ -205,13 +205,13 @@ Fetch PR details and diff using GitHub CLI:
 
 ```bash
 # Get PR metadata
-gh pr view <PR_NUMBER> --repo twilio-innovation/twilio-agent-connect-typescript --json title,body,headRefName,baseRefName,files,url
+gh pr view <PR_NUMBER> --repo twilio/twilio-agent-connect-typescript --json title,body,headRefName,baseRefName,files,url
 
 # Get the diff
-gh pr diff <PR_NUMBER> --repo twilio-innovation/twilio-agent-connect-typescript
+gh pr diff <PR_NUMBER> --repo twilio/twilio-agent-connect-typescript
 
 # Get list of changed files
-gh pr view <PR_NUMBER> --repo twilio-innovation/twilio-agent-connect-typescript --json files --jq '.files[].path'
+gh pr view <PR_NUMBER> --repo twilio/twilio-agent-connect-typescript --json files --jq '.files[].path'
 ```
 
 Store:

@@ -18,7 +18,7 @@
 
 ## SDK Parity
 
-This is the **TypeScript SDK**. If this change affects shared functionality, ensure the [Python SDK](https://github.com/twilio-innovation/twilio-agent-connect-python) is updated as well.
+This is the **TypeScript SDK**. If this change affects shared functionality, ensure the [Python SDK](https://github.com/twilio/twilio-agent-connect-python) is updated as well.
 
 > **Tip:** Use the `/sync-to-python-sdk` skill in Claude Code to automatically generate and create a Python SDK PR from your changes.
 
