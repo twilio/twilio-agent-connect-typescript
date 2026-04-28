@@ -3,11 +3,16 @@ import {
   maskPhone,
   maskEmail,
   maskAddress,
+  scrubPii,
+  scrubObject,
+  createLogger,
   SMSChannel,
   TAC,
   ConversationClient,
 } from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
+import { Writable } from 'node:stream';
+import pino from 'pino';
 
 describe('PII masking', () => {
   describe('maskPhone', () => {
@@ -80,6 +85,128 @@ describe('PII masking', () => {
 
     it('should return *** for single char', () => {
       expect(maskAddress('x')).toBe('***');
+    });
+  });
+
+  describe('scrubPii', () => {
+    it('should scrub a phone number from a string', () => {
+      expect(scrubPii('Call me at +15551234567 please')).toBe('Call me at +1***4567 please');
+    });
+
+    it('should scrub an email from a string', () => {
+      expect(scrubPii('Send to user@example.com now')).toBe('Send to u***@example.com now');
+    });
+
+    it('should scrub both phone and email in the same string', () => {
+      const input = 'Contact +15551234567 or user@example.com';
+      const result = scrubPii(input);
+      expect(result).not.toContain('+15551234567');
+      expect(result).not.toContain('user@example.com');
+      expect(result).toContain('+1***4567');
+      expect(result).toContain('u***@example.com');
+    });
+
+    it('should handle formatted phone numbers', () => {
+      expect(scrubPii('Call +1 (555) 123-4567')).not.toContain('555');
+    });
+
+    it('should leave non-PII strings unchanged', () => {
+      expect(scrubPii('Hello world')).toBe('Hello world');
+    });
+
+    it('should leave short numbers unchanged', () => {
+      expect(scrubPii('Code is +123')).toBe('Code is +123');
+    });
+  });
+
+  describe('scrubObject', () => {
+    it('should scrub phone numbers in nested objects', () => {
+      const obj = { user: { phone: '+15551234567', name: 'Alice' } };
+      const result = scrubObject(obj);
+      expect(result.user.phone).toBe('+1***4567');
+      expect(result.user.name).toBe('Alice');
+    });
+
+    it('should scrub emails in arrays', () => {
+      const obj = { addresses: ['user@example.com', 'admin@test.org'] };
+      const result = scrubObject(obj);
+      expect(result.addresses[0]).toBe('u***@example.com');
+      expect(result.addresses[1]).toBe('a***@test.org');
+    });
+
+    it('should pass through non-string primitives', () => {
+      expect(scrubObject(42)).toBe(42);
+      expect(scrubObject(true)).toBe(true);
+      expect(scrubObject(null)).toBe(null);
+    });
+
+    it('should scrub string values directly', () => {
+      expect(scrubObject('Call +15551234567')).toBe('Call +1***4567');
+    });
+  });
+
+  describe('PII safety filter (Pino hook)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function piiLogMethod(this: any, args: any[], method: pino.LogFn) {
+      const scrubbed = args.map(arg =>
+        typeof arg === 'string'
+          ? scrubObject(arg)
+          : typeof arg === 'object' && arg !== null
+            ? scrubObject(arg)
+            : arg
+      );
+      return method.apply(this, scrubbed as Parameters<pino.LogFn>);
+    }
+
+    function collectLogs(callback: (logger: pino.Logger) => void): string[] {
+      const lines: string[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, cb) {
+          lines.push(chunk.toString());
+          cb();
+        },
+      });
+      const logger = pino({ level: 'debug', hooks: { logMethod: piiLogMethod } }, stream);
+      callback(logger);
+      return lines;
+    }
+
+    it('should scrub phone numbers from log object fields', () => {
+      const lines = collectLogs(logger => {
+        logger.info({ phone: '+15551234567' }, 'test message');
+      });
+      expect(lines.length).toBe(1);
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.phone).toBe('+1***4567');
+      expect(lines[0]).not.toContain('+15551234567');
+    });
+
+    it('should scrub emails from log message strings', () => {
+      const lines = collectLogs(logger => {
+        logger.info('Contact user@example.com for help');
+      });
+      expect(lines.length).toBe(1);
+      expect(lines[0]).not.toContain('user@example.com');
+      expect(lines[0]).toContain('u***@example.com');
+    });
+
+    it('should scrub PII from nested objects', () => {
+      const lines = collectLogs(logger => {
+        logger.info({ data: { recipient: '+442071234567', email: 'alice@corp.co' } }, 'send');
+      });
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.data.recipient).toBe('+4***4567');
+      expect(parsed.data.email).toBe('a***@corp.co');
+    });
+
+    it('should not alter non-PII data', () => {
+      const lines = collectLogs(logger => {
+        logger.info({ conversation_id: 'CH123', count: 42 }, 'clean log');
+      });
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.conversation_id).toBe('CH123');
+      expect(parsed.count).toBe(42);
+      expect(parsed.msg).toBe('clean log');
     });
   });
 
