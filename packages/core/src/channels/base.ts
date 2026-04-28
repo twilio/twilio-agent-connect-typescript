@@ -179,7 +179,7 @@ export abstract class BaseChannel {
    * Handle errors with proper context
    */
   protected handleError(error: Error, context?: Record<string, unknown>): void {
-    this.logger.error({ err: error, ...context }, 'Channel error');
+    this.logger.error({ err: error }, 'Channel error');
 
     if (this.callbacks.onError) {
       if (context) {

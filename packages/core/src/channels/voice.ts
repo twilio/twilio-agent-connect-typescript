@@ -278,6 +278,7 @@ export class VoiceChannel extends BaseChannel {
                   .catch((err: unknown) => {
                     this.handleError(err instanceof Error ? err : new Error(String(err)), {
                       conversationId,
+                      message: data.toString(),
                     });
                   });
                 this.promptQueues.set(conversationId, currentPrompt);
@@ -306,6 +307,7 @@ export class VoiceChannel extends BaseChannel {
           this.handleError(error instanceof Error ? error : new Error(String(error)), {
             conversationId,
             callSid,
+            message: data.toString(),
           });
         }
       })().catch((err: unknown) => {
@@ -440,7 +442,7 @@ export class VoiceChannel extends BaseChannel {
   public sendResponse(
     conversationId: ConversationId,
     message: string,
-    _metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>
   ): Promise<void> {
     try {
       const ws = this.webSocketConnections.get(conversationId);
@@ -476,6 +478,8 @@ export class VoiceChannel extends BaseChannel {
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
         conversationId,
+        message,
+        metadata,
       });
       throw error;
     }
@@ -649,7 +653,7 @@ export class VoiceChannel extends BaseChannel {
         'Failed to initiate outbound call'
       );
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
-        to: maskAddress(validated.to),
+        to: validated.to,
       });
       throw error;
     }

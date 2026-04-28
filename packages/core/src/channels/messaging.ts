@@ -309,7 +309,7 @@ export abstract class MessagingChannel extends BaseChannel {
         { err: error, operation: 'webhook_processing' },
         'Webhook processing error'
       );
-      this.handleError(error instanceof Error ? error : new Error(String(error)));
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
     }
   }
 
@@ -819,9 +819,7 @@ export abstract class MessagingChannel extends BaseChannel {
         { err: error, to: maskAddress(to) },
         `Failed to initiate outbound ${channel}`
       );
-      this.handleError(error instanceof Error ? error : new Error(String(error)), {
-        to: maskAddress(to),
-      });
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { to });
       throw error;
     }
   }

@@ -65,7 +65,7 @@ export class ChatChannel extends MessagingChannel {
   public async sendResponse(
     conversationId: ConversationId,
     message: string,
-    _metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>
   ): Promise<void> {
     this.logger.debug(
       {
@@ -179,6 +179,8 @@ export class ChatChannel extends MessagingChannel {
       this.logger.error({ err: error, conversation_id: conversationId }, 'Send response error');
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
         conversationId,
+        message,
+        metadata,
       });
       throw error;
     }
