@@ -533,8 +533,44 @@ describe('TACServer idempotency token', () => {
       );
     });
 
-    // Each channel should only track dedup for events it actually processes
-    // SMS should not be blocked by voice token, and vice versa
+    // Verify self-filter happens before dedup: send VOICE event with same token as first SMS event
+    // Voice channel should process it (not blocked by SMS's token)
+    smsProcessWebhookSpy.mockClear();
+    voiceProcessWebhookSpy.mockClear();
+
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'i-twilio-idempotency-token': 'tok-sms-123', // Reuse SMS token
+      },
+      body: JSON.stringify({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: { channel: 'VOICE', address: '+15551234567' },
+        },
+      }),
+    });
+
+    await vi.waitFor(() => {
+      // Voice channel should process (self-filtered out the SMS event, so token is not in its dedup set)
+      expect(voiceProcessWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'COMMUNICATION_CREATED',
+          data: expect.objectContaining({ author: expect.objectContaining({ channel: 'VOICE' }) }),
+        }),
+        'tok-sms-123'
+      );
+      // SMS channel should skip (duplicate token)
+      expect(smsProcessWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'COMMUNICATION_CREATED',
+          data: expect.objectContaining({ author: expect.objectContaining({ channel: 'VOICE' }) }),
+        }),
+        'tok-sms-123'
+      );
+    });
   });
 });
 
