@@ -5,7 +5,7 @@ context-aware applications using Twilio's communication technologies. TAC provid
 Memory and Conversation services, enabling you to build LLM-powered agents with persistent memory and conversation context.
 
 > [!NOTE]
-> Looking for the Python version? Check out [TAC SDK Python](https://github.com/twilio-innovation/twilio-agent-connect-python).
+> Looking for the Python version? Check out [TAC SDK Python](https://github.com/twilio/twilio-agent-connect-python).
 
 Explore the [getting_started](getting_started) directory to see the SDK in action.
 
@@ -32,7 +32,7 @@ To get started, set up your Node.js environment (Node.js 22.13.0 or newer requir
 Clone this repository and work within it:
 
 ```bash
-git clone https://github.com/twilio-innovation/twilio-agent-connect-typescript.git
+git clone https://github.com/twilio/twilio-agent-connect-typescript.git
 cd twilio-agent-connect-typescript
 
 # Install dependencies
@@ -47,7 +47,7 @@ npm run build
 If you have an existing project, you can install directly from GitHub:
 
 ```bash
-npm install git@github.com:twilio-innovation/twilio-agent-connect-typescript.git
+npm install git@github.com:twilio/twilio-agent-connect-typescript.git
 ```
 
 ## Quick Examples
@@ -200,7 +200,7 @@ npm --version   # Should be 9 or newer
 
 ```bash
 # Clone repository
-git clone https://github.com/twilio-innovation/twilio-agent-connect-typescript.git
+git clone https://github.com/twilio/twilio-agent-connect-typescript.git
 cd twilio-agent-connect-typescript
 
 # Install all dependencies

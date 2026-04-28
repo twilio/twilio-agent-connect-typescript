@@ -41,7 +41,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/twilio-innovation/twilio-agent-connect-typescript.git"
+    "url": "https://github.com/twilio/twilio-agent-connect-typescript.git"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
