@@ -27,7 +27,9 @@ describe('package exports', () => {
     expect(tac.defineTool).toBeDefined();
     expect(tac.createMemoryRetrievalTool).toBeDefined();
     expect(tac.createSendMessageTool).toBeDefined();
-    expect(tac.createHandoffTool).toBeDefined();
+    expect(tac.createStudioHandoffTool).toBeDefined();
+    expect(tac.buildHandoffPayload).toBeDefined();
+    expect(tac.postStudioHandoff).toBeDefined();
     expect(tac.createKnowledgeSearchTool).toBeDefined();
   });
 

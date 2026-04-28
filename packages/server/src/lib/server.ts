@@ -13,9 +13,9 @@ import twilio from 'twilio';
 import {
   VoiceServerConfig,
   VoiceServerConfigSchema,
-  ConversationRelayCallbackPayload,
   ConversationRelayCallbackPayloadSchema,
   ConversationRelayConfig,
+  studioVoiceHandoffUrl,
 } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 
@@ -52,9 +52,6 @@ export interface TACServerConfig {
   /** ConversationRelay configuration (welcomeGreeting, transcription, TTS, interaction settings, etc.) */
   conversationRelayConfig?: Partial<Omit<ConversationRelayConfig, 'url'>>;
 
-  /** Handler for voice handoff requests (returns TwiML string) */
-  handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>;
-
   /** Enable development features */
   development?: boolean;
 
@@ -85,7 +82,7 @@ const DEFAULT_CONFIG = {
   development: false,
 } satisfies Omit<
   TACServerConfig,
-  'fastify' | 'fastifyInstance' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'
+  'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'
 >;
 
 /**
@@ -115,13 +112,8 @@ export class TACServer {
   public readonly fastify: FastifyInstance;
   private readonly tac: TAC;
   private readonly config: Required<
-    Omit<
-      TACServerConfig,
-      'fastify' | 'fastifyInstance' | 'handoffHandler' | 'voiceChannel' | 'messagingChannels'
-    >
-  > & {
-    handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>;
-  };
+    Omit<TACServerConfig, 'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'>
+  >;
   /** All enabled messaging channels — webhooks are fanned out to each one */
   private readonly messagingChannels: MessagingChannel[];
   /** Voice channel instance */
@@ -286,12 +278,20 @@ export class TACServer {
           const protocol = this.getForwardedProto(request);
           const host = this.getForwardedHost(request);
           const websocketUrl = `${protocol === 'https' ? 'wss' : 'ws'}://${host}${this.config.webhookPaths.ws || '/ws'}`;
-          const callbackUrl = `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
+
+          // If a Studio handoff flow is configured, point `<Connect action>`
+          // directly at the Studio webhook so Studio (and Flex) takes over
+          // when the ConversationRelay session ends. Otherwise, route the
+          // post-CR action back to TAC's own callback.
+          const tacConfig = this.tac.getConfig();
+          const actionUrl = tacConfig.studioHandoffFlowSid
+            ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid)
+            : `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
 
           // Generate TwiML to connect to ConversationRelay
           // ConversationRelay will create the conversation automatically
           const twiml = voiceChannel.handleIncomingCall({
-            actionUrl: callbackUrl,
+            actionUrl,
             conversationRelayConfig: {
               url: websocketUrl,
               ...this.config.conversationRelayConfig,
@@ -336,10 +336,7 @@ export class TACServer {
             return;
           }
 
-          const result = await voiceChannel.handleConversationRelayCallback(
-            parseResult.data,
-            this.config.handoffHandler
-          );
+          const result = await voiceChannel.handleConversationRelayCallback(parseResult.data);
 
           await reply.code(result.status).type(result.contentType).send(result.content);
         } catch (error) {

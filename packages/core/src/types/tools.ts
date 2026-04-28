@@ -73,7 +73,7 @@ export type ToolExecutionResult = z.infer<typeof ToolExecutionResultSchema>;
 export const BuiltInTools = {
   RETRIEVE_MEMORY: 'retrieve_profile_memory',
   SEND_MESSAGE: 'send_message',
-  ESCALATE_TO_HUMAN: 'escalate_to_human',
+  HANDOFF: 'handoff',
   SEARCH_KNOWLEDGE: 'search_knowledge',
 } as const;
 

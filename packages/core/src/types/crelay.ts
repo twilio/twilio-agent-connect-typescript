@@ -121,10 +121,10 @@ export type _SDKDriftGuards = {
 };
 
 /**
- * Custom parameters passed via TwiML <Parameter> elements.
- * Values must be primitives — TwiML parameters are string-valued.
+ * Custom parameters passed via TwiML
+ * Can contain any key-value pairs with unknown values
  */
-export const CustomParametersSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
+export const CustomParametersSchema = z.record(z.unknown());
 
 export type CustomParameters = z.infer<typeof CustomParametersSchema>;
 
@@ -271,23 +271,11 @@ export const ConversationRelayCallbackPayloadSchema = z.object({
   SessionId: z.string().optional(),
   SessionStatus: z.string().optional(),
   SessionDuration: z.string().optional(),
-  HandoffData: z.string().optional(), // JSON string
 });
 
 export type ConversationRelayCallbackPayload = z.infer<
   typeof ConversationRelayCallbackPayloadSchema
 >;
-
-/**
- * Handoff data for Flex escalation
- */
-export const HandoffDataSchema = z.object({
-  reason: z.string(),
-  call_summary: z.string(),
-  sentiment: z.string(),
-});
-
-export type HandoffData = z.infer<typeof HandoffDataSchema>;
 
 // =========================================================================
 // Outbound Voice Conversation Types

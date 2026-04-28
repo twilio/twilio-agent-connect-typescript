@@ -11,7 +11,14 @@ export { TACTool, defineTool } from './lib/builder';
 // Built-in tools
 export { createMemoryRetrievalTool, createMemoryTools } from './built-in/memory';
 export { createSendMessageTool, createMessagingTools } from './built-in/messaging';
-export { createHandoffTool, createHandoffTools } from './built-in/handoff';
+export {
+  createStudioHandoffTool,
+  buildHandoffPayload,
+  postStudioHandoff,
+  studioExecutionsUrl,
+  studioVoiceHandoffUrl,
+  type HandoffResult,
+} from './built-in/handoff';
 export {
   createKnowledgeSearchTool,
   createKnowledgeSearchToolAsync,

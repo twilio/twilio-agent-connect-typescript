@@ -20,16 +20,23 @@ interface MemoryRetrievalParams {
 }
 
 /**
- * Create memory retrieval tool
+ * Create memory retrieval tool.
+ *
+ * @param options - Optional overrides for tool metadata.
+ * @param options.name - Tool name exposed to the LLM. Defaults to `retrieve_profile_memory`.
+ * @param options.description - Tool description exposed to the LLM. Defaults to a
+ *   generic "retrieve memories" prompt.
  */
 export function createMemoryRetrievalTool(
   memoryClient: MemoryClient,
   serviceSid: string,
-  profileId?: string
+  profileId?: string,
+  options: { name?: string; description?: string } = {}
 ): TACTool<MemoryRetrievalParams, MemoryRetrievalResponse> {
   return defineTool(
-    BuiltInTools.RETRIEVE_MEMORY,
-    'Retrieve user memories including observations, summaries, and conversation history',
+    options.name ?? BuiltInTools.RETRIEVE_MEMORY,
+    options.description ??
+      'Retrieve user memories including observations, summaries, and conversation history',
     {
       type: 'object',
       properties: {

@@ -44,6 +44,61 @@ export class TACTool<TParams = any, TResult = any> {
   toJSON(): string {
     return JSON.stringify(this.toOpenAIFormat(), null, 2);
   }
+
+  /**
+   * Convert this tool to an OpenAI Agents SDK `FunctionTool` instance.
+   *
+   * Unlike `toOpenAIFormat` and `toAnthropicFormat` (which return plain
+   * objects consumed by HTTP APIs), the OpenAI Agents SDK dispatches on tool
+   * *type*, so this returns a live `tool(...)` object with an invoke callback
+   * that calls this tool and JSON-encodes the result.
+   *
+   * Requires the `@openai/agents` package:
+   *
+   *     npm install @openai/agents
+   *
+   * @returns A FunctionTool ready to pass to `new Agent({ tools: [...] })`.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Return type depends on an optional peer dep we don't declare
+  async toOpenAIAgentsSDKTool(): Promise<any> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Optional peer dep: dynamic import, can't declare types
+    let agentsModule: any;
+    try {
+      // Dynamic import of an optional peer dependency. The indirection via a
+      // string variable keeps TypeScript from trying to resolve the module
+      // at compile time (it isn't a declared dependency).
+      const moduleSpec = '@openai/agents';
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Dynamic optional-dep import
+      agentsModule = await import(/* @vite-ignore */ moduleSpec);
+    } catch {
+      throw new Error(
+        'toOpenAIAgentsSDKTool() requires the @openai/agents package. ' +
+          'Install with: npm install @openai/agents'
+      );
+    }
+
+    const impl = this.implementation;
+    // The Agents SDK's `JsonObjectSchemaNonStrict` requires `additionalProperties: true`
+    // (and `Strict` requires `: false`). Our schema sets neither by default, so normalize
+    // for the non-strict path we're opting into.
+    const parameters = {
+      ...this.parameters,
+      additionalProperties: true,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unsafe-call -- Optional peer dep
+    return agentsModule.tool({
+      name: this.name,
+      description: this.description,
+      parameters,
+      // Disable strict mode: the Agents SDK's strict JSON schema rejects
+      // some features TAC emits (e.g. unions, top-level description).
+      strict: false,
+      execute: async (args: unknown): Promise<string> => {
+        const result = await impl(args as TParams);
+        return JSON.stringify(result);
+      },
+    });
+  }
 }
 
 /**

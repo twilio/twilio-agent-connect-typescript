@@ -286,29 +286,6 @@ describe('Integration Tests', () => {
       })).resolves.not.toThrow();
     });
 
-    it('should handle handoff workflow', async () => {
-      let handoffCalled = false;
-      let handoffReason: string | null = null;
-
-      tac.onHandoff(({ reason }) => {
-        handoffCalled = true;
-        handoffReason = reason;
-      });
-
-      // Start a conversation first
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789'
-        }
-      });
-
-      // Trigger handoff
-      await tac.triggerHandoff('CHtest123456789', 'User requested human agent');
-
-      expect(handoffCalled).toBe(true);
-      expect(handoffReason).toBe('User requested human agent');
-    });
   });
 
   describe('channel management', () => {

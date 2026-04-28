@@ -15,6 +15,7 @@ Explore the [getting_started](getting_started) directory to see the SDK in actio
 - **Voice Channel Support**: WebSocket protocol handling for Twilio Voice with ConversationRelay
 - **Memory Management**: Automatic integration with Twilio Memory for persistent user context
 - **Conversation Lifecycle**: Automatic tracking of conversation sessions and state
+- **Handoff to Human Agents**: Built-in tool to route conversations to a human via a Twilio Studio Flow (e.g. Flex), works across all channels
 - **Type-Safe**: Full TypeScript support with strict type checking
 - **Callback-Based**: Simple `onMessageReady` callback for LLM integration with optional memory retrieval
 - **Production Ready**: Comprehensive test coverage and error handling

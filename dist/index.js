@@ -1,7 +1,7 @@
 import { z } from 'zod';
 export { z } from 'zod';
 import pino from 'pino';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import axiosRetry from 'axios-retry';
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
@@ -35,6 +35,15 @@ var TACConfigSchema = z.object({
   region: z.string().max(63, "Invalid Twilio region format (must be a valid DNS label)").regex(
     /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
     "Invalid Twilio region format (must be a valid DNS label)"
+  ).optional(),
+  /**
+   * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
+   * TAC derives both the digital-handoff Studio Executions URL and the voice
+   * `<Connect action>` webhook URL from this SID.
+   */
+  studioHandoffFlowSid: z.string().regex(
+    /^FW[0-9a-f]{32}$/,
+    "Invalid Studio Flow SID format (expected FW followed by 32 hex chars)"
   ).optional()
 });
 var EnvironmentVariables = {
@@ -53,11 +62,22 @@ var EnvironmentVariables = {
   TWILIO_TAC_CI_CONFIGURATION_ID: "TWILIO_TAC_CI_CONFIGURATION_ID",
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: "TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID",
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: "TWILIO_TAC_CI_SUMMARY_OPERATOR_SID",
-  TWILIO_REGION: "TWILIO_REGION"
+  TWILIO_REGION: "TWILIO_REGION",
+  TWILIO_STUDIO_HANDOFF_FLOW_SID: "TWILIO_STUDIO_HANDOFF_FLOW_SID"
 };
 var VoiceServerConfigSchema = z.object({
   host: z.string().default("0.0.0.0"),
   port: z.number().int().positive().default(3e3)
+});
+var HandoffPayloadSchema = z.object({
+  conversationId: z.string(),
+  storeId: z.string(),
+  profileId: z.string(),
+  attributes: z.record(z.unknown()).default({})
+});
+var PendingHandoffDataSchema = z.object({
+  type: z.literal("end").default("end"),
+  handoffData: z.string()
 });
 
 // packages/core/src/types/conversation.ts
@@ -161,7 +181,12 @@ var ConversationSessionSchema = z.object({
   startedAt: z.date(),
   authorInfo: AuthorInfoSchema.optional(),
   profile: z.custom().optional(),
-  metadata: z.record(z.unknown()).optional().default({})
+  metadata: z.record(z.unknown()).optional().default({}),
+  /**
+   * Pending handoff payload set by the handoff tool. Voice channel sends
+   * this as a WS "end" message after the LLM's final response.
+   */
+  pendingHandoffData: PendingHandoffDataSchema.optional()
 });
 function isConversationId(value) {
   return value.length > 0;
@@ -648,7 +673,7 @@ var ConversationRelayAttributesSchema = z.object({
   /** Twilio Conversation Orchestrator configuration ID */
   conversationConfiguration: z.string().optional()
 });
-var CustomParametersSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
+var CustomParametersSchema = z.record(z.unknown());
 var SetupMessageSchema = z.object({
   type: z.literal("setup"),
   sessionId: z.string(),
@@ -720,14 +745,7 @@ var ConversationRelayCallbackPayloadSchema = z.object({
   // ConversationRelay session information (optional)
   SessionId: z.string().optional(),
   SessionStatus: z.string().optional(),
-  SessionDuration: z.string().optional(),
-  HandoffData: z.string().optional()
-  // JSON string
-});
-var HandoffDataSchema = z.object({
-  reason: z.string(),
-  call_summary: z.string(),
-  sentiment: z.string()
+  SessionDuration: z.string().optional()
 });
 var InitiateVoiceConversationOptionsSchema = z.object({
   to: z.string().min(1, "Recipient phone number is required"),
@@ -760,7 +778,7 @@ var ToolExecutionResultSchema = z.object({
 var BuiltInTools = {
   RETRIEVE_MEMORY: "retrieve_profile_memory",
   SEND_MESSAGE: "send_message",
-  ESCALATE_TO_HUMAN: "escalate_to_human",
+  HANDOFF: "handoff",
   SEARCH_KNOWLEDGE: "search_knowledge"
 };
 var CintelParticipantSchema = z.object({
@@ -855,6 +873,14 @@ var TACConfig = class _TACConfig {
   cintelSummaryOperatorSid;
   /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
   region;
+  /**
+   * Twilio Studio Flow SID for handoff. TAC derives both the digital-handoff
+   * Studio Executions URL (`studio.twilio.com/v2/Flows/{SID}/Executions`) and
+   * the voice `<Connect action>` webhook URL
+   * (`webhooks.twilio.com/v1/Accounts/{AccountSid}/Flows/{SID}?Trigger=incomingCall`)
+   * from this SID.
+   */
+  studioHandoffFlowSid;
   constructor(data) {
     const validatedConfig = TACConfigSchema.parse(data);
     this.accountSid = validatedConfig.accountSid;
@@ -879,6 +905,9 @@ var TACConfig = class _TACConfig {
     if (validatedConfig.region) {
       this.region = validatedConfig.region;
     }
+    if (validatedConfig.studioHandoffFlowSid) {
+      this.studioHandoffFlowSid = validatedConfig.studioHandoffFlowSid;
+    }
   }
   /**
    * Create TACConfig from environment variables.
@@ -894,6 +923,7 @@ var TACConfig = class _TACConfig {
    * Optional environment variables:
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+   * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
    * Memory Configuration:
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
@@ -1005,7 +1035,8 @@ var TACConfig = class _TACConfig {
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid: process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],
       cintelSummaryOperatorSid: process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
-      region: process.env[EnvironmentVariables.TWILIO_REGION]
+      region: process.env[EnvironmentVariables.TWILIO_REGION],
+      studioHandoffFlowSid: process.env[EnvironmentVariables.TWILIO_STUDIO_HANDOFF_FLOW_SID]
     };
     return new _TACConfig(rawConfig);
   }
@@ -1049,9 +1080,9 @@ var BaseClient = class {
   baseUrl;
   logger;
   axiosInstance;
-  constructor(baseUrl, config, logger2) {
+  constructor(baseUrl, config, logger) {
     this.baseUrl = baseUrl;
-    this.logger = logger2 || createLogger({ name: this.constructor.name });
+    this.logger = logger || createLogger({ name: this.constructor.name });
     const authHeader = "Basic " + Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString("base64");
     const baseOrigin = new URL(baseUrl).origin;
     this.axiosInstance = axios.create({
@@ -1123,9 +1154,9 @@ var BaseClient = class {
 
 // packages/core/src/clients/memory.ts
 var MemoryClient = class extends BaseClient {
-  constructor(config, logger2) {
+  constructor(config, logger) {
     const baseUrl = config.region ? `https://memory.${config.region}.twilio.com` : "https://memory.twilio.com";
-    super(baseUrl, config, logger2);
+    super(baseUrl, config, logger);
   }
   /**
    * Retrieve memories for a specific profile
@@ -1322,9 +1353,9 @@ var MemoryClient = class extends BaseClient {
 };
 var ConversationClient = class extends BaseClient {
   conversationConfigurationId;
-  constructor(config, logger2) {
+  constructor(config, logger) {
     const baseUrl = config.region ? `https://conversations.${config.region}.twilio.com` : "https://conversations.twilio.com";
-    super(baseUrl, config, logger2);
+    super(baseUrl, config, logger);
     this.conversationConfigurationId = config.conversationConfigurationId;
   }
   /**
@@ -1507,6 +1538,27 @@ var ConversationClient = class extends BaseClient {
     }
   }
   /**
+   * Clear statusCallbacks on a conversation's instance configuration.
+   *
+   * This stops the conversation from sending webhook events to TAC,
+   * which is needed during handoff so the receiving system can take over.
+   *
+   * @param conversationId - The conversation ID to update
+   */
+  async clearStatusCallbacks(conversationId) {
+    const url = `/v2/Conversations/${conversationId}`;
+    try {
+      await this.makeRequest(url, "PATCH", {
+        configuration: { statusCallbacks: [] }
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to clear status callbacks: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+  }
+  /**
    * Update conversation status
    *
    * @param conversationId - The conversation ID
@@ -1548,9 +1600,9 @@ var ConversationClient = class extends BaseClient {
 
 // packages/core/src/clients/knowledge.ts
 var KnowledgeClient = class extends BaseClient {
-  constructor(config, logger2) {
+  constructor(config, logger) {
     const baseUrl = config.region ? `https://knowledge.${config.region}.twilio.com` : "https://knowledge.twilio.com";
-    super(baseUrl, config, logger2);
+    super(baseUrl, config, logger);
   }
   /**
    * Get knowledge base metadata
@@ -1659,10 +1711,10 @@ var OperatorResultProcessor = class {
   memoryClient;
   config;
   logger;
-  constructor(memoryClient, config, logger2) {
+  constructor(memoryClient, config, logger) {
     this.memoryClient = memoryClient;
     this.config = config;
-    this.logger = logger2 ?? createLogger({ name: "cintel-processor" });
+    this.logger = logger ?? createLogger({ name: "cintel-processor" });
   }
   /**
    * Process an operator result event webhook payload
@@ -1972,7 +2024,6 @@ var TAC = class _TAC {
   // Callback registrations
   messageReadyCallback;
   interruptCallback;
-  handoffCallback;
   conversationEndedCallback;
   constructor(token, options = {}) {
     if (token !== _TAC.FACTORY_TOKEN) {
@@ -2229,12 +2280,6 @@ var TAC = class _TAC {
     this.interruptCallback = callback;
   }
   /**
-   * Register callback for human handoff
-   */
-  onHandoff(callback) {
-    this.handoffCallback = callback;
-  }
-  /**
    * Register callback for when a conversation ends.
    *
    * The callback is triggered by channels when a conversation is closed
@@ -2244,41 +2289,6 @@ var TAC = class _TAC {
    */
   onConversationEnded(callback) {
     this.conversationEndedCallback = callback;
-  }
-  /**
-   * Trigger handoff callback
-   */
-  async triggerHandoff(conversationId, reason) {
-    if (!this.handoffCallback) {
-      this.logger.warn({ conversation_id: conversationId }, "No handoff callback registered");
-      return;
-    }
-    const channel = this.getChannelByConversationId(conversationId);
-    const session = channel?.getConversationSession(conversationId);
-    if (!session) {
-      throw new Error(`No session found for conversation ${conversationId}`);
-    }
-    try {
-      await this.handoffCallback({
-        conversationId,
-        profileId: session.profileId ? session.profileId : void 0,
-        reason,
-        session
-      });
-    } catch (error) {
-      this.logger.error({ err: error, conversation_id: conversationId }, "Handoff callback error");
-    }
-  }
-  /**
-   * Get channel by conversation ID
-   */
-  getChannelByConversationId(conversationId) {
-    for (const channel of this.channels.values()) {
-      if (channel.isConversationActive(conversationId)) {
-        return channel;
-      }
-    }
-    return void 0;
   }
   /**
    * Get registered channel by type
@@ -2297,6 +2307,12 @@ var TAC = class _TAC {
    */
   getMemoryClient() {
     return this.memoryClient;
+  }
+  /**
+   * Get the memory store ID resolved from the ConversationConfiguration at startup.
+   */
+  getMemoryStoreId() {
+    return this.memoryStoreId;
   }
   /**
    * Get knowledge client for knowledge base operations
@@ -3765,6 +3781,18 @@ var VoiceChannel = class extends BaseChannel {
         last: true
       };
       ws.send(JSON.stringify(response));
+      const session = this.getConversationSession(conversationId);
+      if (session?.pendingHandoffData) {
+        try {
+          ws.send(JSON.stringify(session.pendingHandoffData));
+          delete session.pendingHandoffData;
+        } catch (err) {
+          this.logger.warn(
+            { err, conversation_id: conversationId },
+            "WebSocket closed before sending handoff end message; caller will not be transferred"
+          );
+        }
+      }
       return Promise.resolve();
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
@@ -3915,27 +3943,14 @@ var VoiceChannel = class extends BaseChannel {
    * Handle ConversationRelay callback from Twilio
    *
    * @param payload - Callback payload from Twilio
-   * @param handoffHandler - Optional handler for handoff requests
    * @returns Response with status, content, and content type
    */
-  async handleConversationRelayCallback(payload, handoffHandler) {
+  handleConversationRelayCallback(payload) {
     this.logger.debug(
       { call_sid: payload.CallSid, call_status: payload.CallStatus },
       "ConversationRelay callback received"
     );
-    if (payload.CallStatus === "in-progress" && payload.HandoffData) {
-      if (handoffHandler) {
-        try {
-          const response = await handoffHandler(payload);
-          return { status: 200, content: response, contentType: "application/xml" };
-        } catch (error) {
-          this.logger.error({ err: error }, "Handoff handler failed");
-          return { status: 500, content: "Handoff handler error", contentType: "text/plain" };
-        }
-      }
-      return { status: 501, content: "No handoff handler registered", contentType: "text/plain" };
-    }
-    return { status: 200, content: "OK", contentType: "text/plain" };
+    return Promise.resolve({ status: 200, content: "OK", contentType: "text/plain" });
   }
   // =========================================================================
   // Stream Task Management
@@ -4064,68 +4079,13 @@ var VoiceChannel = class extends BaseChannel {
     super.shutdown();
   }
 };
-var logger = createLogger({ name: "tac-flex" });
-function handleFlexHandoffLogic(formData, flexWorkflowSid) {
-  if (!flexWorkflowSid) {
-    logger.error("No Flex workflow SID configured");
-    return {
-      success: false,
-      status: 400,
-      content: "Invalid handoff data",
-      contentType: "text/plain"
-    };
-  }
-  const response = new VoiceResponse();
-  const handoffDataRaw = formData["HandoffData"] || "";
-  if (handoffDataRaw) {
-    let handoffData;
-    try {
-      handoffData = HandoffDataSchema.parse(JSON.parse(handoffDataRaw));
-    } catch (error) {
-      logger.error({ err: error }, "Invalid handoff data");
-      return {
-        success: false,
-        status: 400,
-        content: "Invalid handoff data",
-        contentType: "text/plain"
-      };
-    }
-    const enqueue = response.enqueue({
-      workflowSid: flexWorkflowSid
-    });
-    enqueue.task(
-      {
-        priority: 5
-      },
-      JSON.stringify(handoffData)
-    );
-    logger.debug(
-      { workflow_sid: flexWorkflowSid, handoff_data: handoffData },
-      "Generated Flex handoff TwiML"
-    );
-    return {
-      success: true,
-      status: 200,
-      content: response.toString(),
-      contentType: "application/xml"
-    };
-  } else {
-    if (formData["CallStatus"] === "completed") {
-      return {
-        success: true,
-        status: 200,
-        content: "Call Completed",
-        contentType: "application/xml"
-      };
-    } else {
-      return {
-        success: false,
-        status: 400,
-        content: "Handoff Data is Missing",
-        contentType: "application/xml"
-      };
-    }
-  }
+
+// packages/core/src/util/handoff-urls.ts
+function studioExecutionsUrl(flowSid) {
+  return `https://studio.twilio.com/v2/Flows/${flowSid}/Executions`;
+}
+function studioVoiceHandoffUrl(accountSid, flowSid) {
+  return `https://webhooks.twilio.com/v1/Accounts/${accountSid}/Flows/${flowSid}?Trigger=incomingCall`;
 }
 
 // packages/core/src/lib/conversation-session-helpers.ts
@@ -4275,6 +4235,52 @@ var TACTool = class {
   toJSON() {
     return JSON.stringify(this.toOpenAIFormat(), null, 2);
   }
+  /**
+   * Convert this tool to an OpenAI Agents SDK `FunctionTool` instance.
+   *
+   * Unlike `toOpenAIFormat` and `toAnthropicFormat` (which return plain
+   * objects consumed by HTTP APIs), the OpenAI Agents SDK dispatches on tool
+   * *type*, so this returns a live `tool(...)` object with an invoke callback
+   * that calls this tool and JSON-encodes the result.
+   *
+   * Requires the `@openai/agents` package:
+   *
+   *     npm install @openai/agents
+   *
+   * @returns A FunctionTool ready to pass to `new Agent({ tools: [...] })`.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Return type depends on an optional peer dep we don't declare
+  async toOpenAIAgentsSDKTool() {
+    let agentsModule;
+    try {
+      const moduleSpec = "@openai/agents";
+      agentsModule = await import(
+        /* @vite-ignore */
+        moduleSpec
+      );
+    } catch {
+      throw new Error(
+        "toOpenAIAgentsSDKTool() requires the @openai/agents package. Install with: npm install @openai/agents"
+      );
+    }
+    const impl = this.implementation;
+    const parameters = {
+      ...this.parameters,
+      additionalProperties: true
+    };
+    return agentsModule.tool({
+      name: this.name,
+      description: this.description,
+      parameters,
+      // Disable strict mode: the Agents SDK's strict JSON schema rejects
+      // some features TAC emits (e.g. unions, top-level description).
+      strict: false,
+      execute: async (args) => {
+        const result = await impl(args);
+        return JSON.stringify(result);
+      }
+    });
+  }
 };
 function defineTool(name, description, parameters, implementation) {
   if (!name) {
@@ -4293,10 +4299,10 @@ function defineTool(name, description, parameters, implementation) {
 }
 
 // packages/tools/src/built-in/memory.ts
-function createMemoryRetrievalTool(memoryClient, serviceSid, profileId) {
+function createMemoryRetrievalTool(memoryClient, serviceSid, profileId, options = {}) {
   return defineTool(
-    BuiltInTools.RETRIEVE_MEMORY,
-    "Retrieve user memories including observations, summaries, and conversation history",
+    options.name ?? BuiltInTools.RETRIEVE_MEMORY,
+    options.description ?? "Retrieve user memories including observations, summaries, and conversation history",
     {
       type: "object",
       properties: {
@@ -4418,84 +4424,105 @@ function createMessagingTools() {
     forConversation: (channel, conversationId) => createSendMessageTool(channel, conversationId)
   };
 }
-
-// packages/tools/src/built-in/handoff.ts
-function createHandoffTool(tac, conversationId) {
+function buildHandoffPayload(session, memoryStoreId, attributes) {
+  return {
+    conversationId: session.conversationId,
+    storeId: memoryStoreId,
+    profileId: session.profileId ?? "",
+    attributes
+  };
+}
+async function postStudioHandoff(payload, session, options) {
+  const { handoffUrl, fromAddress, apiKey, apiSecret } = options;
+  const toAddress = session.authorInfo?.address ?? "";
+  const form = new URLSearchParams();
+  form.append("To", toAddress);
+  form.append("From", fromAddress);
+  form.append("Parameters", JSON.stringify({ HandoffData: payload }));
+  await axios.post(handoffUrl, form.toString(), {
+    timeout: 1e4,
+    auth: { username: apiKey, password: apiSecret },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" }
+  });
+}
+var DEFAULT_HANDOFF_TOOL_NAME = "handoff";
+var DEFAULT_HANDOFF_TOOL_DESCRIPTION = "Hand off the conversation to a human agent. Use this when the customer requests a human, or when you cannot adequately handle the request.";
+function createStudioHandoffTool(tac, session, options = {}) {
+  const config = tac.getConfig();
+  if (!config.studioHandoffFlowSid) {
+    throw new Error(
+      "createStudioHandoffTool requires tac.getConfig().studioHandoffFlowSid (set TWILIO_STUDIO_HANDOFF_FLOW_SID in your environment)."
+    );
+  }
+  const flowSid = config.studioHandoffFlowSid;
+  const staticAttributes = options.attributes ?? {};
+  const toolName = options.name ?? DEFAULT_HANDOFF_TOOL_NAME;
+  const toolDescription = options.description ?? DEFAULT_HANDOFF_TOOL_DESCRIPTION;
   return defineTool(
-    BuiltInTools.ESCALATE_TO_HUMAN,
-    "Escalate the conversation to a human agent when the AI cannot help further",
+    toolName,
+    toolDescription,
     {
       type: "object",
       properties: {
         reason: {
           type: "string",
-          description: "The reason for escalating to a human agent"
-        },
-        urgency: {
-          type: "string",
-          enum: ["low", "medium", "high"],
-          description: "The urgency level of the handoff (default: medium)"
-        },
-        context: {
-          type: "string",
-          description: "Additional context to provide to the human agent"
-        },
-        metadata: {
-          type: "object",
-          description: "Optional metadata for the handoff"
+          description: "The reason for handing off to a human agent"
         }
       },
       required: ["reason"],
-      description: "Escalate to human agent"
+      description: "Hand off the conversation to a human agent"
     },
     async (params) => {
+      const attributes = { ...staticAttributes, reason: params.reason };
+      const coClient = tac.getConversationClient();
+      const memoryStoreId = tac.getMemoryStoreId();
+      const payload = buildHandoffPayload(session, memoryStoreId, attributes);
       try {
-        let fullReason = params.reason;
-        if (params.context) {
-          fullReason += `
-
-Additional Context: ${params.context}`;
-        }
-        if (params.urgency) {
-          fullReason += `
-
-Urgency: ${params.urgency}`;
-        }
-        await tac.triggerHandoff(conversationId, fullReason);
-        return {
-          success: true,
-          handoff_id: `handoff_${Date.now()}`,
-          estimated_wait_time: getEstimatedWaitTime(params.urgency ?? "medium")
-        };
-      } catch (error) {
-        return {
-          success: false,
-          handoff_id: `failed_${Date.now()}`,
-          error: error instanceof Error ? error.message : String(error)
-        };
+        await coClient.updateConversation(session.conversationId, "INACTIVE");
+      } catch (err) {
+        tac.logger.warn(
+          { err, conversation_id: session.conversationId },
+          "Failed to set conversation INACTIVE during handoff"
+        );
       }
+      try {
+        await coClient.clearStatusCallbacks(session.conversationId);
+      } catch (err) {
+        tac.logger.warn(
+          { err, conversation_id: session.conversationId },
+          "Failed to clear status callbacks during handoff"
+        );
+      }
+      if (session.channel === "voice") {
+        const pending = {
+          type: "end",
+          handoffData: JSON.stringify(payload)
+        };
+        session.pendingHandoffData = pending;
+      } else {
+        try {
+          await postStudioHandoff(payload, session, {
+            handoffUrl: studioExecutionsUrl(flowSid),
+            fromAddress: config.phoneNumber,
+            apiKey: config.apiKey,
+            apiSecret: config.apiSecret
+          });
+        } catch (err) {
+          const message = err instanceof AxiosError ? err.message : err instanceof Error ? err.message : String(err);
+          tac.logger.error(
+            { err, conversation_id: session.conversationId },
+            "Failed to deliver handoff payload"
+          );
+          return {
+            status: "handoff_failed",
+            channel: session.channel,
+            error: message
+          };
+        }
+      }
+      return { status: "handoff_initiated", channel: session.channel };
     }
   );
-}
-function getEstimatedWaitTime(urgency) {
-  switch (urgency) {
-    case "high":
-      return "< 2 minutes";
-    case "medium":
-      return "2-5 minutes";
-    case "low":
-      return "5-10 minutes";
-    default:
-      return "2-5 minutes";
-  }
-}
-function createHandoffTools() {
-  return {
-    /**
-     * Create handoff tool for specific TAC instance and conversation
-     */
-    forConversation: (tac, conversationId) => createHandoffTool(tac, conversationId)
-  };
 }
 
 // packages/tools/src/built-in/knowledge.ts
@@ -4703,9 +4730,10 @@ var TACServer = class {
           const protocol = this.getForwardedProto(request);
           const host = this.getForwardedHost(request);
           const websocketUrl = `${protocol === "https" ? "wss" : "ws"}://${host}${this.config.webhookPaths.ws || "/ws"}`;
-          const callbackUrl = `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || "/conversation-relay-callback"}`;
+          const tacConfig = this.tac.getConfig();
+          const actionUrl = tacConfig.studioHandoffFlowSid ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid) : `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || "/conversation-relay-callback"}`;
           const twiml = voiceChannel.handleIncomingCall({
-            actionUrl: callbackUrl,
+            actionUrl,
             conversationRelayConfig: {
               url: websocketUrl,
               ...this.config.conversationRelayConfig
@@ -4742,10 +4770,7 @@ var TACServer = class {
             await reply.code(400).send({ error: "Invalid payload" });
             return;
           }
-          const result = await voiceChannel.handleConversationRelayCallback(
-            parseResult.data,
-            this.config.handoffHandler
-          );
+          const result = await voiceChannel.handleConversationRelayCallback(parseResult.data);
           await reply.code(result.status).type(result.contentType).send(result.content);
         } catch (error) {
           this.fastify.log.error(
@@ -4942,6 +4967,6 @@ var TACServer = class {
   }
 };
 
-export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffDataSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryPromptBuilder, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffPayloadSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryPromptBuilder, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, PendingHandoffDataSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, buildHandoffPayload, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, createStudioHandoffTool, defineTool, isConversationId, isParticipantId, isProfileId, postStudioHandoff, studioExecutionsUrl, studioVoiceHandoffUrl };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

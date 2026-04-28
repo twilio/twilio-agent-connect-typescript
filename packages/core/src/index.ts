@@ -11,7 +11,6 @@ export { TAC } from './lib/tac';
 export type {
   MessageReadyCallback,
   InterruptCallback,
-  HandoffCallback,
   ConversationEndedCallback,
   TACOptions,
 } from './lib/tac';
@@ -51,9 +50,8 @@ export type {
 export { VoiceChannel } from './channels/voice';
 export type { VoiceChannelEvents, StreamTask } from './channels/voice';
 
-// Utility functions
-export { handleFlexHandoffLogic } from './util/flex';
-export type { FlexHandoffResult } from './util/flex';
+// Studio handoff URL helpers
+export { studioExecutionsUrl, studioVoiceHandoffUrl } from './util/handoff-urls';
 
 // Conversation Intelligence processor
 export { OperatorResultProcessor } from './lib/operator-result-processor';

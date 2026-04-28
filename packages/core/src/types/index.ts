@@ -17,6 +17,9 @@ export * from './conversation';
 // ConversationRelay types (Twilio Voice API)
 export * from './crelay';
 
+// Handoff types
+export * from './handoff';
+
 // Tool types (TACTool interface excluded — use the TACTool class from the tools package)
 export {
   JSONSchemaSchema,

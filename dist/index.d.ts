@@ -68,6 +68,12 @@ declare const TACConfigSchema: z.ZodObject<{
     cintelObservationOperatorSid: z.ZodOptional<z.ZodString>;
     cintelSummaryOperatorSid: z.ZodOptional<z.ZodString>;
     region: z.ZodOptional<z.ZodString>;
+    /**
+     * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
+     * TAC derives both the digital-handoff Studio Executions URL and the voice
+     * `<Connect action>` webhook URL from this SID.
+     */
+    studioHandoffFlowSid: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     accountSid: string;
     authToken: string;
@@ -87,6 +93,7 @@ declare const TACConfigSchema: z.ZodObject<{
     cintelObservationOperatorSid?: string | undefined;
     cintelSummaryOperatorSid?: string | undefined;
     region?: string | undefined;
+    studioHandoffFlowSid?: string | undefined;
 }, {
     accountSid: string;
     authToken: string;
@@ -106,6 +113,7 @@ declare const TACConfigSchema: z.ZodObject<{
     cintelObservationOperatorSid?: string | undefined;
     cintelSummaryOperatorSid?: string | undefined;
     region?: string | undefined;
+    studioHandoffFlowSid?: string | undefined;
 }>;
 type TACConfigData = z.infer<typeof TACConfigSchema>;
 /**
@@ -128,6 +136,7 @@ declare const EnvironmentVariables: {
     readonly TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: "TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID";
     readonly TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: "TWILIO_TAC_CI_SUMMARY_OPERATOR_SID";
     readonly TWILIO_REGION: "TWILIO_REGION";
+    readonly TWILIO_STUDIO_HANDOFF_FLOW_SID: "TWILIO_STUDIO_HANDOFF_FLOW_SID";
 };
 /**
  * Server configuration for built-in Fastify setup
@@ -1818,6 +1827,20 @@ declare const ConversationSessionSchema: z.ZodObject<{
     }>>;
     profile: z.ZodOptional<z.ZodType<Profile, z.ZodTypeDef, Profile>>;
     metadata: z.ZodDefault<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>>;
+    /**
+     * Pending handoff payload set by the handoff tool. Voice channel sends
+     * this as a WS "end" message after the LLM's final response.
+     */
+    pendingHandoffData: z.ZodOptional<z.ZodObject<{
+        type: z.ZodDefault<z.ZodLiteral<"end">>;
+        handoffData: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        type: "end";
+        handoffData: string;
+    }, {
+        handoffData: string;
+        type?: "end" | undefined;
+    }>>;
 }, "strip", z.ZodTypeAny, {
     channel: "sms" | "voice" | "chat";
     conversationId: string;
@@ -1830,6 +1853,10 @@ declare const ConversationSessionSchema: z.ZodObject<{
         participantId?: string | undefined;
     } | undefined;
     profile?: Profile | undefined;
+    pendingHandoffData?: {
+        type: "end";
+        handoffData: string;
+    } | undefined;
 }, {
     channel: "sms" | "voice" | "chat";
     conversationId: string;
@@ -1842,6 +1869,10 @@ declare const ConversationSessionSchema: z.ZodObject<{
     } | undefined;
     profile?: Profile | undefined;
     metadata?: Record<string, unknown> | undefined;
+    pendingHandoffData?: {
+        handoffData: string;
+        type?: "end" | undefined;
+    } | undefined;
 }>;
 type ConversationSession = z.infer<typeof ConversationSessionSchema>;
 /**
@@ -2555,10 +2586,10 @@ type _SDKDriftGuards = {
     crelayKeys: keyof VoiceResponse.ConversationRelayAttributes extends keyof ConversationRelayAttributes ? true : never;
 };
 /**
- * Custom parameters passed via TwiML <Parameter> elements.
- * Values must be primitives — TwiML parameters are string-valued.
+ * Custom parameters passed via TwiML
+ * Can contain any key-value pairs with unknown values
  */
-declare const CustomParametersSchema: z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>;
+declare const CustomParametersSchema: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 type CustomParameters = z.infer<typeof CustomParametersSchema>;
 /**
  * WebSocket setup message from ConversationRelay
@@ -2782,7 +2813,6 @@ declare const ConversationRelayCallbackPayloadSchema: z.ZodObject<{
     SessionId: z.ZodOptional<z.ZodString>;
     SessionStatus: z.ZodOptional<z.ZodString>;
     SessionDuration: z.ZodOptional<z.ZodString>;
-    HandoffData: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     AccountSid: string;
     CallSid: string;
@@ -2798,7 +2828,6 @@ declare const ConversationRelayCallbackPayloadSchema: z.ZodObject<{
     SessionId?: string | undefined;
     SessionStatus?: string | undefined;
     SessionDuration?: string | undefined;
-    HandoffData?: string | undefined;
 }, {
     AccountSid: string;
     CallSid: string;
@@ -2814,26 +2843,8 @@ declare const ConversationRelayCallbackPayloadSchema: z.ZodObject<{
     SessionId?: string | undefined;
     SessionStatus?: string | undefined;
     SessionDuration?: string | undefined;
-    HandoffData?: string | undefined;
 }>;
 type ConversationRelayCallbackPayload = z.infer<typeof ConversationRelayCallbackPayloadSchema>;
-/**
- * Handoff data for Flex escalation
- */
-declare const HandoffDataSchema: z.ZodObject<{
-    reason: z.ZodString;
-    call_summary: z.ZodString;
-    sentiment: z.ZodString;
-}, "strip", z.ZodTypeAny, {
-    reason: string;
-    call_summary: string;
-    sentiment: string;
-}, {
-    reason: string;
-    call_summary: string;
-    sentiment: string;
-}>;
-type HandoffData = z.infer<typeof HandoffDataSchema>;
 /**
  * Options for initiating an outbound voice conversation
  */
@@ -2844,6 +2855,50 @@ interface InitiateVoiceConversationOptions {
     actionUrl?: string | undefined;
 }
 declare const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions>;
+
+/**
+ * Structured payload generated during a handoff.
+ *
+ * Contains conversation context and developer-defined attributes
+ * for routing to the target system (e.g., Flex TaskRouter).
+ *
+ * Serialized with camelCase aliases (conversationId/storeId/profileId)
+ * for the Studio Executions wire format.
+ */
+declare const HandoffPayloadSchema: z.ZodObject<{
+    conversationId: z.ZodString;
+    storeId: z.ZodString;
+    profileId: z.ZodString;
+    attributes: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+}, "strip", z.ZodTypeAny, {
+    conversationId: string;
+    storeId: string;
+    profileId: string;
+    attributes: Record<string, unknown>;
+}, {
+    conversationId: string;
+    storeId: string;
+    profileId: string;
+    attributes?: Record<string, unknown> | undefined;
+}>;
+type HandoffPayload = z.infer<typeof HandoffPayloadSchema>;
+/**
+ * ConversationRelay WebSocket ``end`` message carrying a handoff payload.
+ *
+ * ``handoffData`` is a JSON *string* (not a nested object) — ConversationRelay
+ * forwards it verbatim in the POST body to the ``<Connect action>`` URL.
+ */
+declare const PendingHandoffDataSchema: z.ZodObject<{
+    type: z.ZodDefault<z.ZodLiteral<"end">>;
+    handoffData: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    type: "end";
+    handoffData: string;
+}, {
+    handoffData: string;
+    type?: "end" | undefined;
+}>;
+type PendingHandoffData = z.infer<typeof PendingHandoffDataSchema>;
 
 /**
  * JSON Schema definition for tool parameters
@@ -2993,7 +3048,7 @@ type ToolExecutionResult = z.infer<typeof ToolExecutionResultSchema>;
 declare const BuiltInTools: {
     readonly RETRIEVE_MEMORY: "retrieve_profile_memory";
     readonly SEND_MESSAGE: "send_message";
-    readonly ESCALATE_TO_HUMAN: "escalate_to_human";
+    readonly HANDOFF: "handoff";
     readonly SEARCH_KNOWLEDGE: "search_knowledge";
 };
 type BuiltInToolName = (typeof BuiltInTools)[keyof typeof BuiltInTools];
@@ -3410,18 +3465,18 @@ declare const TACCommunicationAuthorSchema: z.ZodObject<{
     type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
     id?: string | undefined;
     name?: string | undefined;
+    profileId?: string | undefined;
     participantId?: string | undefined;
     deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-    profileId?: string | undefined;
 }, {
     address: string;
     channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
     type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
     id?: string | undefined;
     name?: string | undefined;
+    profileId?: string | undefined;
     participantId?: string | undefined;
     deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-    profileId?: string | undefined;
 }>;
 type TACCommunicationAuthor = z.infer<typeof TACCommunicationAuthorSchema>;
 /**
@@ -3517,18 +3572,18 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     }, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     }>;
     content: z.ZodObject<{
         type: z.ZodOptional<z.ZodEnum<["TEXT", "TRANSCRIPTION"]>>;
@@ -3611,18 +3666,18 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     }, {
         address: string;
         channel: "VOICE" | "SMS" | "RCS" | "EMAIL" | "WHATSAPP" | "CHAT" | "API" | "SYSTEM";
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     }>, "many">>;
     channelId: z.ZodOptional<z.ZodString>;
     createdAt: z.ZodOptional<z.ZodString>;
@@ -3637,9 +3692,9 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     };
     content: {
         type?: "TEXT" | "TRANSCRIPTION" | undefined;
@@ -3661,14 +3716,14 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     }[];
     createdAt?: string | undefined;
     updatedAt?: string | undefined;
-    channelId?: string | undefined;
     conversationId?: string | undefined;
+    channelId?: string | undefined;
     accountId?: string | undefined;
 }, {
     id: string;
@@ -3678,9 +3733,9 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     };
     content: {
         type?: "TEXT" | "TRANSCRIPTION" | undefined;
@@ -3702,14 +3757,14 @@ declare const TACCommunicationSchema: z.ZodObject<{
         type?: "HUMAN_AGENT" | "CUSTOMER" | "AI_AGENT" | undefined;
         id?: string | undefined;
         name?: string | undefined;
+        profileId?: string | undefined;
         participantId?: string | undefined;
         deliveryStatus?: "INITIATED" | "IN_PROGRESS" | "DELIVERED" | "COMPLETED" | "FAILED" | undefined;
-        profileId?: string | undefined;
     }[] | undefined;
     createdAt?: string | undefined;
     updatedAt?: string | undefined;
-    channelId?: string | undefined;
     conversationId?: string | undefined;
+    channelId?: string | undefined;
     accountId?: string | undefined;
 }>;
 type TACCommunication = z.infer<typeof TACCommunicationSchema>;
@@ -3910,6 +3965,14 @@ declare class TACConfig {
     readonly cintelSummaryOperatorSid?: string;
     /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
     readonly region?: string;
+    /**
+     * Twilio Studio Flow SID for handoff. TAC derives both the digital-handoff
+     * Studio Executions URL (`studio.twilio.com/v2/Flows/{SID}/Executions`) and
+     * the voice `<Connect action>` webhook URL
+     * (`webhooks.twilio.com/v1/Accounts/{AccountSid}/Flows/{SID}?Trigger=incomingCall`)
+     * from this SID.
+     */
+    readonly studioHandoffFlowSid?: string;
     constructor(data: TACConfigData);
     /**
      * Create TACConfig from environment variables.
@@ -3925,6 +3988,7 @@ declare class TACConfig {
      * Optional environment variables:
      * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
      * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+     * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
      *
      * Memory Configuration:
      * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
@@ -4146,6 +4210,15 @@ declare class ConversationClient extends BaseClient {
         status?: string[];
     }): Promise<ConversationResponse[]>;
     /**
+     * Clear statusCallbacks on a conversation's instance configuration.
+     *
+     * This stops the conversation from sending webhook events to TAC,
+     * which is needed during handoff so the receiving system can take over.
+     *
+     * @param conversationId - The conversation ID to update
+     */
+    clearStatusCallbacks(conversationId: string): Promise<void>;
+    /**
      * Update conversation status
      *
      * @param conversationId - The conversation ID
@@ -4296,12 +4369,6 @@ type InterruptCallback = (params: {
     durationUntilInterruptMs: number | undefined;
     session: ConversationSession;
 }) => Promise<void> | void;
-type HandoffCallback = (params: {
-    conversationId: ConversationId;
-    profileId: ProfileId | undefined;
-    reason: string;
-    session: ConversationSession;
-}) => Promise<void> | void;
 type ConversationEndedCallback = (params: {
     session: ConversationSession;
 }) => Promise<void> | void;
@@ -4337,7 +4404,6 @@ declare class TAC {
     conversationsV1ServiceSid: string | undefined;
     private messageReadyCallback?;
     private interruptCallback?;
-    private handoffCallback?;
     private conversationEndedCallback?;
     private constructor();
     static create(options?: TACOptions): Promise<TAC>;
@@ -4363,10 +4429,6 @@ declare class TAC {
      */
     onInterrupt(callback: InterruptCallback): void;
     /**
-     * Register callback for human handoff
-     */
-    onHandoff(callback: HandoffCallback): void;
-    /**
      * Register callback for when a conversation ends.
      *
      * The callback is triggered by channels when a conversation is closed
@@ -4375,14 +4437,6 @@ declare class TAC {
      * it is cleaned up.
      */
     onConversationEnded(callback: ConversationEndedCallback): void;
-    /**
-     * Trigger handoff callback
-     */
-    triggerHandoff(conversationId: ConversationId, reason: string): Promise<void>;
-    /**
-     * Get channel by conversation ID
-     */
-    private getChannelByConversationId;
     /**
      * Get registered channel by type
      */
@@ -4395,6 +4449,10 @@ declare class TAC {
      * Get memory client for advanced memory operations
      */
     getMemoryClient(): MemoryClient;
+    /**
+     * Get the memory store ID resolved from the ConversationConfiguration at startup.
+     */
+    getMemoryStoreId(): string;
     /**
      * Get knowledge client for knowledge base operations
      */
@@ -4813,10 +4871,9 @@ declare class VoiceChannel extends BaseChannel {
      * Handle ConversationRelay callback from Twilio
      *
      * @param payload - Callback payload from Twilio
-     * @param handoffHandler - Optional handler for handoff requests
      * @returns Response with status, content, and content type
      */
-    handleConversationRelayCallback(payload: ConversationRelayCallbackPayload, handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>): Promise<{
+    handleConversationRelayCallback(payload: ConversationRelayCallbackPayload): Promise<{
         status: number;
         content: string;
         contentType: string;
@@ -4884,24 +4941,26 @@ declare class VoiceChannel extends BaseChannel {
 }
 
 /**
- * Result of Flex handoff logic
+ * URL builders for Twilio Studio handoff.
+ *
+ * Shared between the tools package (digital handoff POSTs) and the server
+ * package (voice `<Connect action>` URL).
  */
-interface FlexHandoffResult {
-    success: boolean;
-    status: number;
-    content: string;
-    contentType: string;
-}
 /**
- * Handle Flex handoff logic for Twilio webhook
+ * Build the Twilio Studio Flow Executions URL for a given Flow SID.
  *
- * Generates TwiML to enqueue a call to a Twilio Flex workflow for human agent handoff.
- *
- * @param formData - Form data from webhook request containing HandoffData and CallStatus
- * @param flexWorkflowSid - Flex TaskRouter workflow SID (starts with WW)
- * @returns Result with status, content (TwiML or error), and content type
+ * Used for digital (messaging/chat) handoff — POST the handoff payload
+ * to this URL to start a Studio flow execution.
  */
-declare function handleFlexHandoffLogic(formData: Record<string, string>, flexWorkflowSid: string | undefined): FlexHandoffResult;
+declare function studioExecutionsUrl(flowSid: string): string;
+/**
+ * Build the Twilio Studio Flow voice webhook URL for a given Flow SID.
+ *
+ * Used as the `<Connect action=...>` URL in TwiML for voice handoff,
+ * so that when ConversationRelay ends the session Twilio triggers the
+ * Studio flow for an incoming call.
+ */
+declare function studioVoiceHandoffUrl(accountSid: string, flowSid: string): string;
 
 /**
  * Processor for Conversation Intelligence operator result webhooks
@@ -5029,6 +5088,21 @@ declare class TACTool<TParams = any, TResult = any> {
      * Convert to JSON string (OpenAI format by default)
      */
     toJSON(): string;
+    /**
+     * Convert this tool to an OpenAI Agents SDK `FunctionTool` instance.
+     *
+     * Unlike `toOpenAIFormat` and `toAnthropicFormat` (which return plain
+     * objects consumed by HTTP APIs), the OpenAI Agents SDK dispatches on tool
+     * *type*, so this returns a live `tool(...)` object with an invoke callback
+     * that calls this tool and JSON-encodes the result.
+     *
+     * Requires the `@openai/agents` package:
+     *
+     *     npm install @openai/agents
+     *
+     * @returns A FunctionTool ready to pass to `new Agent({ tools: [...] })`.
+     */
+    toOpenAIAgentsSDKTool(): Promise<any>;
 }
 /**
  * Create a tool directly with all parameters
@@ -5051,9 +5125,17 @@ interface MemoryRetrievalParams {
     relevanceThreshold?: number;
 }
 /**
- * Create memory retrieval tool
+ * Create memory retrieval tool.
+ *
+ * @param options - Optional overrides for tool metadata.
+ * @param options.name - Tool name exposed to the LLM. Defaults to `retrieve_profile_memory`.
+ * @param options.description - Tool description exposed to the LLM. Defaults to a
+ *   generic "retrieve memories" prompt.
  */
-declare function createMemoryRetrievalTool(memoryClient: MemoryClient, serviceSid: string, profileId?: string): TACTool<MemoryRetrievalParams, MemoryRetrievalResponse>;
+declare function createMemoryRetrievalTool(memoryClient: MemoryClient, serviceSid: string, profileId?: string, options?: {
+    name?: string;
+    description?: string;
+}): TACTool<MemoryRetrievalParams, MemoryRetrievalResponse>;
 /**
  * Create factory function for memory tools
  */
@@ -5092,36 +5174,70 @@ declare function createMessagingTools(): {
 };
 
 /**
- * Parameters for handoff tool
+ * Handoff tool for the Twilio Agent Connect.
+ *
+ * Generic Studio-backed handoff that routes a conversation to a human agent.
+ * Produces a structured HandoffPayload and delivers it as a Twilio Studio
+ * Execution (voice via `<Connect action>`, digital channels via direct POST).
  */
-interface HandoffParams {
-    reason: string;
-    urgency?: 'low' | 'medium' | 'high';
-    context?: string;
-    metadata?: Record<string, unknown>;
-}
+
 /**
- * Result from handoff tool
+ * Build a HandoffPayload from session context and attributes.
+ *
+ * Useful for custom handoff tools that want TAC's payload shape without
+ * the Studio-specific delivery in `postStudioHandoff`.
+ */
+declare function buildHandoffPayload(session: ConversationSession, memoryStoreId: string, attributes: Record<string, unknown>): HandoffPayload;
+/**
+ * POST a handoff payload to a Twilio Studio Flow Executions endpoint.
+ *
+ * Emits the Twilio Studio Executions API wire format: form-encoded
+ * `To` / `From` / `Parameters` fields with HTTP Basic auth.
+ * `Parameters` is a JSON string keyed under `HandoffData` so Studio
+ * can reference it via `{{flow.data.HandoffData.*}}`.
+ */
+declare function postStudioHandoff(payload: HandoffPayload, session: ConversationSession, options: {
+    handoffUrl: string;
+    fromAddress: string;
+    apiKey: string;
+    apiSecret: string;
+}): Promise<void>;
+/**
+ * Result returned by the handoff tool.
  */
 interface HandoffResult {
-    success: boolean;
-    handoff_id: string;
-    estimated_wait_time?: string;
+    status: 'handoff_initiated' | 'handoff_failed';
+    channel: string;
     error?: string;
 }
+interface HandoffParams {
+    reason: string;
+}
 /**
- * Create human handoff tool
+ * Create a handoff tool that delivers in the Twilio Studio Executions API shape.
+ *
+ * The returned tool exposes only `handoff({ reason })` to the LLM. All other
+ * dependencies (TAC instance, session, static attributes) are captured in the
+ * closure.
+ *
+ * On digital channels, the tool POSTs to the Studio Flow Executions endpoint
+ * derived from `tac.getConfig().studioHandoffFlowSid`. For voice channels,
+ * the payload is stored on the session and the voice channel automatically
+ * sends the WS `end` message with `handoffData` after the LLM's final
+ * response is delivered.
+ *
+ * The tool also sets the conversation to INACTIVE and clears status callbacks
+ * to prevent further webhook events from being routed to TAC.
+ *
+ * @throws Error if `tac.getConfig().studioHandoffFlowSid` is unset. The
+ *   factory is Studio-specific; a missing SID is misconfiguration, not a
+ *   soft fallback.
  */
-declare function createHandoffTool(tac: TAC, conversationId: ConversationId): TACTool<HandoffParams, HandoffResult>;
-/**
- * Create factory function for handoff tools
- */
-declare function createHandoffTools(): {
-    /**
-     * Create handoff tool for specific TAC instance and conversation
-     */
-    forConversation: (tac: TAC, conversationId: ConversationId) => TACTool<HandoffParams, HandoffResult>;
-};
+declare function createStudioHandoffTool(tac: TAC, session: ConversationSession, options?: {
+    attributes?: Record<string, unknown>;
+    name?: string;
+    description?: string;
+}): TACTool<HandoffParams, HandoffResult>;
 
 /**
  * Parameters for knowledge search tool (visible to LLM)
@@ -5205,8 +5321,6 @@ interface TACServerConfig {
     };
     /** ConversationRelay configuration (welcomeGreeting, transcription, TTS, interaction settings, etc.) */
     conversationRelayConfig?: Partial<Omit<ConversationRelayConfig, 'url'>>;
-    /** Handler for voice handoff requests (returns TwiML string) */
-    handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>;
     /** Enable development features */
     development?: boolean;
     /** Voice channel instance (alternative to registering on TAC) */
@@ -5275,4 +5389,4 @@ declare class TACServer {
     stop(): Promise<void>;
 }
 
-export { type ActionChannelSettings, ActionChannelSettingsSchema, type ActionParticipantRef, ActionParticipantRefSchema, type ActionResponse, ActionResponseSchema, type ActionTextContent, ActionTextContentSchema, type AdapterOptions, type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, BaseClient, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type ConversationsV1Bridge, ConversationsV1BridgeSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type FlexHandoffResult, type HandoffCallback, type HandoffData, HandoffDataSchema, type InitiateChatConversationOptions, type InitiateConversationResult, type InitiateMessagingConversationOptions, InitiateMessagingConversationOptionsSchema, type InitiateVoiceConversationOptions, InitiateVoiceConversationOptionsSchema, type InitiateVoiceConversationResult, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type ListCommunicationsResponse, ListCommunicationsResponseSchema, type ListConversationsResponse, ListConversationsResponseSchema, type ListParticipantsResponse, ListParticipantsResponseSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, MemoryPromptBuilder, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendMessageActionPayload, SendMessageActionPayloadSchema, type SendMessageActionRequest, SendMessageActionRequestSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type StreamTask, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, type TwilioMemoryConfig, TwilioMemoryConfigSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, createHandoffTool, createHandoffTools, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, defineTool, handleFlexHandoffLogic, isConversationId, isParticipantId, isProfileId };
+export { type ActionChannelSettings, ActionChannelSettingsSchema, type ActionParticipantRef, ActionParticipantRefSchema, type ActionResponse, ActionResponseSchema, type ActionTextContent, ActionTextContentSchema, type AdapterOptions, type AuthorInfo, AuthorInfoSchema, BaseChannel, type BaseChannelEvents, BaseClient, type BuiltInToolName, BuiltInTools, type CaptureRule, CaptureRuleSchema, type ChannelSettings, ChannelSettingsSchema, type ChannelType, ChannelTypeSchema, ChatChannel, type ChatChannelConfig, type CintelParticipant, CintelParticipantSchema, type Communication, type CommunicationContent, CommunicationContentSchema, type CommunicationParticipant, CommunicationParticipantSchema, CommunicationSchema, type ConversationAddress, ConversationAddressSchema, ConversationClient, type ConversationConfiguration, ConversationConfigurationSchema, type ConversationEndedCallback, type ConversationGroupingType, ConversationGroupingTypeSchema, type ConversationId, type ConversationIntelligenceConfig, ConversationIntelligenceConfigSchema, type ConversationParticipant, ConversationParticipantSchema, type ConversationRelayAttributes, ConversationRelayAttributesSchema, type ConversationRelayCallbackPayload, ConversationRelayCallbackPayloadSchema, type ConversationRelayConfig, ConversationRelayConfigSchema, type ConversationResponse, ConversationResponseSchema, type ConversationSession, ConversationSessionSchema, type ConversationSummaryItem, ConversationSummaryItemSchema, type ConversationsV1Bridge, ConversationsV1BridgeSchema, type CreateConversationSummariesResponse, CreateConversationSummariesResponseSchema, type CreateObservationResponse, CreateObservationResponseSchema, type CustomParameters, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, type ExecutionDetails, ExecutionDetailsSchema, type HandoffPayload, HandoffPayloadSchema, type HandoffResult, type InitiateChatConversationOptions, type InitiateConversationResult, type InitiateMessagingConversationOptions, InitiateMessagingConversationOptionsSchema, type InitiateVoiceConversationOptions, InitiateVoiceConversationOptionsSchema, type InitiateVoiceConversationResult, type IntelligenceConfiguration, IntelligenceConfigurationSchema, type InterruptCallback, type InterruptMessage, InterruptMessageSchema, type JSONSchema, JSONSchemaSchema, type KnowledgeBase, KnowledgeBaseSchema, type KnowledgeBaseStatus, KnowledgeBaseStatusSchema, type KnowledgeChunkResult, KnowledgeChunkResultSchema, KnowledgeClient, type KnowledgeSearchResponse, KnowledgeSearchResponseSchema, type LanguageAttributes, LanguageAttributesSchema, type ListCommunicationsResponse, ListCommunicationsResponseSchema, type ListConversationsResponse, ListConversationsResponseSchema, type ListParticipantsResponse, ListParticipantsResponseSchema, type Logger, type MemoryChannelType, MemoryChannelTypeSchema, MemoryClient, type MemoryCommunication, type MemoryCommunicationContent, MemoryCommunicationContentSchema, MemoryCommunicationSchema, type MemoryDeliveryStatus, MemoryDeliveryStatusSchema, type MemoryParticipant, MemoryParticipantSchema, type MemoryParticipantType, MemoryParticipantTypeSchema, MemoryPromptBuilder, type MemoryRetrievalRequest, MemoryRetrievalRequestSchema, type MemoryRetrievalResponse, MemoryRetrievalResponseSchema, type MessageDirection, MessageDirectionSchema, type MessageReadyCallback, MessagingChannel, type MessagingChannelConfig, type MessagingChannelEvents, type MessagingWebhookPayload, type ObservationInfo, ObservationInfoSchema, type OpenAITool, OpenAIToolSchema, type Operator, type OperatorProcessingResult, OperatorProcessingResultSchema, type OperatorResult, type OperatorResultEvent, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, type ParticipantAddress, ParticipantAddressSchema, type ParticipantAddressType, ParticipantAddressTypeSchema, type ParticipantId, type PendingHandoffData, PendingHandoffDataSchema, type Profile, type ProfileId, type ProfileLookupResponse, ProfileLookupResponseSchema, type ProfileResponse, ProfileResponseSchema, type PromptMessage, PromptMessageSchema, SMSChannel, type SendMessageActionPayload, SendMessageActionPayloadSchema, type SendMessageActionRequest, SendMessageActionRequestSchema, type SessionInfo, SessionInfoSchema, type SessionMessage, SessionMessageSchema, type SetupMessage, SetupMessageSchema, type StatusCallback, StatusCallbackSchema, type StatusTimeouts, StatusTimeoutsSchema, type StreamTask, type SummaryInfo, SummaryInfoSchema, TAC, type TACChannelType, TACChannelTypeSchema, type TACCommunication, type TACCommunicationAuthor, TACCommunicationAuthorSchema, type TACCommunicationContent, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, type TACConfigData, TACConfigSchema, type TACDeliveryStatus, TACDeliveryStatusSchema, TACMemoryResponse, type TACOptions, type TACParticipantType, TACParticipantTypeSchema, TACServer, type TACServerConfig, TACTool, type TextTokenMessage, TextTokenMessageSchema, type ToolContext, type ToolExecutionResult, ToolExecutionResultSchema, type ToolFunction, type Transcription, TranscriptionSchema, type TranscriptionWord, TranscriptionWordSchema, type TwilioMemoryConfig, TwilioMemoryConfigSchema, VoiceChannel, type VoiceChannelEvents, type VoiceServerConfig, VoiceServerConfigSchema, type WebSocketMessage, WebSocketMessageSchema, type _SDKDriftGuards, buildHandoffPayload, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, createStudioHandoffTool, defineTool, isConversationId, isParticipantId, isProfileId, postStudioHandoff, studioExecutionsUrl, studioVoiceHandoffUrl };

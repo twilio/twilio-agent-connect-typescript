@@ -24,6 +24,7 @@ describe('TACConfig', () => {
       TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
       VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
+      TWILIO_STUDIO_HANDOFF_FLOW_SID: process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID,
       TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS,
       TWILIO_MEMORY_OBSERVATIONS_LIMIT: process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT,
       TWILIO_MEMORY_SUMMARIES_LIMIT: process.env.TWILIO_MEMORY_SUMMARIES_LIMIT,
@@ -234,6 +235,24 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.region).toBeUndefined();
+    });
+
+    it('should read TWILIO_STUDIO_HANDOFF_FLOW_SID from environment', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID = 'FW' + 'a'.repeat(32);
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.studioHandoffFlowSid).toBe('FW' + 'a'.repeat(32));
+    });
+
+    it('should leave studioHandoffFlowSid undefined when TWILIO_STUDIO_HANDOFF_FLOW_SID is not set', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID;
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.studioHandoffFlowSid).toBeUndefined();
     });
 
     it('should use default memory configuration values when env vars not set', () => {

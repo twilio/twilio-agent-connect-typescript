@@ -42,13 +42,6 @@ export type InterruptCallback = (params: {
   session: ConversationSession;
 }) => Promise<void> | void;
 
-export type HandoffCallback = (params: {
-  conversationId: ConversationId;
-  profileId: ProfileId | undefined;
-  reason: string;
-  session: ConversationSession;
-}) => Promise<void> | void;
-
 export type ConversationEndedCallback = (params: {
   session: ConversationSession;
 }) => Promise<void> | void;
@@ -90,7 +83,6 @@ export class TAC {
   // Callback registrations
   private messageReadyCallback?: MessageReadyCallback;
   private interruptCallback?: InterruptCallback;
-  private handoffCallback?: HandoffCallback;
   private conversationEndedCallback?: ConversationEndedCallback;
 
   private constructor(token: symbol, options: TACOptions = {}) {
@@ -425,13 +417,6 @@ export class TAC {
   }
 
   /**
-   * Register callback for human handoff
-   */
-  public onHandoff(callback: HandoffCallback): void {
-    this.handoffCallback = callback;
-  }
-
-  /**
    * Register callback for when a conversation ends.
    *
    * The callback is triggered by channels when a conversation is closed
@@ -441,46 +426,6 @@ export class TAC {
    */
   public onConversationEnded(callback: ConversationEndedCallback): void {
     this.conversationEndedCallback = callback;
-  }
-
-  /**
-   * Trigger handoff callback
-   */
-  public async triggerHandoff(conversationId: ConversationId, reason: string): Promise<void> {
-    if (!this.handoffCallback) {
-      this.logger.warn({ conversation_id: conversationId }, 'No handoff callback registered');
-      return;
-    }
-
-    const channel = this.getChannelByConversationId(conversationId);
-    const session = channel?.getConversationSession(conversationId);
-
-    if (!session) {
-      throw new Error(`No session found for conversation ${conversationId}`);
-    }
-
-    try {
-      await this.handoffCallback({
-        conversationId,
-        profileId: session.profileId ? (session.profileId as ProfileId) : undefined,
-        reason,
-        session,
-      });
-    } catch (error) {
-      this.logger.error({ err: error, conversation_id: conversationId }, 'Handoff callback error');
-    }
-  }
-
-  /**
-   * Get channel by conversation ID
-   */
-  private getChannelByConversationId(conversationId: ConversationId): BaseChannel | undefined {
-    for (const channel of this.channels.values()) {
-      if (channel.isConversationActive(conversationId)) {
-        return channel;
-      }
-    }
-    return undefined;
   }
 
   /**
@@ -502,6 +447,13 @@ export class TAC {
    */
   public getMemoryClient(): MemoryClient {
     return this.memoryClient;
+  }
+
+  /**
+   * Get the memory store ID resolved from the ConversationConfiguration at startup.
+   */
+  public getMemoryStoreId(): string {
+    return this.memoryStoreId;
   }
 
   /**

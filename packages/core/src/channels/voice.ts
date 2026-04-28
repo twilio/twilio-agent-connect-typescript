@@ -455,6 +455,22 @@ export class VoiceChannel extends BaseChannel {
       };
 
       ws.send(JSON.stringify(response));
+
+      // If a handoff is pending, send the WS "end" message now that the
+      // LLM's final response has been delivered to the caller.
+      const session = this.getConversationSession(conversationId);
+      if (session?.pendingHandoffData) {
+        try {
+          ws.send(JSON.stringify(session.pendingHandoffData));
+          delete session.pendingHandoffData;
+        } catch (err) {
+          this.logger.warn(
+            { err, conversation_id: conversationId },
+            'WebSocket closed before sending handoff end message; caller will not be transferred'
+          );
+        }
+      }
+
       return Promise.resolve();
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
@@ -642,33 +658,17 @@ export class VoiceChannel extends BaseChannel {
    * Handle ConversationRelay callback from Twilio
    *
    * @param payload - Callback payload from Twilio
-   * @param handoffHandler - Optional handler for handoff requests
    * @returns Response with status, content, and content type
    */
-  public async handleConversationRelayCallback(
-    payload: ConversationRelayCallbackPayload,
-    handoffHandler?: (payload: ConversationRelayCallbackPayload) => Promise<string>
+  public handleConversationRelayCallback(
+    payload: ConversationRelayCallbackPayload
   ): Promise<{ status: number; content: string; contentType: string }> {
     this.logger.debug(
       { call_sid: payload.CallSid, call_status: payload.CallStatus },
       'ConversationRelay callback received'
     );
 
-    // Check for handoff condition: call in-progress with handoff data
-    if (payload.CallStatus === 'in-progress' && payload.HandoffData) {
-      if (handoffHandler) {
-        try {
-          const response = await handoffHandler(payload);
-          return { status: 200, content: response, contentType: 'application/xml' };
-        } catch (error) {
-          this.logger.error({ err: error }, 'Handoff handler failed');
-          return { status: 500, content: 'Handoff handler error', contentType: 'text/plain' };
-        }
-      }
-      return { status: 501, content: 'No handoff handler registered', contentType: 'text/plain' };
-    }
-
-    return { status: 200, content: 'OK', contentType: 'text/plain' };
+    return Promise.resolve({ status: 200, content: 'OK', contentType: 'text/plain' });
   }
 
   // =========================================================================

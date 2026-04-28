@@ -29,6 +29,14 @@ export class TACConfig {
   public readonly cintelSummaryOperatorSid?: string;
   /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
   public readonly region?: string;
+  /**
+   * Twilio Studio Flow SID for handoff. TAC derives both the digital-handoff
+   * Studio Executions URL (`studio.twilio.com/v2/Flows/{SID}/Executions`) and
+   * the voice `<Connect action>` webhook URL
+   * (`webhooks.twilio.com/v1/Accounts/{AccountSid}/Flows/{SID}?Trigger=incomingCall`)
+   * from this SID.
+   */
+  public readonly studioHandoffFlowSid?: string;
   constructor(data: TACConfigData) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
@@ -57,6 +65,9 @@ export class TACConfig {
     if (validatedConfig.region) {
       this.region = validatedConfig.region;
     }
+    if (validatedConfig.studioHandoffFlowSid) {
+      this.studioHandoffFlowSid = validatedConfig.studioHandoffFlowSid;
+    }
   }
 
   /**
@@ -73,6 +84,7 @@ export class TACConfig {
    * Optional environment variables:
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
+   * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
    * Memory Configuration:
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
@@ -221,6 +233,7 @@ export class TACConfig {
       cintelSummaryOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
       region: process.env[EnvironmentVariables.TWILIO_REGION],
+      studioHandoffFlowSid: process.env[EnvironmentVariables.TWILIO_STUDIO_HANDOFF_FLOW_SID],
     };
 
     return new TACConfig(rawConfig);

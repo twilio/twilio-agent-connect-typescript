@@ -114,15 +114,6 @@ describe('TAC Core', () => {
       }).not.toThrow();
     });
 
-    it('should register handoff callback', async () => {
-      const tac = await createTestTAC(getTestConfig());
-
-      const mockCallback = () => {};
-
-      expect(() => {
-        tac.onHandoff(mockCallback);
-      }).not.toThrow();
-    });
   });
 
   describe('lifecycle', () => {

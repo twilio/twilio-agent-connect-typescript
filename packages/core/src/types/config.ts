@@ -44,6 +44,18 @@ export const TACConfigSchema = z.object({
       'Invalid Twilio region format (must be a valid DNS label)'
     )
     .optional(),
+  /**
+   * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
+   * TAC derives both the digital-handoff Studio Executions URL and the voice
+   * `<Connect action>` webhook URL from this SID.
+   */
+  studioHandoffFlowSid: z
+    .string()
+    .regex(
+      /^FW[0-9a-f]{32}$/,
+      'Invalid Studio Flow SID format (expected FW followed by 32 hex chars)'
+    )
+    .optional(),
 });
 
 export type TACConfigData = z.infer<typeof TACConfigSchema>;
@@ -68,6 +80,7 @@ export const EnvironmentVariables = {
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',
   TWILIO_REGION: 'TWILIO_REGION',
+  TWILIO_STUDIO_HANDOFF_FLOW_SID: 'TWILIO_STUDIO_HANDOFF_FLOW_SID',
 } as const;
 
 /**

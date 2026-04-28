@@ -258,6 +258,29 @@ export class ConversationClient extends BaseClient {
   }
 
   /**
+   * Clear statusCallbacks on a conversation's instance configuration.
+   *
+   * This stops the conversation from sending webhook events to TAC,
+   * which is needed during handoff so the receiving system can take over.
+   *
+   * @param conversationId - The conversation ID to update
+   */
+  public async clearStatusCallbacks(conversationId: string): Promise<void> {
+    const url = `/v2/Conversations/${conversationId}`;
+
+    try {
+      await this.makeRequest<unknown>(url, 'PATCH', {
+        configuration: { statusCallbacks: [] },
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to clear status callbacks: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+  }
+
+  /**
    * Update conversation status
    *
    * @param conversationId - The conversation ID

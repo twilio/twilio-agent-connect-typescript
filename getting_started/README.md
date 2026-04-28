@@ -13,7 +13,7 @@ This guide will walk you through setting up and running your first TAC applicati
 
 You need to create Twilio Conversation and Memory services before using TAC.
 
-Create services through the [Twilio Console](https://1console.twilio.com/).
+Follow the [TAC Quickstart](https://www.twilio.com/docs/platform/tac/quickstart) for step-by-step instructions on creating these services via the [Twilio Console](https://1console.twilio.com/).
 
 **Required Services:**
 
@@ -43,6 +43,17 @@ cp .env.example .env
 
 See the **Environment Variables** section below for details.
 
+### Start ngrok First
+
+Start ngrok before the server so you have a public URL to put in `.env`:
+
+```bash
+ngrok http 8000
+# Copy the ngrok URL (e.g., https://abc123.ngrok.io)
+```
+
+Update `VOICE_PUBLIC_DOMAIN` in your `.env` file with the full ngrok URL (including `https://`). If you start the server first and then change the URL, you'll need to restart the server for it to pick up the new value.
+
 ### Install Example Dependencies and Run the Server
 
 From the `getting_started/examples/openai` directory:
@@ -54,17 +65,6 @@ npm run dev
 ```
 
 The server will start on `http://localhost:8000`.
-
-### Expose Your Server
-
-In another terminal, start ngrok:
-
-```bash
-ngrok http 8000
-# Copy the ngrok URL (e.g., https://abc123.ngrok.io)
-```
-
-Update `VOICE_PUBLIC_DOMAIN` in your `.env` file with the full ngrok URL (including `https://`).
 
 ## Environment Variables
 
@@ -83,6 +83,10 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 ### Optional (Server)
 
 - `VOICE_PUBLIC_DOMAIN`: Your ngrok domain (required for voice)
+
+### Optional (Handoff)
+
+- `TWILIO_STUDIO_HANDOFF_FLOW_SID`: Studio Flow SID used by `createStudioHandoffTool` to route conversations to a human agent (e.g., via Flex)
 
 ### Optional (Region)
 

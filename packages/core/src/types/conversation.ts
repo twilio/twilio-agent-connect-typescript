@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ChannelTypeSchema } from './config';
+import { PendingHandoffDataSchema } from './handoff';
 
 /**
  * Participant address type for different communication channels
@@ -226,6 +227,11 @@ export const ConversationSessionSchema = z.object({
   authorInfo: AuthorInfoSchema.optional(),
   profile: z.custom<Profile>().optional(),
   metadata: z.record(z.unknown()).optional().default({}),
+  /**
+   * Pending handoff payload set by the handoff tool. Voice channel sends
+   * this as a WS "end" message after the LLM's final response.
+   */
+  pendingHandoffData: PendingHandoffDataSchema.optional(),
 });
 
 export type ConversationSession = z.infer<typeof ConversationSessionSchema>;
