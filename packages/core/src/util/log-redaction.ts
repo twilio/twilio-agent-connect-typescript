@@ -1,5 +1,5 @@
-const PHONE_RE = /\+\d[\d\-\s()]{6,}\d/g;
-const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+const PHONE_RE = /\+\d[\d\s()-]{6,}\d/g;
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
 function scrubPhoneMatch(match: string): string {
   const digits = match.replace(/[\s\-()]/g, '');
@@ -23,7 +23,9 @@ export function scrubObject(obj: any): any {
   if (Array.isArray(obj)) return obj.map(scrubObject);
   if (obj !== null && typeof obj === 'object') {
     const out: Record<string, unknown> = {};
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     for (const key of Object.keys(obj)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       out[key] = scrubObject(obj[key]);
     }
     return out;

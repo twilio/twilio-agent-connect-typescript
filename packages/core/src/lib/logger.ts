@@ -8,9 +8,15 @@ export type Logger = pino.Logger;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function piiLogMethod(this: any, args: any[], method: pino.LogFn) {
+  /* eslint-disable @typescript-eslint/no-unsafe-return */
   const scrubbed = args.map(arg =>
-    typeof arg === 'string' ? scrubObject(arg) : typeof arg === 'object' && arg !== null ? scrubObject(arg) : arg
+    typeof arg === 'string'
+      ? scrubObject(arg)
+      : typeof arg === 'object' && arg !== null
+        ? scrubObject(arg)
+        : arg
   );
+  /* eslint-enable @typescript-eslint/no-unsafe-return */
   return method.apply(this, scrubbed as Parameters<pino.LogFn>);
 }
 
