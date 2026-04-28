@@ -226,57 +226,6 @@ export interface VoiceChannelEvents {
   error: Error;
 }
 
-/**
- * ConversationRelay callback payload from Twilio webhook
- *
- * Sent when a ConversationRelay session ends or transitions state.
- * Includes standard voice webhook parameters plus ConversationRelay-specific fields.
- *
- * @see https://www.twilio.com/docs/voice/twiml#request-parameters
- * @see https://www.twilio.com/docs/voice/conversationrelay/conversationrelay-noun#statuscallback
- */
-export const ConversationRelayCallbackPayloadSchema = z.object({
-  // Core Twilio identifiers (required)
-  AccountSid: z.string(),
-  CallSid: z.string(),
-
-  /** Call status with strict type checking for all valid Twilio call states */
-  CallStatus: z.enum([
-    'queued',
-    'initiated',
-    'ringing',
-    'in-progress',
-    'completed',
-    'busy',
-    'no-answer',
-    'failed',
-    'canceled',
-  ]),
-
-  // Call participants (required)
-  From: z.string(),
-  To: z.string(),
-
-  /** Direction of the call */
-  Direction: z.enum(['inbound', 'outbound-api', 'outbound-dial']),
-
-  // Standard voice webhook parameters (optional)
-  ApiVersion: z.string().optional(),
-  ForwardedFrom: z.string().optional(),
-  CallerName: z.string().optional(),
-  ParentCallSid: z.string().optional(),
-  ApplicationSid: z.string().optional(),
-
-  // ConversationRelay session information (optional)
-  SessionId: z.string().optional(),
-  SessionStatus: z.string().optional(),
-  SessionDuration: z.string().optional(),
-});
-
-export type ConversationRelayCallbackPayload = z.infer<
-  typeof ConversationRelayCallbackPayloadSchema
->;
-
 // =========================================================================
 // Outbound Voice Conversation Types
 // =========================================================================

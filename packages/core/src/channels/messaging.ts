@@ -8,55 +8,10 @@ import {
   SendMessageActionRequest,
   isConversationId,
   isProfileId,
+  ConversationsWebhookPayload,
 } from '../types/index';
-import { BaseChannel, BaseChannelEvents } from './base';
+import { BaseChannel, BaseChannelEvents, BaseChannelConfig } from './base';
 import type { TAC } from '../lib/tac';
-
-/**
- * Messaging webhook event types from Twilio Conversations Service
- * Supports the v2 format for SMS and Chat channels
- */
-export interface MessagingWebhookPayload {
-  eventType: string;
-  timestamp?: string;
-  data?: {
-    id?: string;
-    conversationId?: string;
-    accountId?: string;
-    serviceId?: string;
-    status?: string;
-    participantType?: string;
-    profileId?: string;
-    channelId?: string;
-    author?: {
-      address?: string;
-      channel?: string;
-      participantId?: string;
-    };
-    content?: {
-      type?: string;
-      text?: string;
-    };
-    recipients?: Array<{
-      address?: string;
-      channel?: string;
-      participantId?: string;
-      deliveryStatus?: string;
-    }>;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-/**
- * Messaging channel configuration options
- */
-export interface MessagingChannelConfig {
-  /** Maximum number of idempotency tokens to track for deduplication (default: 10,000) */
-  dedupCapacity?: number;
-}
-
-const DEFAULT_DEDUP_CAPACITY = 10_000;
 
 /**
  * Messaging channel event callbacks extending base callbacks
@@ -80,37 +35,10 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
  */
 export abstract class MessagingChannel extends BaseChannel {
   protected readonly messagingCallbacks: MessagingChannelEvents;
-  private readonly processedTokens = new Set<string>();
-  private readonly maxTrackedTokens: number;
 
-  constructor(tac: TAC, config?: MessagingChannelConfig) {
-    super(tac);
+  constructor(tac: TAC, config?: BaseChannelConfig) {
+    super(tac, config);
     this.messagingCallbacks = {};
-    const capacity = config?.dedupCapacity ?? DEFAULT_DEDUP_CAPACITY;
-    if (capacity < 1 || !Number.isInteger(capacity)) {
-      throw new Error('dedupCapacity must be a positive integer');
-    }
-    this.maxTrackedTokens = capacity;
-  }
-
-  /**
-   * Check if a webhook has already been processed, and if not, record the token immediately.
-   * This is intentionally a single synchronous check-and-record to prevent race conditions
-   * where a duplicate arrives while the first request is still awaiting async work.
-   * Uses a sliding window with FIFO eviction at capacity.
-   */
-  private isDuplicateWebhook(idempotencyToken: string): boolean {
-    if (this.processedTokens.has(idempotencyToken)) {
-      return true;
-    }
-
-    if (this.processedTokens.size >= this.maxTrackedTokens) {
-      const oldest = this.processedTokens.values().next().value!;
-      this.processedTokens.delete(oldest);
-    }
-
-    this.processedTokens.add(idempotencyToken);
-    return false;
   }
 
   /**
@@ -192,50 +120,17 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Check if this webhook event belongs to this channel.
-   * Returns false if the event is clearly for a different channel type.
-   */
-  private isEventForThisChannel(webhookData: MessagingWebhookPayload): boolean {
-    const eventType = webhookData.eventType;
-    const authorChannel = webhookData.data?.author?.channel;
-
-    // COMMUNICATION_CREATED: require author.channel for safe filtering
-    // Reject events without channel to prevent fanout crosstalk
-    if (eventType === 'COMMUNICATION_CREATED') {
-      if (!authorChannel) {
-        return false; // Missing channel - cannot safely determine ownership
-      }
-      return authorChannel === this.channelType.toUpperCase();
-    }
-
-    // CONVERSATION_UPDATED: only process if this channel tracks the conversation
-    if (eventType === 'CONVERSATION_UPDATED') {
-      const conversationId = this.extractConversationId(webhookData);
-      if (conversationId && !this.isConversationActive(conversationId)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  /**
    * Process messaging channel webhook from Twilio Conversations Service
    */
   public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
     this.logger.debug({ operation: 'webhook_processing', payload }, 'Processing webhook');
 
     try {
-      if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
-        this.logger.debug({ idempotency_token: idempotencyToken }, 'Skipping duplicate webhook');
-        return;
-      }
-
       if (!this.validateWebhookPayload(payload)) {
         throw new Error('Invalid webhook payload');
       }
 
-      const webhookData = payload as MessagingWebhookPayload;
+      const webhookData = payload as ConversationsWebhookPayload;
       const eventType = webhookData.eventType;
       const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
 
@@ -245,6 +140,12 @@ export abstract class MessagingChannel extends BaseChannel {
           { event_type: eventType, channel: this.channelType, conversation_id: conversationId },
           'Ignoring event for different channel type'
         );
+        return;
+      }
+
+      // Check for duplicates only after confirming this event is for this channel
+      if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
+        this.logger.debug({ idempotency_token: idempotencyToken }, 'Skipping duplicate webhook');
         return;
       }
 
@@ -303,7 +204,7 @@ export abstract class MessagingChannel extends BaseChannel {
     } catch (error) {
       // Remove the token so retries are not blocked
       if (idempotencyToken) {
-        this.processedTokens.delete(idempotencyToken);
+        this.removeProcessedToken(idempotencyToken);
       }
       this.logger.error(
         { err: error, operation: 'webhook_processing' },
@@ -316,7 +217,7 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle conversation creation event
    */
-  private handleConversationCreated(payload: MessagingWebhookPayload): void {
+  private handleConversationCreated(payload: ConversationsWebhookPayload): void {
     const conversationId = this.extractConversationId(payload);
     const profileId = this.extractProfileId(payload);
 
@@ -334,7 +235,7 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle participant added event
    */
-  private handleParticipantAdded(payload: MessagingWebhookPayload): void {
+  private handleParticipantAdded(payload: ConversationsWebhookPayload): void {
     const conversationId = this.extractConversationId(payload);
     const profileId = this.extractProfileId(payload);
 
@@ -387,7 +288,7 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle new communication event (incoming message)
    */
-  private async handleCommunicationCreated(payload: MessagingWebhookPayload): Promise<void> {
+  private async handleCommunicationCreated(payload: ConversationsWebhookPayload): Promise<void> {
     const conversationId = this.extractConversationId(payload);
     const profileId = this.extractProfileId(payload);
     // Extract message text from data.content.text
@@ -530,7 +431,7 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle conversation updated event
    */
-  private async handleConversationUpdated(payload: MessagingWebhookPayload): Promise<void> {
+  private async handleConversationUpdated(payload: ConversationsWebhookPayload): Promise<void> {
     const conversationId = this.extractConversationId(payload);
 
     if (!conversationId) {
@@ -551,7 +452,7 @@ export abstract class MessagingChannel extends BaseChannel {
    * Extract conversation ID from webhook payload
    */
   protected extractConversationId(payload: unknown): ConversationId | null {
-    const webhookData = payload as MessagingWebhookPayload;
+    const webhookData = payload as ConversationsWebhookPayload;
     const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
 
     if (conversationId && isConversationId(conversationId)) {
@@ -565,7 +466,7 @@ export abstract class MessagingChannel extends BaseChannel {
    * Extract profile ID from webhook payload
    */
   protected extractProfileId(payload: unknown): ProfileId | null {
-    const webhookData = payload as MessagingWebhookPayload;
+    const webhookData = payload as ConversationsWebhookPayload;
     const profileId = webhookData.data?.profileId;
 
     if (profileId && isProfileId(profileId)) {
@@ -591,7 +492,7 @@ export abstract class MessagingChannel extends BaseChannel {
       return false;
     }
 
-    const webhookData = payload as MessagingWebhookPayload;
+    const webhookData = payload as ConversationsWebhookPayload;
     return (
       typeof webhookData === 'object' &&
       typeof webhookData.eventType === 'string' &&

@@ -854,48 +854,6 @@ describe('VoiceChannel', () => {
 
   });
 
-  describe('handleConversationRelayCallback()', () => {
-    it('should return 200 OK for completed call without conversations', async () => {
-      const tac = await createTestTAC(getTestConfig());
-      const voiceChannel = new VoiceChannel(tac);
-
-      // Mock the listConversations to return empty
-      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([]);
-
-      const result = await voiceChannel.handleConversationRelayCallback({
-        AccountSid: 'ACtest123',
-        CallSid: 'CA123',
-        CallStatus: 'completed',
-        From: '+15551234567',
-        To: '+15559876543',
-      });
-
-      expect(result.status).toBe(200);
-      expect(result.content).toBe('OK');
-      expect(result.contentType).toBe('text/plain');
-    });
-
-    it('should not close conversations on call completion (CO handles this)', async () => {
-      const tac = await createTestTAC(getTestConfig());
-      const voiceChannel = new VoiceChannel(tac);
-
-      const listSpy = vi.spyOn(tac.getConversationClient(), 'listConversations');
-      const updateSpy = vi.spyOn(tac.getConversationClient(), 'updateConversation');
-
-      const result = await voiceChannel.handleConversationRelayCallback({
-        AccountSid: 'ACtest123',
-        CallSid: 'CA123',
-        CallStatus: 'completed',
-        From: '+15551234567',
-        To: '+15559876543',
-      });
-
-      expect(result.status).toBe(200);
-      expect(listSpy).not.toHaveBeenCalled();
-      expect(updateSpy).not.toHaveBeenCalled();
-    });
-  });
-
   describe('InterruptMessage schema', () => {
     it('should parse utteranceUntilInterrupt', () => {
       const result = InterruptMessageSchema.parse({
@@ -1440,6 +1398,225 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
+    });
+  });
+
+  describe('Webhook Processing', () => {
+    it('should handle CONVERSATION_UPDATED with CLOSED status and end local session', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      // Create a mock conversation session
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+
+      const onConversationEnded = vi.fn();
+      voiceChannel.on('conversationEnded', onConversationEnded);
+
+      // Process webhook with CONVERSATION_UPDATED and CLOSED status
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          conversationId: 'CH123',
+          status: 'CLOSED',
+        },
+      });
+
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(false);
+      expect(onConversationEnded).toHaveBeenCalledWith({
+        session: expect.objectContaining({
+          conversationId,
+        }),
+      });
+    });
+
+    it('should ignore CONVERSATION_UPDATED with CLOSED status if no local session exists', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const conversationId = 'CH123' as ConversationId;
+      const onConversationEnded = vi.fn();
+      voiceChannel.on('conversationEnded', onConversationEnded);
+
+      // Process webhook without creating a session first
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          conversationId: 'CH123',
+          status: 'CLOSED',
+        },
+      });
+
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(false);
+      expect(onConversationEnded).not.toHaveBeenCalled();
+    });
+
+    it('should ignore CONVERSATION_UPDATED with non-CLOSED status', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      const onConversationEnded = vi.fn();
+      voiceChannel.on('conversationEnded', onConversationEnded);
+
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          conversationId: 'CH123',
+          status: 'ACTIVE',
+        },
+      });
+
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+      expect(onConversationEnded).not.toHaveBeenCalled();
+    });
+
+    it('should ignore unhandled event types', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      await voiceChannel.processWebhook({
+        eventType: 'SOME_OTHER_EVENT',
+        data: {
+          conversationId: 'CH123',
+        },
+      });
+
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+    });
+
+    it('should deduplicate webhooks using idempotency token', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      const onConversationEnded = vi.fn();
+      voiceChannel.on('conversationEnded', onConversationEnded);
+
+      const payload = {
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          conversationId: 'CH123',
+          status: 'CLOSED',
+        },
+      };
+
+      // First call should process
+      await voiceChannel.processWebhook(payload, 'token-123');
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(false);
+      expect(onConversationEnded).toHaveBeenCalledTimes(1);
+
+      // Recreate session for second test
+      voiceChannel['startConversation'](conversationId);
+
+      // Second call with same token should be skipped
+      await voiceChannel.processWebhook(payload, 'token-123');
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+      expect(onConversationEnded).toHaveBeenCalledTimes(1);
+    });
+
+    it('should remove idempotency token on webhook processing error', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const onError = vi.fn();
+      voiceChannel.on('error', onError);
+
+      // Invalid payload should trigger error
+      await voiceChannel.processWebhook(null, 'token-456');
+
+      expect(onError).toHaveBeenCalled();
+
+      // Token should be removed, so retry with valid payload should work
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      await voiceChannel.processWebhook(
+        {
+          eventType: 'CONVERSATION_UPDATED',
+          data: {
+            conversationId: 'CH123',
+            status: 'CLOSED',
+          },
+        },
+        'token-456'
+      );
+
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(false);
+    });
+
+    it('should ignore events for different channel types (SMS)', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      // COMMUNICATION_CREATED with SMS channel should be ignored
+      await voiceChannel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CH123',
+          author: {
+            channel: 'SMS',
+            address: '+15551234567',
+          },
+        },
+      });
+
+      // Session should still be active (not processed)
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+    });
+
+    it('should process events for VOICE channel type', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const conversationId = 'CH123' as ConversationId;
+      voiceChannel['startConversation'](conversationId);
+
+      // COMMUNICATION_CREATED with VOICE channel should be processed (not throw)
+      await voiceChannel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CH123',
+          author: {
+            channel: 'VOICE',
+            address: '+15551234567',
+          },
+        },
+      });
+
+      // Should not throw - session still active since COMMUNICATION_CREATED isn't handled yet
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+    });
+
+    it('should ignore CONVERSATION_UPDATED for untracked conversations', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const onConversationEnded = vi.fn();
+      voiceChannel.on('conversationEnded', onConversationEnded);
+
+      // CONVERSATION_UPDATED for a conversation we don't track should be ignored
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          conversationId: 'CH_untracked',
+          status: 'CLOSED',
+        },
+      });
+
+      expect(onConversationEnded).not.toHaveBeenCalled();
     });
   });
 

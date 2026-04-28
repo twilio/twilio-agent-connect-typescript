@@ -458,3 +458,40 @@ export interface InitiateConversationResult {
 export interface InitiateVoiceConversationResult {
   callSid: string;
 }
+
+/**
+ * Webhook event payload from Twilio Conversations Service
+ * Used by all channel types (Voice, SMS, Chat)
+ * Supports the v2 webhook format
+ */
+export interface ConversationsWebhookPayload {
+  eventType: string;
+  timestamp?: string;
+  data?: {
+    id?: string;
+    conversationId?: string;
+    accountId?: string;
+    serviceId?: string;
+    status?: string;
+    participantType?: string;
+    profileId?: string;
+    channelId?: string;
+    author?: {
+      address?: string;
+      channel?: string;
+      participantId?: string;
+    };
+    content?: {
+      type?: string;
+      text?: string;
+    };
+    recipients?: Array<{
+      address?: string;
+      channel?: string;
+      participantId?: string;
+      deliveryStatus?: string;
+    }>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}

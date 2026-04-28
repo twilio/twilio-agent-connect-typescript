@@ -13,12 +13,14 @@ import {
   CustomParameters,
   ConversationRelayConfig,
   ConversationRelayConfigSchema,
-  ConversationRelayCallbackPayload,
   InitiateVoiceConversationOptions,
   InitiateVoiceConversationOptionsSchema,
+  isConversationId,
+  isProfileId,
+  ConversationsWebhookPayload,
 } from '../types/index';
 import type { InitiateVoiceConversationResult } from '../types/conversation';
-import { BaseChannel, BaseChannelEvents } from './base';
+import { BaseChannel, BaseChannelEvents, BaseChannelConfig } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
 
@@ -68,8 +70,8 @@ export class VoiceChannel extends BaseChannel {
   private readonly MAX_INITIALIZATION_RETRIES = 3;
   private twilioClient: ReturnType<typeof Twilio> | undefined;
 
-  constructor(tac: TAC) {
-    super(tac);
+  constructor(tac: TAC, config?: BaseChannelConfig) {
+    super(tac, config);
     this.webSocketConnections = new Map();
     this.voiceCallbacks = {};
     this.streamTasks = new Map();
@@ -119,12 +121,100 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Process webhook - Voice channel doesn't use traditional webhooks,
-   * but this method is required by the base class
+   * Process webhook for Voice channel
+   *
+   * Handles CONVERSATION_UPDATED events to detect when conversations are closed
+   * and clean up local session state accordingly.
    */
-  public processWebhook(_payload: unknown): Promise<void> {
-    this.logger.warn('processWebhook called but Voice channel uses WebSocket connections');
-    return Promise.resolve();
+  public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
+    this.logger.debug({ operation: 'webhook_processing', payload }, 'Processing webhook');
+
+    try {
+      if (!this.validateWebhookPayload(payload)) {
+        throw new Error('Invalid webhook payload');
+      }
+
+      const webhookData = payload as ConversationsWebhookPayload;
+      const eventType = webhookData.eventType;
+      const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+
+      // Self-filter: ignore events meant for other channel types
+      if (!this.isEventForThisChannel(webhookData)) {
+        this.logger.debug(
+          { event_type: eventType, channel: this.channelType, conversation_id: conversationId },
+          'Ignoring event for different channel type'
+        );
+        return;
+      }
+
+      // Check for duplicates only after confirming this event is for this channel
+      if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
+        this.logger.debug({ idempotency_token: idempotencyToken }, 'Skipping duplicate webhook');
+        return;
+      }
+
+      this.logger.info(
+        {
+          event_type: eventType,
+          raw_event_type: webhookData.eventType,
+          conversation_id: conversationId,
+        },
+        'Processing webhook event'
+      );
+
+      switch (eventType) {
+        case 'CONVERSATION_UPDATED':
+          this.logger.debug(
+            { conversation_id: conversationId, status: webhookData.data?.status },
+            'Handling CONVERSATION_UPDATED'
+          );
+          await this.handleConversationUpdated(webhookData);
+          break;
+
+        default:
+          this.logger.warn(
+            {
+              event_type: eventType,
+              raw_event_type: webhookData.eventType,
+              conversation_id: conversationId,
+              payload,
+            },
+            'Unhandled event type - this event will be ignored'
+          );
+      }
+
+      this.logger.debug({ event_type: eventType }, 'Webhook processing completed');
+    } catch (error) {
+      // Remove the token so retries are not blocked
+      if (idempotencyToken) {
+        this.removeProcessedToken(idempotencyToken);
+      }
+      this.logger.error(
+        { err: error, operation: 'webhook_processing' },
+        'Webhook processing error'
+      );
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
+    }
+  }
+
+  /**
+   * Handle CONVERSATION_UPDATED webhook event
+   */
+  private async handleConversationUpdated(payload: ConversationsWebhookPayload): Promise<void> {
+    const conversationId = this.extractConversationId(payload);
+
+    if (!conversationId) {
+      throw new Error('Missing conversation ID in conversation.updated event');
+    }
+
+    // Check if conversation is closed
+    if (payload.data?.status === 'CLOSED') {
+      this.logger.info(
+        { conversation_id: conversationId, status: payload.data.status },
+        'Conversation closed, cleaning up'
+      );
+      await this.endConversation(conversationId);
+    }
   }
 
   /**
@@ -651,27 +741,6 @@ export class VoiceChannel extends BaseChannel {
   }
 
   // =========================================================================
-  // ConversationRelay Callback Handling
-  // =========================================================================
-
-  /**
-   * Handle ConversationRelay callback from Twilio
-   *
-   * @param payload - Callback payload from Twilio
-   * @returns Response with status, content, and content type
-   */
-  public handleConversationRelayCallback(
-    payload: ConversationRelayCallbackPayload
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    this.logger.debug(
-      { call_sid: payload.CallSid, call_status: payload.CallStatus },
-      'ConversationRelay callback received'
-    );
-
-    return Promise.resolve({ status: 200, content: 'OK', contentType: 'text/plain' });
-  }
-
-  // =========================================================================
   // Stream Task Management
   // =========================================================================
 
@@ -805,18 +874,54 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Extract conversation ID - Not applicable for Voice channel
+   * Validate voice channel webhook payload structure
    */
-  protected extractConversationId(_payload: unknown): ConversationId | null {
-    // Voice channel doesn't use traditional webhooks
+  protected override validateWebhookPayload(payload: unknown): boolean {
+    if (!super.validateWebhookPayload(payload)) {
+      return false;
+    }
+
+    const webhookData = payload as ConversationsWebhookPayload;
+    return (
+      typeof webhookData === 'object' &&
+      typeof webhookData.eventType === 'string' &&
+      webhookData.eventType.length > 0
+    );
+  }
+
+  /**
+   * Extract conversation ID from webhook payload
+   */
+  protected extractConversationId(payload: unknown): ConversationId | null {
+    const webhookData = payload as ConversationsWebhookPayload;
+    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+
+    if (conversationId && isConversationId(conversationId)) {
+      return conversationId;
+    }
+
     return null;
   }
 
   /**
-   * Extract profile ID - Not applicable for Voice channel
+   * Extract profile ID from webhook payload
    */
-  protected extractProfileId(_payload: unknown): ProfileId | null {
-    // Voice channel doesn't use traditional webhooks
+  protected extractProfileId(payload: unknown): ProfileId | null {
+    const webhookData = payload as ConversationsWebhookPayload;
+    const profileId = webhookData.data?.profileId;
+
+    if (profileId && isProfileId(profileId)) {
+      this.logger.debug(
+        { profile_id: profileId, conversation_id: webhookData.data?.conversationId },
+        'Extracted profile ID from webhook payload'
+      );
+      return profileId;
+    }
+
+    this.logger.debug(
+      { conversation_id: webhookData.data?.conversationId },
+      'Profile ID missing or invalid in webhook payload'
+    );
     return null;
   }
 

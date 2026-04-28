@@ -461,6 +461,81 @@ describe('TACServer idempotency token', () => {
       );
     });
   });
+
+  it('should fan out webhook to multiple channels with same idempotency token but each channel self-filters', async () => {
+    const voiceChannel = tac.getChannel('voice') as VoiceChannel;
+    const smsProcessWebhookSpy = vi.spyOn(smsChannel, 'processWebhook');
+    const voiceProcessWebhookSpy = vi.spyOn(voiceChannel, 'processWebhook');
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    // Send SMS webhook (author.channel = SMS)
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'i-twilio-idempotency-token': 'tok-sms-123',
+      },
+      body: JSON.stringify({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: { channel: 'SMS', address: '+15551234567' },
+        },
+      }),
+    });
+
+    // Both channels receive the webhook
+    await vi.waitFor(() => {
+      expect(smsProcessWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
+        'tok-sms-123'
+      );
+      expect(voiceProcessWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
+        'tok-sms-123'
+      );
+    });
+
+    // Now send VOICE webhook with different token
+    smsProcessWebhookSpy.mockClear();
+    voiceProcessWebhookSpy.mockClear();
+
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'i-twilio-idempotency-token': 'tok-voice-456',
+      },
+      body: JSON.stringify({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: { channel: 'VOICE', address: '+15551234567' },
+        },
+      }),
+    });
+
+    // Both channels receive the webhook again
+    await vi.waitFor(() => {
+      expect(smsProcessWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
+        'tok-voice-456'
+      );
+      expect(voiceProcessWebhookSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
+        'tok-voice-456'
+      );
+    });
+
+    // Each channel should only track dedup for events it actually processes
+    // SMS should not be blocked by voice token, and vice versa
+  });
 });
 
 describe('TACServer with conversationRelayConfig', () => {

@@ -6,7 +6,8 @@ import {
   InitiateConversationResult,
 } from '../types/index';
 import { z } from 'zod';
-import { MessagingChannel, MessagingChannelConfig } from './messaging';
+import { MessagingChannel } from './messaging';
+import { BaseChannelConfig } from './base';
 import type { TAC } from '../lib/tac';
 
 /**
@@ -30,7 +31,7 @@ export type InitiateChatConversationOptions = z.infer<typeof InitiateChatConvers
 /**
  * Chat channel configuration options
  */
-export interface ChatChannelConfig extends MessagingChannelConfig {
+export interface ChatChannelConfig extends BaseChannelConfig {
   /** Chat agent identity string (defaults to 'ai-assistant') */
   agentAddress?: string;
 }

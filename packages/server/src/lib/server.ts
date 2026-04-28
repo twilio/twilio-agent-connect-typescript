@@ -13,7 +13,6 @@ import twilio from 'twilio';
 import {
   VoiceServerConfig,
   VoiceServerConfigSchema,
-  ConversationRelayCallbackPayloadSchema,
   ConversationRelayConfig,
   studioVoiceHandoffUrl,
 } from '@twilio/tac-core';
@@ -41,10 +40,9 @@ export interface TACServerConfig {
 
   /** Custom webhook paths */
   webhookPaths?: {
-    messaging?: string;
+    webhook?: string;
     twiml?: string;
     ws?: string;
-    conversationRelayCallback?: string;
     /** Path for Conversation Intelligence webhook (optional - only registered if provided) */
     cintel?: string;
   };
@@ -71,10 +69,9 @@ const DEFAULT_CONFIG = {
     port: 3000,
   },
   webhookPaths: {
-    messaging: '/webhook',
+    webhook: '/webhook',
     twiml: '/twiml',
     ws: '/ws',
-    conversationRelayCallback: '/conversation-relay-callback',
   },
   conversationRelayConfig: {
     welcomeGreeting: 'Hello! How can I assist you today?',
@@ -88,7 +85,7 @@ const DEFAULT_CONFIG = {
 /**
  * Batteries-included Fastify server for TAC
  *
- * Provides out-of-the-box setup for SMS and Voice channels with
+ * Provides out-of-the-box setup for Voice, SMS, and Chat channels with
  * proper webhook handling, WebSocket support, and production-ready defaults.
  *
  * Customization:
@@ -118,6 +115,8 @@ export class TACServer {
   private readonly messagingChannels: MessagingChannel[];
   /** Voice channel instance */
   private readonly voiceChannel: VoiceChannel | undefined;
+  /** All channels that need webhook processing (voice + messaging) */
+  private readonly webhookChannels: Array<VoiceChannel | MessagingChannel>;
 
   constructor(tac: TAC, config: TACServerConfig = {}) {
     this.tac = tac;
@@ -147,10 +146,16 @@ export class TACServer {
         )[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
-    if (this.messagingChannels.length === 0) {
+    // Gather all channels that need webhook processing
+    this.webhookChannels = [...this.messagingChannels];
+    if (this.voiceChannel) {
+      this.webhookChannels.push(this.voiceChannel);
+    }
+
+    if (this.webhookChannels.length === 0) {
       // eslint-disable-next-line no-console -- Fastify logger not yet initialized
       console.warn(
-        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
+        'TACServer: No channels configured. Conversations webhooks will be disabled. Register channels (e.g., "voice", "sms", or "chat") with TAC to enable webhook processing.'
       );
     }
     // Use the user-supplied Fastify instance if provided; otherwise create
@@ -242,27 +247,30 @@ export class TACServer {
    * Setup routes
    */
   private async setupRoutes(): Promise<void> {
-    // Messaging webhook — fan out to all enabled messaging channels (each self-filters)
-    if (this.messagingChannels.length > 0) {
+    // Conversations webhook
+    if (this.webhookChannels.length > 0) {
       this.fastify.post(
-        this.config.webhookPaths.messaging || '/webhook',
+        this.config.webhookPaths.webhook || '/webhook',
         async (request: FastifyRequest, reply: FastifyReply) => {
           const rawHeader = request.headers['i-twilio-idempotency-token'];
           const idempotencyToken = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-          for (const channel of this.messagingChannels) {
+
+          // Fan out to all channels
+          for (const channel of this.webhookChannels) {
             channel.processWebhook(request.body, idempotencyToken).catch((err: unknown) => {
               this.fastify.log.error(
                 { err, channel: channel.channelType },
-                'Messaging webhook processing error'
+                'Webhook processing error'
               );
             });
           }
+
           await reply.code(200).send({ status: 'ok' });
         }
       );
     }
 
-    // Voice webhook (POST - Twilio calls this when an incoming call arrives)
+    // Voice TwiML webhook (POST - Twilio calls this when an incoming call arrives)
     this.fastify.post(
       this.config.webhookPaths.twiml || '/twiml',
       async (request: FastifyRequest, reply: FastifyReply) => {
@@ -281,17 +289,16 @@ export class TACServer {
 
           // If a Studio handoff flow is configured, point `<Connect action>`
           // directly at the Studio webhook so Studio (and Flex) takes over
-          // when the ConversationRelay session ends. Otherwise, route the
-          // post-CR action back to TAC's own callback.
+          // when the ConversationRelay session ends.
           const tacConfig = this.tac.getConfig();
           const actionUrl = tacConfig.studioHandoffFlowSid
             ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid)
-            : `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
+            : undefined;
 
           // Generate TwiML to connect to ConversationRelay
           // ConversationRelay will create the conversation automatically
           const twiml = voiceChannel.handleIncomingCall({
-            actionUrl,
+            ...(actionUrl !== undefined && { actionUrl }),
             conversationRelayConfig: {
               url: websocketUrl,
               ...this.config.conversationRelayConfig,
@@ -307,44 +314,6 @@ export class TACServer {
             error: 'Internal server error',
             message: error instanceof Error ? error.message : String(error),
           });
-        }
-      }
-    );
-
-    // ConversationRelay callback endpoint
-    this.fastify.post(
-      this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback',
-      async (request: FastifyRequest, reply: FastifyReply) => {
-        try {
-          if (!this.voiceChannel) {
-            await reply.code(500).send({ error: 'Voice channel not available' });
-            return;
-          }
-
-          const voiceChannel = this.voiceChannel;
-
-          // Parse form data into payload
-          const formData = request.body as Record<string, string>;
-          const parseResult = ConversationRelayCallbackPayloadSchema.safeParse(formData);
-
-          if (!parseResult.success) {
-            this.fastify.log.error(
-              { errors: parseResult.error.errors },
-              'Invalid ConversationRelay callback payload'
-            );
-            await reply.code(400).send({ error: 'Invalid payload' });
-            return;
-          }
-
-          const result = await voiceChannel.handleConversationRelayCallback(parseResult.data);
-
-          await reply.code(result.status).type(result.contentType).send(result.content);
-        } catch (error) {
-          this.fastify.log.error(
-            'ConversationRelay callback error: ' +
-              (error instanceof Error ? error.message : String(error))
-          );
-          await reply.code(500).send({ error: 'Internal server error' });
         }
       }
     );
@@ -502,10 +471,9 @@ export class TACServer {
         {
           host: voiceConfig.host,
           port: voiceConfig.port,
-          messaging_webhook: this.config.webhookPaths.messaging,
+          conversations_webhook: this.config.webhookPaths.webhook,
           twiml_webhook: this.config.webhookPaths.twiml,
           ws_websocket: this.config.webhookPaths.ws,
-          conversation_relay_callback: this.config.webhookPaths.conversationRelayCallback,
           ...(this.config.webhookPaths.cintel && {
             cintel_webhook: this.config.webhookPaths.cintel,
           }),

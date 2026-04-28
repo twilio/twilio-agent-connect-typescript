@@ -1,8 +1,24 @@
-import { ConversationSession, ChannelType, ConversationId, ProfileId } from '../types/index';
+import {
+  ConversationSession,
+  ChannelType,
+  ConversationId,
+  ProfileId,
+  ConversationsWebhookPayload,
+} from '../types/index';
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
 import { Logger } from '../lib/logger';
 import type { TAC } from '../lib/tac';
+
+/**
+ * Base channel configuration options
+ */
+export interface BaseChannelConfig {
+  /** Maximum number of idempotency tokens to track for deduplication (default: 10,000) */
+  dedupCapacity?: number;
+}
+
+const DEFAULT_DEDUP_CAPACITY = 10_000;
 
 /**
  * Base channel event callbacks
@@ -26,20 +42,85 @@ export abstract class BaseChannel {
   protected readonly conversationClient: ConversationClient;
   protected readonly activeConversations: Map<ConversationId, ConversationSession>;
   protected readonly callbacks: BaseChannelEvents;
+  private readonly processedTokens = new Set<string>();
+  private readonly maxTrackedTokens: number;
 
-  constructor(tac: TAC) {
+  constructor(tac: TAC, channelConfig?: BaseChannelConfig) {
     this.tac = tac;
     this.config = tac.getConfig();
     this.logger = tac.logger.child({ component: 'channel' });
     this.conversationClient = tac.getConversationClient();
     this.activeConversations = new Map();
     this.callbacks = {};
+    const capacity = channelConfig?.dedupCapacity ?? DEFAULT_DEDUP_CAPACITY;
+    if (capacity < 1 || !Number.isInteger(capacity)) {
+      throw new Error('dedupCapacity must be a positive integer');
+    }
+    this.maxTrackedTokens = capacity;
   }
 
   /**
    * Get the channel type (implemented by subclasses)
    */
   public abstract get channelType(): ChannelType;
+
+  /**
+   * Check if a webhook has already been processed, and if not, record the token immediately.
+   * This is intentionally a single synchronous check-and-record to prevent race conditions
+   * where a duplicate arrives while the first request is still awaiting async work.
+   * Uses a sliding window with FIFO eviction at capacity.
+   */
+  protected isDuplicateWebhook(idempotencyToken: string): boolean {
+    if (this.processedTokens.has(idempotencyToken)) {
+      return true;
+    }
+
+    if (this.processedTokens.size >= this.maxTrackedTokens) {
+      const oldest = this.processedTokens.values().next().value!;
+      this.processedTokens.delete(oldest);
+    }
+
+    this.processedTokens.add(idempotencyToken);
+    return false;
+  }
+
+  /**
+   * Remove a token from the processed set (e.g., when processing fails and should be retried)
+   */
+  protected removeProcessedToken(idempotencyToken: string): void {
+    this.processedTokens.delete(idempotencyToken);
+  }
+
+  /**
+   * Check if this webhook event belongs to this channel.
+   * Returns false if the event is clearly for a different channel type.
+   *
+   * This method enables webhook fanout: multiple channel instances can receive
+   * the same webhook, and each self-filters based on channel-specific logic.
+   */
+  protected isEventForThisChannel(webhookData: ConversationsWebhookPayload): boolean {
+    const eventType = webhookData.eventType;
+    const authorChannel = webhookData.data?.author?.channel;
+
+    // COMMUNICATION_CREATED: require author.channel for safe filtering
+    // Reject events without channel to prevent fanout crosstalk
+    if (eventType === 'COMMUNICATION_CREATED') {
+      if (!authorChannel) {
+        return false; // Missing channel - cannot safely determine ownership
+      }
+      return authorChannel === this.channelType.toUpperCase();
+    }
+
+    // CONVERSATION_UPDATED: only process if this channel tracks the conversation
+    if (eventType === 'CONVERSATION_UPDATED') {
+      const conversationId = this.extractConversationId(webhookData);
+      if (conversationId && !this.isConversationActive(conversationId)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   /**
    * Register event callbacks

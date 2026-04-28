@@ -46,7 +46,8 @@ getting_started/  # Example apps (OpenAI integration)
 ## Key Architecture
 
 - **TAC class** (`packages/core/src/lib/tac.ts`): Central orchestrator managing config, channels, callbacks, and API clients
-- **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by `SMSChannel` (webhooks/TwiML) and `VoiceChannel` (WebSocket)
+- **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by `SMSChannel`, `ChatChannel`, and `VoiceChannel`
+- **Webhook fanout architecture**: All channels (Voice, SMS, Chat) receive Conversations Service webhooks at a single `/webhook` endpoint; each channel self-filters events using `isEventForThisChannel()` and maintains per-channel deduplication
 - **Voice channel initialization**: VoiceChannel waits for the first prompt message to initialize the conversation (fetches from ConversationRelay using `callSid`, extracts `profileId` from participants, then starts local session)
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onConversationEnded`) instead of EventEmitter
 - **Callback responses**: `onMessageReady` callbacks return `string` (auto-sent), `void`/`null` (manual `channel.sendResponse()`)
@@ -87,10 +88,9 @@ The `TACServer` class (`packages/server/src/lib/server.ts`) provides a productio
 {
   voice: { host: '0.0.0.0', port: 3000 },
   webhookPaths: {
-    sms: '/webhook',
+    webhook: '/webhook',  // Single endpoint for all channels (Voice, SMS, Chat)
     twiml: '/twiml',
     ws: '/ws',
-    conversationRelayCallback: '/conversation-relay-callback',
   },
   conversationRelayConfig: {
     welcomeGreeting: 'Hello! How can I assist you today?',
