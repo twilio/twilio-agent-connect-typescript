@@ -1,5 +1,4 @@
 import { Communication } from '../types/conversation';
-import { MemoryCommunication } from '../types/memory';
 import { MemoryRetrievalResponse, ObservationInfo, SummaryInfo } from '../types/memory';
 import { TACCommunication, TACCommunicationSchema } from '../types/tac';
 
@@ -10,29 +9,6 @@ function isMemoryRetrievalResponse(
   data: MemoryRetrievalResponse | Communication[]
 ): data is MemoryRetrievalResponse {
   return !Array.isArray(data);
-}
-
-/**
- * Normalize a Memory API communication (snake_case) to the unified camelCase format
- * expected by TACCommunicationSchema.
- */
-function normalizeMemoryCommunication(comm: MemoryCommunication): Record<string, unknown> {
-  return {
-    ...comm,
-    channelId: comm.channel_id,
-    createdAt: comm.created_at,
-    updatedAt: comm.updated_at,
-    author: {
-      ...comm.author,
-      profileId: comm.author.profile_id,
-      deliveryStatus: comm.author.delivery_status,
-    },
-    recipients: comm.recipients.map(r => ({
-      ...r,
-      profileId: r.profile_id,
-      deliveryStatus: r.delivery_status,
-    })),
-  };
 }
 
 /**
@@ -61,11 +37,9 @@ export class TACMemoryResponse {
   constructor(data: MemoryRetrievalResponse | Communication[]) {
     this._data = data;
 
-    // Parse communications through Zod schema to create proper TACCommunication objects.
-    // Memory API returns snake_case fields; normalize to camelCase before parsing.
     if (isMemoryRetrievalResponse(data)) {
       this._communications = (data.communications ?? []).map(comm =>
-        TACCommunicationSchema.parse(normalizeMemoryCommunication(comm))
+        TACCommunicationSchema.parse(comm)
       );
     } else {
       this._communications = data.map(comm => TACCommunicationSchema.parse(comm));

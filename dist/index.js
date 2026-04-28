@@ -17,7 +17,8 @@ var TwilioMemoryConfigSchema = z.object({
   traitGroups: z.array(z.string()).optional(),
   observationsLimit: z.number().int().min(0).max(100).default(20),
   summariesLimit: z.number().int().min(0).max(100).default(5),
-  communicationsLimit: z.number().int().min(0).max(100).default(0),
+  // API default is 0 (no communications fetched). SDK defaults to 10 for a useful out-of-box experience.
+  communicationsLimit: z.number().int().min(0).max(100).default(10),
   relevanceThreshold: z.number().min(0).max(1).default(0)
 });
 var TACConfigSchema = z.object({
@@ -296,7 +297,7 @@ var TACDeliveryStatusSchema = z.enum([
   "COMPLETED",
   "FAILED"
 ]);
-var TACParticipantTypeSchema = z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]);
+var TACParticipantTypeSchema = z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT", "AGENT"]);
 var TACCommunicationAuthorSchema = z.object({
   // Common fields (both APIs)
   address: z.string(),
@@ -308,7 +309,7 @@ var TACCommunicationAuthorSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
   type: TACParticipantTypeSchema.optional(),
-  profileId: z.string().optional()
+  profileId: z.string().nullable().optional()
 });
 var TACCommunicationContentSchema = z.object({
   // Conversation Orchestrator-only: content type discriminator
@@ -324,7 +325,7 @@ var TACCommunicationSchema = z.object({
   author: TACCommunicationAuthorSchema,
   content: TACCommunicationContentSchema,
   recipients: z.array(TACCommunicationAuthorSchema).default([]),
-  channelId: z.string().optional(),
+  channelId: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
   // Conversation Orchestrator-only fields
@@ -335,24 +336,6 @@ var TACCommunicationSchema = z.object({
 // packages/core/src/lib/tac-memory-response.ts
 function isMemoryRetrievalResponse(data) {
   return !Array.isArray(data);
-}
-function normalizeMemoryCommunication(comm) {
-  return {
-    ...comm,
-    channelId: comm.channel_id,
-    createdAt: comm.created_at,
-    updatedAt: comm.updated_at,
-    author: {
-      ...comm.author,
-      profileId: comm.author.profile_id,
-      deliveryStatus: comm.author.delivery_status
-    },
-    recipients: comm.recipients.map((r) => ({
-      ...r,
-      profileId: r.profile_id,
-      deliveryStatus: r.delivery_status
-    }))
-  };
 }
 var TACMemoryResponse = class {
   _data;
@@ -366,7 +349,7 @@ var TACMemoryResponse = class {
     this._data = data;
     if (isMemoryRetrievalResponse(data)) {
       this._communications = (data.communications ?? []).map(
-        (comm) => TACCommunicationSchema.parse(normalizeMemoryCommunication(comm))
+        (comm) => TACCommunicationSchema.parse(comm)
       );
     } else {
       this._communications = data.map((comm) => TACCommunicationSchema.parse(comm));
@@ -504,7 +487,7 @@ var MemoryChannelTypeSchema = z.enum([
   "API",
   "SYSTEM"
 ]);
-var MemoryParticipantTypeSchema = z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT"]);
+var MemoryParticipantTypeSchema = z.enum(["HUMAN_AGENT", "CUSTOMER", "AI_AGENT", "AGENT"]);
 var MemoryDeliveryStatusSchema = z.enum([
   "INITIATED",
   "IN_PROGRESS",
@@ -518,8 +501,8 @@ var MemoryParticipantSchema = z.object({
   address: z.string().max(254),
   channel: MemoryChannelTypeSchema,
   type: MemoryParticipantTypeSchema.optional(),
-  profile_id: z.string().optional(),
-  delivery_status: MemoryDeliveryStatusSchema.optional()
+  profileId: z.string().nullable().optional(),
+  deliveryStatus: MemoryDeliveryStatusSchema.optional()
 });
 var MemoryCommunicationContentSchema = z.object({
   text: z.string().max(8388608).optional()
@@ -529,9 +512,9 @@ var MemoryCommunicationSchema = z.object({
   author: MemoryParticipantSchema,
   content: MemoryCommunicationContentSchema,
   recipients: z.array(MemoryParticipantSchema).max(100),
-  channel_id: z.string().max(256).optional(),
-  created_at: z.string(),
-  updated_at: z.string().optional()
+  channelId: z.string().max(256).nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string().optional()
 });
 var SessionMessageSchema = z.object({
   direction: MessageDirectionSchema,
@@ -565,13 +548,14 @@ var SummaryInfoSchema = z.object({
   conversationIds: z.array(z.string()).optional()
 });
 var MemoryRetrievalRequestSchema = z.object({
+  conversationId: z.string().optional(),
   query: z.string().optional(),
   beginDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
-  observationsLimit: z.number().int().min(0).max(100).optional().default(20),
-  summariesLimit: z.number().int().min(0).max(100).optional().default(5),
-  communicationsLimit: z.number().int().min(0).max(100).optional().default(0),
-  relevanceThreshold: z.number().min(0).max(1).optional().default(0)
+  observationsLimit: z.number().int().min(0).max(100).optional(),
+  summariesLimit: z.number().int().min(0).max(100).optional(),
+  communicationsLimit: z.number().int().min(0).max(100).optional(),
+  relevanceThreshold: z.number().min(0).max(1).optional()
 });
 var MemoryRetrievalResponseSchema = z.object({
   observations: z.array(ObservationInfoSchema),
@@ -925,12 +909,12 @@ var TACConfig = class _TACConfig {
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
-   * Memory Configuration:
+   * Memory Configuration (defaults defined in TwilioMemoryConfigSchema):
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
-   * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval. Default: 20
-   * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval. Default: 5
-   * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval. Default: 0
-   * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0). Default: 0.0
+   * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval
+   * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval
+   * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval
+   * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0)
    *
    * @throws Error if required environment variables are not set or invalid
    *
@@ -964,10 +948,10 @@ var TACConfig = class _TACConfig {
     const trimmedTraitGroups = traitGroupsStr?.trim();
     const parsedTraitGroups = trimmedTraitGroups && trimmedTraitGroups.length > 0 ? trimmedTraitGroups.split(",").map((g) => g.trim()).filter((g) => g.length > 0) : void 0;
     const traitGroups = parsedTraitGroups && parsedTraitGroups.length > 0 ? parsedTraitGroups : void 0;
-    const parseIntEnv = (envVarName, value, defaultValue, min, max) => {
-      if (!value) return defaultValue;
+    const parseIntEnv = (envVarName, value, min, max) => {
+      if (!value) return void 0;
       const trimmed = value.trim();
-      if (trimmed.length === 0) return defaultValue;
+      if (trimmed.length === 0) return void 0;
       const parsed = Number(trimmed);
       if (!Number.isFinite(parsed)) {
         throw new Error(`Invalid ${envVarName}: expected an integer, got "${value}"`);
@@ -980,10 +964,10 @@ var TACConfig = class _TACConfig {
       }
       return parsed;
     };
-    const parseFloatEnv = (envVarName, value, defaultValue, min, max) => {
-      if (!value) return defaultValue;
+    const parseFloatEnv = (envVarName, value, min, max) => {
+      if (!value) return void 0;
       const trimmed = value.trim();
-      if (trimmed.length === 0) return defaultValue;
+      if (trimmed.length === 0) return void 0;
       const parsed = Number(trimmed);
       if (!Number.isFinite(parsed)) {
         throw new Error(`Invalid ${envVarName}: expected a number, got "${value}"`);
@@ -1004,14 +988,12 @@ var TACConfig = class _TACConfig {
         observationsLimit: parseIntEnv(
           "TWILIO_MEMORY_OBSERVATIONS_LIMIT",
           process.env[EnvironmentVariables.TWILIO_MEMORY_OBSERVATIONS_LIMIT],
-          20,
           0,
           100
         ),
         summariesLimit: parseIntEnv(
           "TWILIO_MEMORY_SUMMARIES_LIMIT",
           process.env[EnvironmentVariables.TWILIO_MEMORY_SUMMARIES_LIMIT],
-          5,
           0,
           100
         ),
@@ -1019,13 +1001,11 @@ var TACConfig = class _TACConfig {
           "TWILIO_MEMORY_COMMUNICATIONS_LIMIT",
           process.env[EnvironmentVariables.TWILIO_MEMORY_COMMUNICATIONS_LIMIT],
           0,
-          0,
           100
         ),
         relevanceThreshold: parseFloatEnv(
           "TWILIO_MEMORY_RELEVANCE_THRESHOLD",
           process.env[EnvironmentVariables.TWILIO_MEMORY_RELEVANCE_THRESHOLD],
-          0,
           0,
           1
         )
@@ -1179,6 +1159,7 @@ var MemoryClient = class extends BaseClient {
       );
       const validatedRequest = MemoryRetrievalRequestSchema.parse(request);
       const requestBody = {
+        conversationId: validatedRequest.conversationId,
         query: validatedRequest.query,
         beginDate: validatedRequest.beginDate,
         endDate: validatedRequest.endDate,
@@ -2208,7 +2189,14 @@ var TAC = class _TAC {
         try {
           const memoryResponse = await this.memoryClient.retrieveMemories(
             this.memoryStoreId,
-            data.profileId
+            data.profileId,
+            {
+              conversationId: data.conversationId,
+              observationsLimit: this.config.memoryConfig.observationsLimit,
+              summariesLimit: this.config.memoryConfig.summariesLimit,
+              communicationsLimit: this.config.memoryConfig.communicationsLimit,
+              relevanceThreshold: this.config.memoryConfig.relevanceThreshold
+            }
           );
           memory = new TACMemoryResponse(memoryResponse);
           this.logger.debug({ profile_id: data.profileId }, "Memory retrieved");
@@ -2403,6 +2391,7 @@ var TAC = class _TAC {
         this.memoryStoreId,
         session.profileId,
         {
+          conversationId: session.conversationId,
           query,
           observationsLimit: this.config.memoryConfig.observationsLimit,
           summariesLimit: this.config.memoryConfig.summariesLimit,
@@ -4299,7 +4288,7 @@ function defineTool(name, description, parameters, implementation) {
 }
 
 // packages/tools/src/built-in/memory.ts
-function createMemoryRetrievalTool(memoryClient, serviceSid, profileId, options = {}) {
+function createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId, options = {}) {
   return defineTool(
     options.name ?? BuiltInTools.RETRIEVE_MEMORY,
     options.description ?? "Retrieve user memories including observations, summaries, and conversation history",
@@ -4322,25 +4311,29 @@ function createMemoryRetrievalTool(memoryClient, serviceSid, profileId, options 
           type: "integer",
           minimum: 0,
           maximum: 100,
-          description: "Maximum number of observations to retrieve (0-100, default: 20)"
+          default: 20,
+          description: "Maximum number of observations to retrieve. Set to 0 to skip observations."
         },
         summariesLimit: {
           type: "integer",
           minimum: 0,
           maximum: 100,
-          description: "Maximum number of summaries to retrieve (0-100, default: 5)"
+          default: 5,
+          description: "Maximum number of summaries to retrieve. Set to 0 to skip summaries."
         },
         communicationsLimit: {
           type: "integer",
           minimum: 0,
           maximum: 100,
-          description: "Maximum number of communications to retrieve (0-100, default: 0)"
+          default: 0,
+          description: "Maximum number of communications to retrieve. Set to 0 to skip communications."
         },
         relevanceThreshold: {
           type: "number",
           minimum: 0,
           maximum: 1,
-          description: "Minimum relevance score threshold for observations and summaries (0.0-1.0, default: 0.0)"
+          default: 0,
+          description: "Minimum relevance score threshold for observations and summaries."
         }
       },
       required: [],
@@ -4353,6 +4346,7 @@ function createMemoryRetrievalTool(memoryClient, serviceSid, profileId, options 
       }
       const request = Object.fromEntries(
         Object.entries({
+          conversationId,
           query: params.query,
           beginDate: params.beginDate,
           endDate: params.endDate,
@@ -4368,14 +4362,8 @@ function createMemoryRetrievalTool(memoryClient, serviceSid, profileId, options 
 }
 function createMemoryTools(memoryClient, serviceSid) {
   return {
-    /**
-     * Create memory tool for specific profile
-     */
-    forProfile: (profileId) => createMemoryRetrievalTool(memoryClient, serviceSid, profileId),
-    /**
-     * Create memory tool for current session
-     */
-    forSession: (profileId) => createMemoryRetrievalTool(memoryClient, serviceSid, profileId)
+    forProfile: (profileId, conversationId) => createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId),
+    forSession: (profileId, conversationId) => createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId)
   };
 }
 

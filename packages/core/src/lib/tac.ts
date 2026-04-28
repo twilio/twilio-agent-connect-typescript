@@ -337,7 +337,14 @@ export class TAC {
         try {
           const memoryResponse = await this.memoryClient.retrieveMemories(
             this.memoryStoreId,
-            data.profileId
+            data.profileId,
+            {
+              conversationId: data.conversationId,
+              observationsLimit: this.config.memoryConfig.observationsLimit,
+              summariesLimit: this.config.memoryConfig.summariesLimit,
+              communicationsLimit: this.config.memoryConfig.communicationsLimit,
+              relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+            }
           );
           memory = new TACMemoryResponse(memoryResponse);
           this.logger.debug({ profile_id: data.profileId }, 'Memory retrieved');
@@ -572,6 +579,7 @@ export class TAC {
         this.memoryStoreId,
         session.profileId!,
         {
+          conversationId: session.conversationId,
           query,
           observationsLimit: this.config.memoryConfig.observationsLimit,
           summariesLimit: this.config.memoryConfig.summariesLimit,

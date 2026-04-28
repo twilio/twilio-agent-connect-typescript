@@ -1,4 +1,5 @@
 import { TACConfigData, TACConfigSchema, EnvironmentVariables } from '../types/index';
+import { z } from 'zod';
 
 /**
  * TAC Configuration class with Python-like static factory methods
@@ -37,7 +38,7 @@ export class TACConfig {
    * from this SID.
    */
   public readonly studioHandoffFlowSid?: string;
-  constructor(data: TACConfigData) {
+  constructor(data: TACConfigData | z.input<typeof TACConfigSchema>) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
 
@@ -86,12 +87,12 @@ export class TACConfig {
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
-   * Memory Configuration:
+   * Memory Configuration (defaults defined in TwilioMemoryConfigSchema):
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
-   * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval. Default: 20
-   * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval. Default: 5
-   * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval. Default: 0
-   * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0). Default: 0.0
+   * - TWILIO_MEMORY_OBSERVATIONS_LIMIT: Max observations in memory retrieval
+   * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval
+   * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval
+   * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0)
    *
    * @throws Error if required environment variables are not set or invalid
    *
@@ -140,17 +141,17 @@ export class TACConfig {
     const traitGroups =
       parsedTraitGroups && parsedTraitGroups.length > 0 ? parsedTraitGroups : undefined;
 
-    // Helper to parse integer from env var with validation and bounds checking
+    // Helper to parse integer from env var with validation and bounds checking.
+    // Returns undefined when the env var is not set, letting the Zod schema apply defaults.
     const parseIntEnv = (
       envVarName: string,
       value: string | undefined,
-      defaultValue: number,
       min: number,
       max: number
-    ): number => {
-      if (!value) return defaultValue;
+    ): number | undefined => {
+      if (!value) return undefined;
       const trimmed = value.trim();
-      if (trimmed.length === 0) return defaultValue;
+      if (trimmed.length === 0) return undefined;
 
       const parsed = Number(trimmed);
       if (!Number.isFinite(parsed)) {
@@ -165,17 +166,17 @@ export class TACConfig {
       return parsed;
     };
 
-    // Helper to parse float from env var with validation and bounds checking
+    // Helper to parse float from env var with validation and bounds checking.
+    // Returns undefined when the env var is not set, letting the Zod schema apply defaults.
     const parseFloatEnv = (
       envVarName: string,
       value: string | undefined,
-      defaultValue: number,
       min: number,
       max: number
-    ): number => {
-      if (!value) return defaultValue;
+    ): number | undefined => {
+      if (!value) return undefined;
       const trimmed = value.trim();
-      if (trimmed.length === 0) return defaultValue;
+      if (trimmed.length === 0) return undefined;
 
       const parsed = Number(trimmed);
       if (!Number.isFinite(parsed)) {
@@ -187,7 +188,7 @@ export class TACConfig {
       return parsed;
     };
 
-    const rawConfig: TACConfigData = {
+    const rawConfig = {
       accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
       authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
@@ -198,14 +199,12 @@ export class TACConfig {
         observationsLimit: parseIntEnv(
           'TWILIO_MEMORY_OBSERVATIONS_LIMIT',
           process.env[EnvironmentVariables.TWILIO_MEMORY_OBSERVATIONS_LIMIT],
-          20,
           0,
           100
         ),
         summariesLimit: parseIntEnv(
           'TWILIO_MEMORY_SUMMARIES_LIMIT',
           process.env[EnvironmentVariables.TWILIO_MEMORY_SUMMARIES_LIMIT],
-          5,
           0,
           100
         ),
@@ -213,13 +212,11 @@ export class TACConfig {
           'TWILIO_MEMORY_COMMUNICATIONS_LIMIT',
           process.env[EnvironmentVariables.TWILIO_MEMORY_COMMUNICATIONS_LIMIT],
           0,
-          0,
           100
         ),
         relevanceThreshold: parseFloatEnv(
           'TWILIO_MEMORY_RELEVANCE_THRESHOLD',
           process.env[EnvironmentVariables.TWILIO_MEMORY_RELEVANCE_THRESHOLD],
-          0.0,
           0.0,
           1.0
         ),

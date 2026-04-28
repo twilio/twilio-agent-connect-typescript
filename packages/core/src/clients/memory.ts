@@ -58,6 +58,7 @@ export class MemoryClient extends BaseClient {
 
       // Serialize request to Memory API wire format (camelCase)
       const requestBody = {
+        conversationId: validatedRequest.conversationId,
         query: validatedRequest.query,
         beginDate: validatedRequest.beginDate,
         endDate: validatedRequest.endDate,

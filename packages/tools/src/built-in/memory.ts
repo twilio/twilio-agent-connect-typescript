@@ -31,6 +31,7 @@ export function createMemoryRetrievalTool(
   memoryClient: MemoryClient,
   serviceSid: string,
   profileId?: string,
+  conversationId?: string,
   options: { name?: string; description?: string } = {}
 ): TACTool<MemoryRetrievalParams, MemoryRetrievalResponse> {
   return defineTool(
@@ -56,26 +57,30 @@ export function createMemoryRetrievalTool(
           type: 'integer',
           minimum: 0,
           maximum: 100,
-          description: 'Maximum number of observations to retrieve (0-100, default: 20)',
+          default: 20,
+          description: 'Maximum number of observations to retrieve. Set to 0 to skip observations.',
         },
         summariesLimit: {
           type: 'integer',
           minimum: 0,
           maximum: 100,
-          description: 'Maximum number of summaries to retrieve (0-100, default: 5)',
+          default: 5,
+          description: 'Maximum number of summaries to retrieve. Set to 0 to skip summaries.',
         },
         communicationsLimit: {
           type: 'integer',
           minimum: 0,
           maximum: 100,
-          description: 'Maximum number of communications to retrieve (0-100, default: 0)',
+          default: 0,
+          description:
+            'Maximum number of communications to retrieve. Set to 0 to skip communications.',
         },
         relevanceThreshold: {
           type: 'number',
           minimum: 0.0,
           maximum: 1.0,
-          description:
-            'Minimum relevance score threshold for observations and summaries (0.0-1.0, default: 0.0)',
+          default: 0.0,
+          description: 'Minimum relevance score threshold for observations and summaries.',
         },
       },
       required: [], // No required parameters
@@ -86,9 +91,9 @@ export function createMemoryRetrievalTool(
         throw new Error('No profile ID available for memory retrieval');
       }
 
-      // Filter out undefined values to satisfy exactOptionalPropertyTypes
       const request = Object.fromEntries(
         Object.entries({
+          conversationId,
           query: params.query,
           beginDate: params.beginDate,
           endDate: params.endDate,
@@ -111,20 +116,20 @@ export function createMemoryTools(
   memoryClient: MemoryClient,
   serviceSid: string
 ): {
-  forProfile: (profileId: string) => TACTool<MemoryRetrievalParams, MemoryRetrievalResponse>;
-  forSession: (profileId?: string) => TACTool<MemoryRetrievalParams, MemoryRetrievalResponse>;
+  forProfile: (
+    profileId: string,
+    conversationId?: string
+  ) => TACTool<MemoryRetrievalParams, MemoryRetrievalResponse>;
+  forSession: (
+    profileId?: string,
+    conversationId?: string
+  ) => TACTool<MemoryRetrievalParams, MemoryRetrievalResponse>;
 } {
   return {
-    /**
-     * Create memory tool for specific profile
-     */
-    forProfile: (profileId: string) =>
-      createMemoryRetrievalTool(memoryClient, serviceSid, profileId),
+    forProfile: (profileId: string, conversationId?: string) =>
+      createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId),
 
-    /**
-     * Create memory tool for current session
-     */
-    forSession: (profileId?: string) =>
-      createMemoryRetrievalTool(memoryClient, serviceSid, profileId),
+    forSession: (profileId?: string, conversationId?: string) =>
+      createMemoryRetrievalTool(memoryClient, serviceSid, profileId, conversationId),
   };
 }

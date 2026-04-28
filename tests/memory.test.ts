@@ -35,14 +35,7 @@ describe('Memory Functionality', () => {
       const mockMemoryResponse: MemoryRetrievalResponse = {
         observations: [],
         summaries: [],
-        sessions: [],
         communications: [],
-        metadata: {
-          total_observations: 0,
-          total_summaries: 0,
-          total_sessions: 0,
-          query_timestamp: new Date().toISOString(),
-        },
       };
 
       // Mock the memory client method
@@ -67,17 +60,18 @@ describe('Memory Functionality', () => {
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_existing',
         {
+          conversationId: 'conv_test_123',
           query: 'test query',
           observationsLimit: 20,
           summariesLimit: 5,
-          communicationsLimit: 0,
+          communicationsLimit: 10,
           relevanceThreshold: 0.0,
         }
       );
     });
 
     it('should auto-lookup profile when missing', async () => {
-      
+
       const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
 
       const mockLookupResponse = {
@@ -88,14 +82,7 @@ describe('Memory Functionality', () => {
       const mockMemoryResponse: MemoryRetrievalResponse = {
         observations: [],
         summaries: [],
-        sessions: [],
         communications: [],
-        metadata: {
-          total_observations: 0,
-          total_summaries: 0,
-          total_sessions: 0,
-          query_timestamp: new Date().toISOString(),
-        },
       };
 
       const memoryClient = tac.getMemoryClient();
@@ -131,10 +118,11 @@ describe('Memory Functionality', () => {
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_00000000000000000000000001',
         {
+          conversationId: 'conv_test_123',
           query: 'test query',
           observationsLimit: 20,
           summariesLimit: 5,
-          communicationsLimit: 0,
+          communicationsLimit: 10,
           relevanceThreshold: 0.0,
         }
       );
@@ -160,14 +148,7 @@ describe('Memory Functionality', () => {
       const mockMemoryResponse: MemoryRetrievalResponse = {
         observations: [],
         summaries: [],
-        sessions: [],
         communications: [],
-        metadata: {
-          total_observations: 0,
-          total_summaries: 0,
-          total_sessions: 0,
-          query_timestamp: new Date().toISOString(),
-        },
       };
 
       const memoryClient = tac.getMemoryClient();
@@ -190,10 +171,11 @@ describe('Memory Functionality', () => {
         'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
         'mem_profile_00000000000000000000000001',
         {
+          conversationId: 'conv_test_123',
           query: undefined,
           observationsLimit: 20,
           summariesLimit: 5,
-          communicationsLimit: 0,
+          communicationsLimit: 10,
           relevanceThreshold: 0.0,
         }
       );
@@ -421,7 +403,7 @@ describe('Memory Functionality', () => {
             type: 'CUSTOMER',
             address: '+15551234567',
             channel: 'SMS',
-            profile_id: 'profile_456',
+            profileId: 'profile_456',
           },
           content: { text: 'Hello from Memory' },
           recipients: [
@@ -433,8 +415,8 @@ describe('Memory Functionality', () => {
               channel: 'SMS',
             },
           ],
-          channel_id: 'SM123',
-          created_at: '2025-01-15T10:15:30Z',
+          channelId: 'SM123',
+          createdAt: '2025-01-15T10:15:30Z',
         },
       ];
 

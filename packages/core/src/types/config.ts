@@ -13,7 +13,8 @@ export const TwilioMemoryConfigSchema = z.object({
   traitGroups: z.array(z.string()).optional(),
   observationsLimit: z.number().int().min(0).max(100).default(20),
   summariesLimit: z.number().int().min(0).max(100).default(5),
-  communicationsLimit: z.number().int().min(0).max(100).default(0),
+  // API default is 0 (no communications fetched). SDK defaults to 10 for a useful out-of-box experience.
+  communicationsLimit: z.number().int().min(0).max(100).default(10),
   relevanceThreshold: z.number().min(0.0).max(1.0).default(0.0),
 });
 

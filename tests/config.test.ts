@@ -262,7 +262,7 @@ describe('TACConfig', () => {
 
       expect(config.memoryConfig.observationsLimit).toBe(20);
       expect(config.memoryConfig.summariesLimit).toBe(5);
-      expect(config.memoryConfig.communicationsLimit).toBe(0);
+      expect(config.memoryConfig.communicationsLimit).toBe(10);
       expect(config.memoryConfig.relevanceThreshold).toBe(0.0);
       expect(config.memoryConfig.traitGroups).toBeUndefined();
     });

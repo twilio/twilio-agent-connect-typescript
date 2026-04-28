@@ -103,6 +103,26 @@ async function handleMessageReady(params: {
         });
       }
 
+      // Add recent message history
+      if (memory.communications && memory.communications.length > 0) {
+        memoryContext.push('Recent message history:');
+        const recentComms = memory.communications.slice(-10);
+        for (const comm of recentComms) {
+          let role = 'Unknown';
+          if (comm.author?.type === 'CUSTOMER') {
+            role = 'User';
+          } else if (
+            comm.author?.type === 'AI_AGENT' ||
+            comm.author?.type === 'HUMAN_AGENT' ||
+            comm.author?.type === 'AGENT'
+          ) {
+            role = 'Assistant';
+          }
+          const content = comm.content?.text ?? '';
+          memoryContext.push(`${role}: ${content}`);
+        }
+      }
+
       // Prepend memory context to user message
       if (memoryContext.length > 0) {
         userMessage = `${memoryContext.join('\n')}\n\nUser message: ${message}`;

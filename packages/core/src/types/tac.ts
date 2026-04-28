@@ -31,7 +31,7 @@ export type TACDeliveryStatus = z.infer<typeof TACDeliveryStatusSchema>;
 /**
  * Participant type
  */
-export const TACParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT']);
+export const TACParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT']);
 export type TACParticipantType = z.infer<typeof TACParticipantTypeSchema>;
 
 /**
@@ -52,7 +52,7 @@ export const TACCommunicationAuthorSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
   type: TACParticipantTypeSchema.optional(),
-  profileId: z.string().optional(),
+  profileId: z.string().nullable().optional(),
 });
 
 export type TACCommunicationAuthor = z.infer<typeof TACCommunicationAuthorSchema>;
@@ -83,7 +83,7 @@ export const TACCommunicationSchema = z.object({
   author: TACCommunicationAuthorSchema,
   content: TACCommunicationContentSchema,
   recipients: z.array(TACCommunicationAuthorSchema).default([]),
-  channelId: z.string().optional(),
+  channelId: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 

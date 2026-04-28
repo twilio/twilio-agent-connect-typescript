@@ -24,7 +24,7 @@ export type MemoryChannelType = z.infer<typeof MemoryChannelTypeSchema>;
 /**
  * Participant type in Memory API
  */
-export const MemoryParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT']);
+export const MemoryParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT']);
 export type MemoryParticipantType = z.infer<typeof MemoryParticipantTypeSchema>;
 
 /**
@@ -44,7 +44,7 @@ export type MemoryDeliveryStatus = z.infer<typeof MemoryDeliveryStatusSchema>;
  *
  * Memory API has different field requirements than Conversation Orchestrator:
  * - Uses `id` and `name` instead of just `participant_id`
- * - Includes `type` and `profile_id` fields
+ * - Includes `type` and `profileId` fields
  */
 export const MemoryParticipantSchema = z.object({
   id: z.string(),
@@ -52,8 +52,8 @@ export const MemoryParticipantSchema = z.object({
   address: z.string().max(254),
   channel: MemoryChannelTypeSchema,
   type: MemoryParticipantTypeSchema.optional(),
-  profile_id: z.string().optional(),
-  delivery_status: MemoryDeliveryStatusSchema.optional(),
+  profileId: z.string().nullable().optional(),
+  deliveryStatus: MemoryDeliveryStatusSchema.optional(),
 });
 
 export type MemoryParticipant = z.infer<typeof MemoryParticipantSchema>;
@@ -74,17 +74,17 @@ export type MemoryCommunicationContent = z.infer<typeof MemoryCommunicationConte
  * A communication from Memory API (historical conversation data).
  *
  * Memory API has different field requirements than Conversation Orchestrator:
- * - No `conversation_id`, `account_id`, or `content.type` fields
- * - Participants use `id`, `name`, `type`, `profile_id`
+ * - No `conversationId`, `accountId`, or `content.type` fields
+ * - Participants use `id`, `name`, `type`, `profileId`
  */
 export const MemoryCommunicationSchema = z.object({
   id: z.string(),
   author: MemoryParticipantSchema,
   content: MemoryCommunicationContentSchema,
   recipients: z.array(MemoryParticipantSchema).max(100),
-  channel_id: z.string().max(256).optional(),
-  created_at: z.string(),
-  updated_at: z.string().optional(),
+  channelId: z.string().max(256).nullable().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string().optional(),
 });
 
 export type MemoryCommunication = z.infer<typeof MemoryCommunicationSchema>;
@@ -145,19 +145,21 @@ export const SummaryInfoSchema = z.object({
 export type SummaryInfo = z.infer<typeof SummaryInfoSchema>;
 
 /**
- * Memory retrieval request parameters
+ * Memory retrieval request parameters.
  *
- * Note: Internal representation uses camelCase. The client layer is responsible
- * for serializing to the wire format expected by the Memory API.
+ * Defaults match the Memory API server defaults. The SDK-level defaults in
+ * TwilioMemoryConfigSchema may differ (e.g. communicationsLimit defaults to 10
+ * in the SDK config for a better out-of-box experience, vs 0 on the API).
  */
 export const MemoryRetrievalRequestSchema = z.object({
+  conversationId: z.string().optional(),
   query: z.string().optional(),
   beginDate: z.string().datetime().optional(),
   endDate: z.string().datetime().optional(),
-  observationsLimit: z.number().int().min(0).max(100).optional().default(20),
-  summariesLimit: z.number().int().min(0).max(100).optional().default(5),
-  communicationsLimit: z.number().int().min(0).max(100).optional().default(0),
-  relevanceThreshold: z.number().min(0.0).max(1.0).optional().default(0.0),
+  observationsLimit: z.number().int().min(0).max(100).optional(),
+  summariesLimit: z.number().int().min(0).max(100).optional(),
+  communicationsLimit: z.number().int().min(0).max(100).optional(),
+  relevanceThreshold: z.number().min(0.0).max(1.0).optional(),
 });
 
 export type MemoryRetrievalRequest = z.infer<typeof MemoryRetrievalRequestSchema>;
