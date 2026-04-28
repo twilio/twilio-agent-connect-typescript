@@ -5,7 +5,6 @@ import {
   maskAddress,
   scrubPii,
   scrubObject,
-  createLogger,
   SMSChannel,
   TAC,
   ConversationClient,
@@ -143,6 +142,26 @@ describe('PII masking', () => {
     it('should scrub string values directly', () => {
       expect(scrubObject('Call +15551234567')).toBe('Call +1***4567');
     });
+
+    it('should handle circular references without stack overflow', () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const obj: any = { phone: '+15551234567' };
+      obj.self = obj;
+      const result = scrubObject(obj);
+      expect(result.phone).toBe('+1***4567');
+      expect(result.self).toBe('[Circular]');
+    });
+
+    it('should preserve Error instances and scrub their messages', () => {
+      const err = new Error('Failed for +15551234567');
+      err.name = 'LookupError';
+      const result = scrubObject(err);
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toBe('Failed for +1***4567');
+      expect(result.name).toBe('LookupError');
+      expect(result.stack).toBeDefined();
+      expect(result.stack).not.toContain('+15551234567');
+    });
   });
 
   describe('PII safety filter (Pino hook)', () => {
@@ -207,6 +226,16 @@ describe('PII masking', () => {
       expect(parsed.conversation_id).toBe('CH123');
       expect(parsed.count).toBe(42);
       expect(parsed.msg).toBe('clean log');
+    });
+
+    it('should scrub Error messages while preserving stack', () => {
+      const lines = collectLogs(logger => {
+        logger.error({ err: new Error('No profile for +15551234567') }, 'lookup failed');
+      });
+      const parsed = JSON.parse(lines[0]);
+      expect(parsed.err.message).toBe('No profile for +1***4567');
+      expect(parsed.err.stack).toBeDefined();
+      expect(parsed.err.stack).not.toContain('+15551234567');
     });
   });
 
