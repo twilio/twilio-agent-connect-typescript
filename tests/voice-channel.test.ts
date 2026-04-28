@@ -392,12 +392,10 @@ describe('VoiceChannel', () => {
       last: true,
     });
 
-    it('should fire onConversationEnded on WebSocket disconnect', async () => {
+    it('should NOT end conversation on WebSocket disconnect (handled by webhook)', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const captured: ConversationSession[] = [];
 
-      // Mock conversation client methods for initialization
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
       ] as any);
@@ -408,42 +406,32 @@ describe('VoiceChannel', () => {
         },
       ] as any);
 
-      const ended = new Promise<void>(resolve => {
-        tac.onConversationEnded(({ session }) => {
-          captured.push(session);
-          resolve();
-        });
-      });
+      const onConversationEnded = vi.fn();
+      tac.onConversationEnded(onConversationEnded);
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
 
-      // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
-
-      // Trigger first prompt (initializes conversation)
       mockWs._emit('message', Buffer.from(promptMessage));
 
-      // Wait for async initialization
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
-      // Trigger close and wait for callback
       mockWs._emit('close');
-      await ended;
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(captured).toHaveLength(1);
-      expect(captured[0].conversationId).toBe('CHcb_test12345');
-      expect(captured[0].channel).toBe('voice');
+      // Conversation should still be active (not ended by WS disconnect)
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(onConversationEnded).not.toHaveBeenCalled();
     });
 
-    it('should still clean up session if callback throws', async () => {
+    it('should clean up WebSocket state on disconnect without ending conversation', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      // Mock conversation client methods for initialization
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
       ] as any);
@@ -454,32 +442,26 @@ describe('VoiceChannel', () => {
         },
       ] as any);
 
-      const ended = new Promise<void>(resolve => {
-        tac.onConversationEnded(() => {
-          resolve();
-          throw new Error('boom');
-        });
-      });
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
 
-      // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
 
-      // Wait for async initialization
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBe(mockWs);
 
       mockWs._emit('close');
-      await ended;
-      // Allow microtasks to finish cleanup after the thrown error
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      // WebSocket state should be cleaned up
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
+      // But conversation should still be active
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
     });
 
     it('should support async callback', async () => {
@@ -498,63 +480,25 @@ describe('VoiceChannel', () => {
         },
       ] as any);
 
-      const ended = new Promise<void>(resolve => {
-        tac.onConversationEnded(async ({ session }) => {
-          captured.push(session);
-          resolve();
-        });
-      });
+      const onWebSocketDisconnected = vi.fn();
+      voiceChannel.on('webSocketDisconnected', onWebSocketDisconnected);
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
 
-      // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
 
-      // Wait for async initialization
       await new Promise(resolve => setTimeout(resolve, 10));
 
       mockWs._emit('close');
-      await ended;
-
-      expect(captured).toHaveLength(1);
-      expect(captured[0].conversationId).toBe('CHcb_test12345');
-    });
-
-    it('should clean up silently when no callback is registered', async () => {
-      const tac = await createTestTAC(getTestConfig());
-      const voiceChannel = new VoiceChannel(tac);
-
-      // Mock conversation client methods for initialization
-      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
-        { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
-      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
-        {
-          profileId: 'mem_profile_cb_test',
-          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
-        },
-      ] as any);
-
-      const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
-
-      // Trigger setup and first prompt
-      mockWs._emit('message', Buffer.from(setupMessage));
-      mockWs._emit('message', Buffer.from(promptMessage));
-
-      // Wait for async initialization
       await new Promise(resolve => setTimeout(resolve, 10));
 
+      expect(onWebSocketDisconnected).toHaveBeenCalledWith({
+        conversationId: 'CHcb_test12345',
+      });
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
-
-      mockWs._emit('close');
-      // Flush microtask-based async chain (no callback to hook into)
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
     });
 
     it('should call onError when initialization fails and not close WebSocket', async () => {

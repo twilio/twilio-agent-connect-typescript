@@ -404,12 +404,7 @@ export class VoiceChannel extends BaseChannel {
 
     ws.on('close', () => {
       if (conversationId) {
-        void this.handleWebSocketDisconnect(conversationId).catch((err: unknown) => {
-          this.logger.error(
-            { err, conversation_id: conversationId },
-            'WebSocket disconnect handler error'
-          );
-        });
+        this.handleWebSocketDisconnect(conversationId);
       }
       if (callSid) {
         this.initializationRetries.delete(callSid);
@@ -510,7 +505,7 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Handle WebSocket disconnection
    */
-  private async handleWebSocketDisconnect(conversationId: ConversationId): Promise<void> {
+  private handleWebSocketDisconnect(conversationId: ConversationId): void {
     this.cancelStreamTask(conversationId);
     this.webSocketConnections.delete(conversationId);
     this.promptQueues.delete(conversationId);
@@ -518,9 +513,6 @@ export class VoiceChannel extends BaseChannel {
     if (this.voiceCallbacks.onWebSocketDisconnected) {
       this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
-
-    // End conversation (endConversation is async in BaseChannel)
-    await this.endConversation(conversationId);
   }
 
   /**
