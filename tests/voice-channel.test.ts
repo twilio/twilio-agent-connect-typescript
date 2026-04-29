@@ -462,10 +462,12 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBe(mockWs);
 
       mockWs._emit('close');
-      await new Promise(resolve => setTimeout(resolve, 10));
 
-      // WebSocket state should be cleaned up
-      expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBeNull();
+      // Wait for WebSocket cleanup to complete
+      await vi.waitFor(() => {
+        expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBeNull();
+      });
+
       // But conversation should still be active
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
     });
@@ -498,11 +500,14 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       mockWs._emit('close');
-      await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(onWebSocketDisconnected).toHaveBeenCalledWith({
-        conversationId: 'CHcb_test12345',
+      // Wait for disconnect event
+      await vi.waitFor(() => {
+        expect(onWebSocketDisconnected).toHaveBeenCalledWith({
+          conversationId: 'CHcb_test12345',
+        });
       });
+
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
     });
 
