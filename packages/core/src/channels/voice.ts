@@ -510,7 +510,14 @@ export class VoiceChannel extends BaseChannel {
     this.promptQueues.delete(conversationId);
 
     if (this.voiceCallbacks.onWebSocketDisconnected) {
-      this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
+      try {
+        this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
+      } catch (err) {
+        this.logger.error(
+          { conversation_id: conversationId, err },
+          'Error in onWebSocketDisconnected callback'
+        );
+      }
     }
   }
 
