@@ -293,6 +293,7 @@ export abstract class BaseChannel {
    */
   public shutdown(): void {
     this.activeConversations.clear();
+    this.processedTokens.clear();
     delete this.callbacks.onConversationStarted;
     delete this.callbacks.onConversationEnded;
     delete this.callbacks.onError;
