@@ -127,7 +127,10 @@ export class VoiceChannel extends BaseChannel {
    * and clean up local session state accordingly.
    */
   public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
-    this.logger.debug({ operation: 'webhook_processing', payload }, 'Processing webhook');
+    this.logger.debug(
+      { operation: 'webhook_processing', idempotency_token: idempotencyToken },
+      'Processing webhook'
+    );
 
     try {
       if (!this.validateWebhookPayload(payload)) {
@@ -153,7 +156,7 @@ export class VoiceChannel extends BaseChannel {
         return;
       }
 
-      this.logger.info(
+      this.logger.debug(
         {
           event_type: eventType,
           raw_event_type: webhookData.eventType,
@@ -203,7 +206,7 @@ export class VoiceChannel extends BaseChannel {
     const conversationId = this.extractConversationId(payload);
 
     if (!conversationId) {
-      throw new Error('Missing conversation ID in conversation.updated event');
+      throw new Error('Missing conversation ID in CONVERSATION_UPDATED event');
     }
 
     // Check if conversation is closed

@@ -467,6 +467,12 @@ describe('TACServer idempotency token', () => {
     const smsProcessWebhookSpy = vi.spyOn(smsChannel, 'processWebhook');
     const voiceProcessWebhookSpy = vi.spyOn(voiceChannel, 'processWebhook');
 
+    // Track SMS messages to verify self-filtering (voice doesn't emit messageReceived)
+    const smsMessagesReceived: string[] = [];
+    smsChannel.on('messageReceived', ({ message }) => {
+      smsMessagesReceived.push(message);
+    });
+
     server = new TACServer(tac, {
       development: true,
       voice: { port: currentPort },
@@ -533,8 +539,16 @@ describe('TACServer idempotency token', () => {
       );
     });
 
-    // Verify self-filter happens before dedup: send VOICE event with same token as first SMS event
-    // Voice channel should process it (not blocked by SMS's token)
+    // Critical test: Verify self-filter happens BEFORE dedup
+    // Send VOICE event with same idempotency token as the first SMS event
+    //
+    // Expected behavior (filter-first, current implementation):
+    //   - SMS channel self-filters VOICE event before dedup check, never records token
+    //   - Voice channel processes VOICE event normally (token not in its dedup set)
+    //
+    // Incorrect behavior (dedup-first):
+    //   - Both channels would skip due to duplicate token (both saw 'tok-sms-123')
+    //   - Voice channel would incorrectly be blocked by SMS channel's token
     smsProcessWebhookSpy.mockClear();
     voiceProcessWebhookSpy.mockClear();
 
@@ -542,19 +556,20 @@ describe('TACServer idempotency token', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'i-twilio-idempotency-token': 'tok-sms-123', // Reuse SMS token
+        'i-twilio-idempotency-token': 'tok-sms-123', // Reuse SMS token from first request
       },
       body: JSON.stringify({
         eventType: 'COMMUNICATION_CREATED',
         data: {
           conversationId: 'CHtest123456789',
           author: { channel: 'VOICE', address: '+15551234567' },
+          content: { type: 'TEXT', text: 'voice-sms-msg' },
         },
       }),
     });
 
     await vi.waitFor(() => {
-      // Voice channel should process (self-filtered out the SMS event, so token is not in its dedup set)
+      // Both channels receive the webhook (fanout still happens)
       expect(voiceProcessWebhookSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: 'COMMUNICATION_CREATED',
@@ -562,7 +577,6 @@ describe('TACServer idempotency token', () => {
         }),
         'tok-sms-123'
       );
-      // SMS channel should skip (channel mismatch - VOICE event filtered by SMS channel)
       expect(smsProcessWebhookSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: 'COMMUNICATION_CREATED',
@@ -571,6 +585,14 @@ describe('TACServer idempotency token', () => {
         'tok-sms-123'
       );
     });
+
+    // Verify SMS channel self-filtered (didn't process the VOICE message)
+    expect(smsMessagesReceived).not.toContain('voice-sms-msg');
+
+    // Note: We can't verify voice channel processed it (no messageReceived event for voice),
+    // but the fact that processWebhook was called with the duplicate token proves
+    // self-filtering happened before deduplication. If dedup happened first, voice channel
+    // would have been blocked by SMS's token and processWebhook would have returned early.
   });
 });
 

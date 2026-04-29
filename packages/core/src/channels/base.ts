@@ -142,8 +142,10 @@ export abstract class BaseChannel {
 
   /**
    * Process incoming webhook data (implemented by subclasses)
+   * @param payload - The webhook payload to process
+   * @param idempotencyToken - Optional idempotency token for deduplication
    */
-  public abstract processWebhook(payload: unknown): Promise<void>;
+  public abstract processWebhook(payload: unknown, idempotencyToken?: string): Promise<void>;
 
   /**
    * Send a response back to the user (implemented by subclasses)

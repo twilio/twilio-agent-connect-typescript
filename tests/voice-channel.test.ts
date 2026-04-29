@@ -66,7 +66,7 @@ describe('VoiceChannel', () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const ws = voiceChannel.getWebsocket('CA_unknown' as any);
+      const ws = voiceChannel.getWebsocket('CA_unknown' as ConversationId);
 
       expect(ws).toBeNull();
     });
@@ -77,7 +77,7 @@ describe('VoiceChannel', () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const isActive = voiceChannel.isConversationActive('CA_unknown' as any);
+      const isActive = voiceChannel.isConversationActive('CA_unknown' as ConversationId);
 
       expect(isActive).toBe(false);
     });
@@ -87,7 +87,7 @@ describe('VoiceChannel', () => {
     it('should start and track a stream task', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const conversationId = 'CH_test_123' as any;
+      const conversationId = 'CH_test_123' as ConversationId;
 
       const task = voiceChannel.startStreamTask(conversationId);
 
@@ -99,7 +99,7 @@ describe('VoiceChannel', () => {
     it('should cancel an active stream task', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const conversationId = 'CH_test_123' as any;
+      const conversationId = 'CH_test_123' as ConversationId;
 
       const task = voiceChannel.startStreamTask(conversationId);
       const cancelled = voiceChannel.cancelStreamTask(conversationId);
@@ -113,7 +113,7 @@ describe('VoiceChannel', () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const cancelled = voiceChannel.cancelStreamTask('CH_nonexistent' as any);
+      const cancelled = voiceChannel.cancelStreamTask('CH_nonexistent' as ConversationId);
 
       expect(cancelled).toBe(false);
     });
@@ -121,7 +121,7 @@ describe('VoiceChannel', () => {
     it('should complete a stream task (remove from tracking)', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const conversationId = 'CH_test_123' as any;
+      const conversationId = 'CH_test_123' as ConversationId;
 
       voiceChannel.startStreamTask(conversationId);
       expect(voiceChannel.hasActiveStreamTask(conversationId)).toBe(true);
@@ -133,7 +133,7 @@ describe('VoiceChannel', () => {
     it('should replace existing stream task when starting new one', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const conversationId = 'CH_test_123' as any;
+      const conversationId = 'CH_test_123' as ConversationId;
 
       const firstTask = voiceChannel.startStreamTask(conversationId);
       const secondTask = voiceChannel.startStreamTask(conversationId);
@@ -146,7 +146,7 @@ describe('VoiceChannel', () => {
     it('should report inactive for aborted task', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const conversationId = 'CH_test_123' as any;
+      const conversationId = 'CH_test_123' as ConversationId;
 
       voiceChannel.startStreamTask(conversationId);
       voiceChannel.cancelStreamTask(conversationId);
@@ -160,16 +160,16 @@ describe('VoiceChannel', () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      voiceChannel.startStreamTask('CH_1' as any);
-      voiceChannel.startStreamTask('CH_2' as any);
+      voiceChannel.startStreamTask('CH_1' as ConversationId);
+      voiceChannel.startStreamTask('CH_2' as ConversationId);
 
-      expect(voiceChannel.hasActiveStreamTask('CH_1' as any)).toBe(true);
-      expect(voiceChannel.hasActiveStreamTask('CH_2' as any)).toBe(true);
+      expect(voiceChannel.hasActiveStreamTask('CH_1' as ConversationId)).toBe(true);
+      expect(voiceChannel.hasActiveStreamTask('CH_2' as ConversationId)).toBe(true);
 
       voiceChannel.shutdown();
 
-      expect(voiceChannel.hasActiveStreamTask('CH_1' as any)).toBe(false);
-      expect(voiceChannel.hasActiveStreamTask('CH_2' as any)).toBe(false);
+      expect(voiceChannel.hasActiveStreamTask('CH_1' as ConversationId)).toBe(false);
+      expect(voiceChannel.hasActiveStreamTask('CH_2' as ConversationId)).toBe(false);
     });
 
     it('should clear WebSocket references on shutdown', async () => {
@@ -177,11 +177,11 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
 
       // Start with no WebSocket connections
-      expect(voiceChannel.getWebsocket('CH_test' as any)).toBeNull();
+      expect(voiceChannel.getWebsocket('CH_test' as ConversationId)).toBeNull();
 
       // After shutdown, should still return null (cleared state)
       voiceChannel.shutdown();
-      expect(voiceChannel.getWebsocket('CH_test' as any)).toBeNull();
+      expect(voiceChannel.getWebsocket('CH_test' as ConversationId)).toBeNull();
     });
   });
 
@@ -404,20 +404,20 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as any);
+      ] as ConversationId);
 
       const onConversationEnded = vi.fn();
       tac.onConversationEnded(onConversationEnded);
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
@@ -440,18 +440,18 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as any);
+      ] as ConversationId);
 
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
@@ -459,13 +459,13 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
-      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBe(mockWs);
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBe(mockWs);
 
       mockWs._emit('close');
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // WebSocket state should be cleaned up
-      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBeNull();
       // But conversation should still be active
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
     });
@@ -477,20 +477,20 @@ describe('VoiceChannel', () => {
       // Mock conversation client methods for initialization
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as any);
+      ] as ConversationId);
 
       const onWebSocketDisconnected = vi.fn();
       voiceChannel.on('webSocketDisconnected', onWebSocketDisconnected);
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
@@ -524,7 +524,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -558,14 +558,14 @@ describe('VoiceChannel', () => {
         if (callCount === 1) {
           return Promise.reject(new Error('API 500 Server Error'));
         }
-        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
+        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as ConversationId);
       });
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as any);
+      ] as ConversationId);
 
       tac.registerChannel(voiceChannel);
 
@@ -574,7 +574,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -619,7 +619,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -665,14 +665,14 @@ describe('VoiceChannel', () => {
         if (callCount === 1) {
           return Promise.reject(new Error('Temporary failure'));
         }
-        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
+        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as ConversationId);
       });
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as any);
+      ] as ConversationId);
 
       tac.registerChannel(voiceChannel);
 
@@ -681,7 +681,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -727,7 +727,7 @@ describe('VoiceChannel', () => {
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       // Trigger setup and failed prompt
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -744,15 +744,15 @@ describe('VoiceChannel', () => {
       // This time make it succeed immediately
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as any);
+      ] as ConversationId);
 
-      voiceChannel.handleWebSocketConnection(mockWs2 as any);
+      voiceChannel.handleWebSocketConnection(mockWs2 as ConversationId);
       mockWs2._emit('message', Buffer.from(setupMessage));
       mockWs2._emit('message', Buffer.from(promptMessage));
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -769,7 +769,7 @@ describe('VoiceChannel', () => {
       // Mock listConversations to succeed but listParticipants to fail
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockRejectedValue(
         new Error('Failed to list participants: 500 Server Error')
       );
@@ -781,7 +781,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -865,16 +865,16 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHstream_test', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
-      ] as any);
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      ] as ConversationId);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as ConversationId);
 
       tac.registerChannel(voiceChannel);
 
       const mockWs = createStreamingMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       mockWs._emit('message', Buffer.from(JSON.stringify({
         type: 'setup',
@@ -910,7 +910,7 @@ describe('VoiceChannel', () => {
       const { voiceChannel, mockWs } = await setupForStreaming();
 
       const result = await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
+        'CHstream_test' as ConversationId,
         makeTokenStream(['Hello', ' ', 'world']),
       );
 
@@ -948,7 +948,7 @@ describe('VoiceChannel', () => {
       }
 
       const result = await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
+        'CHstream_test' as ConversationId,
         abortableStream(),
         { signal: controller.signal },
       );
@@ -976,12 +976,12 @@ describe('VoiceChannel', () => {
       mockWs.send = vi.fn(() => {
         sendCount++;
         if (sendCount >= 2) {
-          (mockWs as any).readyState = 3; // WebSocket.CLOSED
+          (mockWs as ConversationId).readyState = 3; // WebSocket.CLOSED
         }
       });
 
       const result = await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
+        'CHstream_test' as ConversationId,
         makeTokenStream(['One', 'Two', 'Three']),
       );
 
@@ -1001,7 +1001,7 @@ describe('VoiceChannel', () => {
 
       await expect(
         voiceChannel.sendStreamingResponse(
-          'CH_nonexistent' as any,
+          'CH_nonexistent' as ConversationId,
           makeTokenStream(['test']),
         )
       ).rejects.toThrow('No active WebSocket connection');
@@ -1010,37 +1010,37 @@ describe('VoiceChannel', () => {
     it('should clean up stream task when ws.send throws', async () => {
       const { voiceChannel, mockWs } = await setupForStreaming();
 
-      voiceChannel.startStreamTask('CHstream_test' as any);
+      voiceChannel.startStreamTask('CHstream_test' as ConversationId);
       mockWs.send = vi.fn(() => { throw new Error('socket write failed'); });
 
       await expect(
         voiceChannel.sendStreamingResponse(
-          'CHstream_test' as any,
+          'CHstream_test' as ConversationId,
           makeTokenStream(['boom']),
         )
       ).rejects.toThrow('socket write failed');
 
-      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(false);
+      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as ConversationId)).toBe(false);
     });
 
     it('should complete stream task on successful completion', async () => {
       const { voiceChannel } = await setupForStreaming();
 
-      voiceChannel.startStreamTask('CHstream_test' as any);
-      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(true);
+      voiceChannel.startStreamTask('CHstream_test' as ConversationId);
+      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as ConversationId)).toBe(true);
 
       await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
+        'CHstream_test' as ConversationId,
         makeTokenStream(['test']),
       );
 
-      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(false);
+      expect(voiceChannel.hasActiveStreamTask('CHstream_test' as ConversationId)).toBe(false);
     });
 
     it('should fall back to active stream task signal when no explicit signal passed', async () => {
       const { voiceChannel, mockWs } = await setupForStreaming();
 
-      const task = voiceChannel.startStreamTask('CHstream_test' as any);
+      const task = voiceChannel.startStreamTask('CHstream_test' as ConversationId);
 
       async function* slowStream(): AsyncGenerator<string> {
         yield 'First';
@@ -1049,7 +1049,7 @@ describe('VoiceChannel', () => {
       }
 
       const result = await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
+        'CHstream_test' as ConversationId,
         slowStream(),
       );
 
@@ -1066,20 +1066,20 @@ describe('VoiceChannel', () => {
     it('should stop streaming when explicit signal is aborted via cancelStreamTask', async () => {
       const { voiceChannel, mockWs } = await setupForStreaming();
 
-      const task = voiceChannel.startStreamTask('CHstream_test' as any);
+      const task = voiceChannel.startStreamTask('CHstream_test' as ConversationId);
       let yieldCount = 0;
 
       async function* slowStream(): AsyncGenerator<string> {
         yield 'First';
         yieldCount++;
         // Simulate interrupt cancelling the stream task externally
-        voiceChannel.cancelStreamTask('CHstream_test' as any);
+        voiceChannel.cancelStreamTask('CHstream_test' as ConversationId);
         yield 'Second';
         yieldCount++;
       }
 
       const result = await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
+        'CHstream_test' as ConversationId,
         slowStream(),
         { signal: task.controller.signal },
       );
@@ -1133,16 +1133,16 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHinterrupt_test', status: 'ACTIVE' },
-      ] as any);
+      ] as ConversationId);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
-      ] as any);
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      ] as ConversationId);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as ConversationId);
 
       tac.registerChannel(voiceChannel);
 
       const mockWs = createInterruptMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
 
       mockWs._emit('message', Buffer.from(JSON.stringify({
         type: 'setup',
@@ -1171,11 +1171,11 @@ describe('VoiceChannel', () => {
     it('should send stream finalization when interrupt cancels an active stream with tokens sent', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
-      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as ConversationId)).toBe(true);
 
       // Actually send a streaming token so the stream is considered active
       voiceChannel.sendStreamingResponse(
-        'CHinterrupt_test' as any,
+        'CHinterrupt_test' as ConversationId,
         (async function* () { yield 'Hello'; yield new Promise(() => {}) as never; })(),
       ).catch(() => {});
 
@@ -1200,7 +1200,7 @@ describe('VoiceChannel', () => {
     it('should not send stream finalization when stream task exists but no tokens sent', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
-      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as ConversationId)).toBe(true);
       mockWs.send.mockClear();
 
       mockWs._emit('message', Buffer.from(JSON.stringify({
@@ -1221,8 +1221,8 @@ describe('VoiceChannel', () => {
     it('should not send stream finalization when no stream is active', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
-      voiceChannel.completeStreamTask('CHinterrupt_test' as any);
-      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
+      voiceChannel.completeStreamTask('CHinterrupt_test' as ConversationId);
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as ConversationId)).toBe(false);
       mockWs.send.mockClear();
 
       mockWs._emit('message', Buffer.from(JSON.stringify({
@@ -1340,13 +1340,13 @@ describe('VoiceChannel', () => {
     it('should cancel stream task on WebSocket disconnect', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
-      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as ConversationId)).toBe(true);
 
       mockWs._emit('close');
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
+      expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as ConversationId)).toBe(false);
     });
   });
 
