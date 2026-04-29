@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SpyInstance } from 'vitest';
 import { TAC, SMSChannel } from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
+import {
+  createConversationCreatedWebhook,
+  createCommunicationCreatedWebhook,
+  createConversationUpdatedWebhook,
+} from './helpers/webhooks';
 
 describe('Integration Tests', () => {
   const getTestConfig = () => ({
@@ -100,29 +105,22 @@ describe('Integration Tests', () => {
       });
 
       // Simulate conversation start
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          profileId: 'profile_123',
-        }
-      });
+      await channel.processWebhook(
+        createConversationCreatedWebhook({
+          id: 'CHtest123456789',
+        })
+      );
 
       // Simulate message received
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           conversationId: 'CHtest123456789',
           content: {
             type: 'TEXT',
             text: 'Hello TAC',
           },
-          author: {
-            address: '+15559876543',
-            channel: 'SMS'
-          }
-        }
-      });
+        })
+      );
 
       // Wait a tick for async callbacks
       await new Promise(resolve => setTimeout(resolve, 0));
@@ -148,27 +146,21 @@ describe('Integration Tests', () => {
       const conversations = ['CHtest1', 'CHtest2', 'CHtest3'];
 
       for (const convId of conversations) {
-        await channel.processWebhook({
-          eventType: 'CONVERSATION_CREATED',
-          data: {
-            conversationId: convId,
-          }
-        });
+        await channel.processWebhook(
+          createConversationCreatedWebhook({
+            id: convId,
+          })
+        );
 
-        await channel.processWebhook({
-          eventType: 'COMMUNICATION_CREATED',
-          data: {
+        await channel.processWebhook(
+          createCommunicationCreatedWebhook({
             conversationId: convId,
             content: {
               type: 'TEXT',
-              text: `Message from ${convId}`
+              text: `Message from ${convId}`,
             },
-            author: {
-              address: '+15559876543',
-              channel: 'SMS'
-            }
-          }
-        });
+          })
+        );
       }
 
       // Verify all conversations were processed
@@ -187,51 +179,36 @@ describe('Integration Tests', () => {
       });
 
       // Send valid message
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           conversationId: 'CHtest123456789',
           content: {
             type: 'TEXT',
-            text: 'Valid message'
+            text: 'Valid message',
           },
-          author: {
-            address: '+15559876543',
-            channel: 'SMS'
-          }
-        }
-      });
+        })
+      );
 
       // Send empty messages (should be filtered)
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           conversationId: 'CHtest123456789',
           content: {
             type: 'TEXT',
-            text: ''
+            text: '',
           },
-          author: {
-            address: '+15559876543',
-            channel: 'SMS'
-          }
-        }
-      });
+        })
+      );
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           conversationId: 'CHtest123456789',
           content: {
             type: 'TEXT',
-            text: '   '  // Whitespace only
+            text: '   ', // Whitespace only
           },
-          author: {
-            address: '+15559876543',
-            channel: 'SMS'
-          }
-        }
-      });
+        })
+      );
 
       // Only valid message should be processed
       expect(capturedMessages).toHaveLength(1);
@@ -240,23 +217,21 @@ describe('Integration Tests', () => {
 
     it('should handle conversation cleanup', async () => {
       // Start conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-        }
-      });
+      await channel.processWebhook(
+        createConversationCreatedWebhook({
+          id: 'CHtest123456789',
+        })
+      );
 
       expect(channel.isConversationActive('CHtest123456789')).toBe(true);
 
       // End conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          status: 'CLOSED'
-        }
-      });
+      await channel.processWebhook(
+        createConversationUpdatedWebhook({
+          id: 'CHtest123456789',
+          status: 'CLOSED',
+        })
+      );
 
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
     });
@@ -270,20 +245,17 @@ describe('Integration Tests', () => {
       });
 
       // Should not throw when callback errors
-      await expect(channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          content: {
-            type: 'TEXT',
-            text: 'Test message'
-          },
-          author: {
-            address: '+15559876543',
-            channel: 'SMS'
-          }
-        }
-      })).resolves.not.toThrow();
+      await expect(
+        channel.processWebhook(
+          createCommunicationCreatedWebhook({
+            conversationId: 'CHtest123456789',
+            content: {
+              type: 'TEXT',
+              text: 'Test message',
+            },
+          })
+        )
+      ).resolves.not.toThrow();
     });
 
   });

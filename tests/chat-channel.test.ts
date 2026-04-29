@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ChatChannel, TAC, ConversationSession } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import { createTestTAC } from './helpers/tac';
+import {
+  createConversationCreatedWebhook,
+  createCommunicationCreatedWebhook,
+  createConversationUpdatedWebhook,
+} from './helpers/webhooks';
 
 describe('Chat Channel', () => {
   let mockAdapter: MockAdapter;
@@ -51,13 +56,7 @@ describe('Chat Channel', () => {
 
   describe('webhook processing', () => {
     it('should process conversation.created event', async () => {
-      const webhookPayload = {
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          profileId: 'test_profile_123',
-        },
-      };
+      const webhookPayload = createConversationCreatedWebhook();
 
       const startedCallback = vi.fn();
       channel.on('conversationStarted', startedCallback);
@@ -68,28 +67,24 @@ describe('Chat Channel', () => {
       expect(startedCallback).toHaveBeenCalledWith({
         session: expect.objectContaining({
           conversationId: 'CHtest123456789',
-          profileId: 'test_profile_123',
           channel: 'chat',
         }),
       });
     });
 
     it('should process communication.created event', async () => {
-      const webhookPayload = {
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            channel: 'CHAT',
-          },
-          content: {
-            type: 'TEXT',
-            text: 'Hello from chat',
-          },
-          channelId: 'CH00000000000000000000000000000000',
+      const webhookPayload = createCommunicationCreatedWebhook({
+        author: {
+          address: 'customer@example.com',
+          channel: 'CHAT',
+          participantId: 'PA123',
         },
-      };
+        content: {
+          type: 'TEXT',
+          text: 'Hello from chat',
+        },
+        channelId: 'CH00000000000000000000000000000000',
+      });
 
       const messageCallback = vi.fn();
       channel.on('messageReceived', messageCallback);
@@ -107,20 +102,17 @@ describe('Chat Channel', () => {
     });
 
     it('should ignore messages from bot itself (default agent address)', async () => {
-      const webhookPayload = {
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'ai-assistant',
-            channel: 'CHAT',
-          },
-          content: {
-            type: 'TEXT',
-            text: 'Bot response',
-          },
+      const webhookPayload = createCommunicationCreatedWebhook({
+        author: {
+          address: 'ai-assistant',
+          channel: 'CHAT',
+          participantId: 'PA123',
         },
-      };
+        content: {
+          type: 'TEXT',
+          text: 'Bot response',
+        },
+      });
 
       const messageCallback = vi.fn();
       channel.on('messageReceived', messageCallback);
@@ -133,20 +125,17 @@ describe('Chat Channel', () => {
     it('should ignore messages from bot with custom agent address', async () => {
       const customChannel = new ChatChannel(tac, { agentAddress: 'custom-bot' });
 
-      const webhookPayload = {
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'custom-bot',
-            channel: 'CHAT',
-          },
-          content: {
-            type: 'TEXT',
-            text: 'Bot response',
-          },
+      const webhookPayload = createCommunicationCreatedWebhook({
+        author: {
+          address: 'custom-bot',
+          channel: 'CHAT',
+          participantId: 'PA123',
         },
-      };
+        content: {
+          type: 'TEXT',
+          text: 'Bot response',
+        },
+      });
 
       const messageCallback = vi.fn();
       customChannel.on('messageReceived', messageCallback);
@@ -157,21 +146,18 @@ describe('Chat Channel', () => {
     });
 
     it('should store channelId in session metadata', async () => {
-      const webhookPayload = {
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            channel: 'CHAT',
-          },
-          content: {
-            type: 'TEXT',
-            text: 'Hello',
-          },
-          channelId: 'CH00000000000000000000000000000000',
+      const webhookPayload = createCommunicationCreatedWebhook({
+        author: {
+          address: 'customer@example.com',
+          channel: 'CHAT',
+          participantId: 'PA123',
         },
-      };
+        content: {
+          type: 'TEXT',
+          text: 'Hello',
+        },
+        channelId: 'CH00000000000000000000000000000000',
+      });
 
       await channel.processWebhook(webhookPayload);
 
@@ -181,22 +167,13 @@ describe('Chat Channel', () => {
 
     it('should process conversation.updated (closed) event', async () => {
       // First create a conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+      await channel.processWebhook(createConversationCreatedWebhook());
 
       const endedCallback = vi.fn();
       channel.on('conversationEnded', endedCallback);
 
       // Then close it
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          status: 'CLOSED',
-        },
-      });
+      await channel.processWebhook(createConversationUpdatedWebhook({ status: 'CLOSED' }));
 
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
       expect(endedCallback).toHaveBeenCalledWith({
@@ -208,20 +185,17 @@ describe('Chat Channel', () => {
     });
 
     it('should ignore empty messages', async () => {
-      const webhookPayload = {
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            channel: 'CHAT',
-          },
-          content: {
-            type: 'TEXT',
-            text: '   ',
-          },
+      const webhookPayload = createCommunicationCreatedWebhook({
+        author: {
+          address: 'customer@example.com',
+          channel: 'CHAT',
+          participantId: 'PA123',
         },
-      };
+        content: {
+          type: 'TEXT',
+          text: '   ',
+        },
+      });
 
       const messageCallback = vi.fn();
       channel.on('messageReceived', messageCallback);
@@ -243,15 +217,10 @@ describe('Chat Channel', () => {
 
     it('should send response via Actions API with existing AI_AGENT', async () => {
       // Start conversation, then receive message to populate session
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+      await channel.processWebhook(createConversationCreatedWebhook());
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           author: {
             address: 'customer@example.com',
             participantId: 'PA_customer_123',
@@ -259,8 +228,8 @@ describe('Chat Channel', () => {
           },
           content: { type: 'TEXT', text: 'Hello' },
           channelId: 'CH00000000000000000000000000000000',
-        },
-      });
+        })
+      );
 
       // Mock listParticipants (AI_AGENT exists)
       mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
@@ -318,10 +287,8 @@ describe('Chat Channel', () => {
       // TODO(conv-orch): Drop this test when the chatService workaround is removed.
       tac.conversationsV1ServiceSid = 'ISabcdef1234567890abcdef1234567890';
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           author: {
             address: 'customer@example.com',
             participantId: 'PA_customer_123',
@@ -329,8 +296,8 @@ describe('Chat Channel', () => {
           },
           content: { type: 'TEXT', text: 'Hello' },
           channelId: 'CH00000000000000000000000000000000',
-        },
-      });
+        })
+      );
 
       mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
         participants: [
@@ -371,10 +338,8 @@ describe('Chat Channel', () => {
 
     it('should throw when channelId missing from session metadata', async () => {
       // Seed a session with inbound but no channelId
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           author: {
             address: 'customer@example.com',
             participantId: 'PA_customer_123',
@@ -382,8 +347,9 @@ describe('Chat Channel', () => {
           },
           content: { type: 'TEXT', text: 'Hello' },
           // no channelId
-        },
-      });
+          channelId: undefined,
+        })
+      );
 
       await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
         /session\.metadata\['channelId'\]/
@@ -391,15 +357,10 @@ describe('Chat Channel', () => {
     });
 
     it('should create AI_AGENT participant if not exists', async () => {
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+      await channel.processWebhook(createConversationCreatedWebhook());
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           author: {
             address: 'customer@example.com',
             participantId: 'PA_customer_123',
@@ -407,8 +368,8 @@ describe('Chat Channel', () => {
           },
           content: { type: 'TEXT', text: 'Hello' },
           channelId: 'CH00000000000000000000000000000000',
-        },
-      });
+        })
+      );
 
       // Mock listParticipants (no AI_AGENT)
       mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
@@ -464,15 +425,10 @@ describe('Chat Channel', () => {
     });
 
     it('should handle race condition when creating AI_AGENT', async () => {
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+      await channel.processWebhook(createConversationCreatedWebhook());
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           author: {
             address: 'customer@example.com',
             participantId: 'PA_customer_123',
@@ -480,8 +436,8 @@ describe('Chat Channel', () => {
           },
           content: { type: 'TEXT', text: 'Hello' },
           channelId: 'CH00000000000000000000000000000000',
-        },
-      });
+        })
+      );
 
       // Mock listParticipants - first call returns no AI_AGENT, second call returns AI_AGENT
       mockAdapter
@@ -539,10 +495,8 @@ describe('Chat Channel', () => {
     });
 
     it('should throw when ensureAgentParticipant fails (addParticipant fails and retry finds none)', async () => {
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           author: {
             address: 'customer@example.com',
             participantId: 'PA_customer_123',
@@ -550,8 +504,8 @@ describe('Chat Channel', () => {
           },
           content: { type: 'TEXT', text: 'Hello' },
           channelId: 'CH00000000000000000000000000000000',
-        },
-      });
+        })
+      );
 
       // Both list calls return no AI_AGENT; addParticipant also fails
       mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
@@ -580,10 +534,7 @@ describe('Chat Channel', () => {
 
     it('should throw error if no author info', async () => {
       // Create conversation without author info
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+      await channel.processWebhook(createConversationCreatedWebhook());
 
       await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
         'No author info found'
