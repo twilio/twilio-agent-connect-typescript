@@ -209,11 +209,20 @@ export abstract class MessagingChannel extends BaseChannel {
       if (idempotencyToken) {
         this.removeProcessedToken(idempotencyToken);
       }
+
+      // Extract minimal metadata for error context (avoid logging full payload for PII protection)
+      const webhookData = payload as ConversationsWebhookPayload;
+      const context = {
+        event_type: webhookData?.eventType,
+        conversation_id: webhookData?.data?.conversationId || webhookData?.data?.id,
+        idempotency_token: idempotencyToken,
+      };
+
       this.logger.error(
-        { err: error, operation: 'webhook_processing' },
+        { err: error, operation: 'webhook_processing', ...context },
         'Webhook processing error'
       );
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
+      this.handleError(error instanceof Error ? error : new Error(String(error)), context);
     }
   }
 
