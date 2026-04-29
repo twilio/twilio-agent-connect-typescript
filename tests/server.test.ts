@@ -582,7 +582,7 @@ describe('TACServer idempotency token', () => {
     // SMS channel self-filters VOICE messages, so it never recorded 'tok-sms-123'
     // for the VOICE event. This test verifies the system works but doesn't directly
     // prove the ordering - that's enforced by the implementation in BaseChannel.
-    expect(smsMessagesReceived).toHaveLength(0); // No messages processed (needs setup)
+    expect(smsMessagesReceived).toHaveLength(0); // No SMS messages recorded because SMS self-filters VOICE-authored events
   });
 });
 

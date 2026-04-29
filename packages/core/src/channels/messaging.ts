@@ -123,7 +123,10 @@ export abstract class MessagingChannel extends BaseChannel {
    * Process messaging channel webhook from Twilio Conversations Service
    */
   public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
-    this.logger.debug({ operation: 'webhook_processing', payload }, 'Processing webhook');
+    this.logger.debug(
+      { operation: 'webhook_processing', idempotency_token: idempotencyToken },
+      'Processing webhook'
+    );
 
     try {
       if (!this.validateWebhookPayload(payload)) {
