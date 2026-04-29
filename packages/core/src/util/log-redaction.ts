@@ -27,10 +27,7 @@ export function scrubObject(obj: unknown, seen?: WeakSet<object>): unknown {
 
   if (obj instanceof Error) {
     const record = obj as unknown as Record<string, unknown>;
-    const scrubbed = Object.create(Object.getPrototypeOf(obj) as object) as Record<
-      string,
-      unknown
-    >;
+    const scrubbed = Object.create(Object.getPrototypeOf(obj) as object) as Record<string, unknown>;
     for (const key of Object.keys(record)) {
       scrubbed[key] = scrubObject(record[key], visited);
     }
