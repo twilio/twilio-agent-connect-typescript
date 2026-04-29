@@ -404,20 +404,20 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as ConversationId);
+      ] as any);
 
       const onConversationEnded = vi.fn();
       tac.onConversationEnded(onConversationEnded);
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
@@ -440,18 +440,18 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as ConversationId);
+      ] as any);
 
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
@@ -477,20 +477,20 @@ describe('VoiceChannel', () => {
       // Mock conversation client methods for initialization
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as ConversationId);
+      ] as any);
 
       const onWebSocketDisconnected = vi.fn();
       voiceChannel.on('webSocketDisconnected', onWebSocketDisconnected);
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
@@ -524,7 +524,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -558,14 +558,14 @@ describe('VoiceChannel', () => {
         if (callCount === 1) {
           return Promise.reject(new Error('API 500 Server Error'));
         }
-        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as ConversationId);
+        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
       });
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as ConversationId);
+      ] as any);
 
       tac.registerChannel(voiceChannel);
 
@@ -574,7 +574,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -619,7 +619,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -665,14 +665,14 @@ describe('VoiceChannel', () => {
         if (callCount === 1) {
           return Promise.reject(new Error('Temporary failure'));
         }
-        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as ConversationId);
+        return Promise.resolve([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
       });
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as ConversationId);
+      ] as any);
 
       tac.registerChannel(voiceChannel);
 
@@ -681,7 +681,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       // Trigger setup
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -727,7 +727,7 @@ describe('VoiceChannel', () => {
       tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       // Trigger setup and failed prompt
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -744,15 +744,15 @@ describe('VoiceChannel', () => {
       // This time make it succeed immediately
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
-      ] as ConversationId);
+      ] as any);
 
-      voiceChannel.handleWebSocketConnection(mockWs2 as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs2 as any);
       mockWs2._emit('message', Buffer.from(setupMessage));
       mockWs2._emit('message', Buffer.from(promptMessage));
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -769,7 +769,7 @@ describe('VoiceChannel', () => {
       // Mock listConversations to succeed but listParticipants to fail
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockRejectedValue(
         new Error('Failed to list participants: 500 Server Error')
       );
@@ -781,7 +781,7 @@ describe('VoiceChannel', () => {
       });
 
       const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
@@ -865,16 +865,16 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHstream_test', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
-      ] as ConversationId);
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as ConversationId);
+      ] as any);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
 
       tac.registerChannel(voiceChannel);
 
       const mockWs = createStreamingMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       mockWs._emit('message', Buffer.from(JSON.stringify({
         type: 'setup',
@@ -976,7 +976,7 @@ describe('VoiceChannel', () => {
       mockWs.send = vi.fn(() => {
         sendCount++;
         if (sendCount >= 2) {
-          (mockWs as ConversationId).readyState = 3; // WebSocket.CLOSED
+          (mockWs as any).readyState = 3; // WebSocket.CLOSED
         }
       });
 
@@ -1133,16 +1133,16 @@ describe('VoiceChannel', () => {
 
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHinterrupt_test', status: 'ACTIVE' },
-      ] as ConversationId);
+      ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
-      ] as ConversationId);
-      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as ConversationId);
+      ] as any);
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
 
       tac.registerChannel(voiceChannel);
 
       const mockWs = createInterruptMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as ConversationId);
+      voiceChannel.handleWebSocketConnection(mockWs as any);
 
       mockWs._emit('message', Buffer.from(JSON.stringify({
         type: 'setup',

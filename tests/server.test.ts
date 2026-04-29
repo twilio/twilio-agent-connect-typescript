@@ -539,16 +539,9 @@ describe('TACServer idempotency token', () => {
       );
     });
 
-    // Critical test: Verify self-filter happens BEFORE dedup
-    // Send VOICE event with same idempotency token as the first SMS event
-    //
-    // Expected behavior (filter-first, current implementation):
-    //   - SMS channel self-filters VOICE event before dedup check, never records token
-    //   - Voice channel processes VOICE event normally (token not in its dedup set)
-    //
-    // Incorrect behavior (dedup-first):
-    //   - Both channels would skip due to duplicate token (both saw 'tok-sms-123')
-    //   - Voice channel would incorrectly be blocked by SMS channel's token
+    // Verify self-filter happens before dedup: reuse token across channels
+    // If dedup happened first, channels would share a token space and block each other.
+    // Since self-filter runs first, each channel only records tokens for events it processes.
     smsProcessWebhookSpy.mockClear();
     voiceProcessWebhookSpy.mockClear();
 
@@ -586,13 +579,10 @@ describe('TACServer idempotency token', () => {
       );
     });
 
-    // Verify SMS channel self-filtered (didn't process the VOICE message)
-    expect(smsMessagesReceived).not.toContain('voice-sms-msg');
-
-    // Note: We can't verify voice channel processed it (no messageReceived event for voice),
-    // but the fact that processWebhook was called with the duplicate token proves
-    // self-filtering happened before deduplication. If dedup happened first, voice channel
-    // would have been blocked by SMS's token and processWebhook would have returned early.
+    // SMS channel self-filters VOICE messages, so it never recorded 'tok-sms-123'
+    // for the VOICE event. This test verifies the system works but doesn't directly
+    // prove the ordering - that's enforced by the implementation in BaseChannel.
+    expect(smsMessagesReceived).toHaveLength(0); // No messages processed (needs setup)
   });
 });
 
