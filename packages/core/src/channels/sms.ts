@@ -7,6 +7,7 @@ import {
   InitiateConversationResult,
 } from '../types/index';
 import { MessagingChannel } from './messaging';
+import { maskAddress, maskPhone } from '../util/log-redaction';
 
 /**
  * SMS Channel implementation for Twilio Conversations Service
@@ -100,10 +101,10 @@ export class SMSChannel extends MessagingChannel {
       this.logger.debug(
         {
           conversation_id: conversationId,
-          recipient_address: recipientAddress,
+          recipient_address: maskAddress(recipientAddress),
           recipient_participant_id: customerParticipantId,
           agent_participant_id: agentParticipant.id,
-          from_number: agentAddress,
+          from_number: maskPhone(agentAddress),
         },
         'Sending SMS via Actions API'
       );
@@ -129,7 +130,7 @@ export class SMSChannel extends MessagingChannel {
       await this.conversationClient.createAction(conversationId, actionRequest);
 
       this.logger.info(
-        { conversation_id: conversationId, recipient_address: recipientAddress },
+        { conversation_id: conversationId, recipient_address: maskAddress(recipientAddress) },
         'SMS sent successfully via Actions API'
       );
     } catch (error) {
@@ -155,7 +156,7 @@ export class SMSChannel extends MessagingChannel {
     const validated = InitiateMessagingConversationOptionsSchema.parse(options);
 
     this.logger.info(
-      { to: validated.to, message_length: validated.message.length },
+      { to: maskAddress(validated.to), message_length: validated.message.length },
       'Initiating outbound SMS conversation'
     );
 

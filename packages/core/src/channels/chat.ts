@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import { MessagingChannel, MessagingChannelConfig } from './messaging';
 import type { TAC } from '../lib/tac';
+import { maskAddress } from '../util/log-redaction';
 
 /**
  * Options for initiating an outbound chat conversation
@@ -197,7 +198,7 @@ export class ChatChannel extends MessagingChannel {
     const validated = InitiateChatConversationOptionsSchema.parse(options);
 
     this.logger.info(
-      { to: validated.to, channel_id: validated.channelId },
+      { to: maskAddress(validated.to), channel_id: validated.channelId },
       'Initiating outbound chat conversation'
     );
 
