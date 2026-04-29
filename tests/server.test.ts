@@ -562,7 +562,7 @@ describe('TACServer idempotency token', () => {
         }),
         'tok-sms-123'
       );
-      // SMS channel should skip (duplicate token)
+      // SMS channel should skip (channel mismatch - VOICE event filtered by SMS channel)
       expect(smsProcessWebhookSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           eventType: 'COMMUNICATION_CREATED',

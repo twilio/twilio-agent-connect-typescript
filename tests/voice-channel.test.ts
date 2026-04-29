@@ -1480,15 +1480,26 @@ describe('VoiceChannel', () => {
       const onError = vi.fn();
       voiceChannel.on('error', onError);
 
-      // Invalid payload should trigger error
-      await voiceChannel.processWebhook(null, 'token-456');
-
-      expect(onError).toHaveBeenCalled();
-
-      // Token should be removed, so retry with valid payload should work
       const conversationId = 'CH123' as ConversationId;
       voiceChannel['startConversation'](conversationId);
 
+      // Payload passes validation and dedup check, but fails during handling
+      // (missing conversationId in data causes error after token is recorded)
+      await voiceChannel.processWebhook(
+        {
+          eventType: 'CONVERSATION_UPDATED',
+          data: {
+            status: 'CLOSED',
+            // conversationId intentionally omitted to trigger error after dedup
+          },
+        },
+        'token-456'
+      );
+
+      expect(onError).toHaveBeenCalled();
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+
+      // Token should be removed on error, so retry with same token and valid payload should work
       await voiceChannel.processWebhook(
         {
           eventType: 'CONVERSATION_UPDATED',
