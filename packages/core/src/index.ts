@@ -36,7 +36,6 @@ export { MessagingChannel } from './channels/messaging';
 export type {
   MessagingChannelConfig,
   MessagingChannelEvents,
-  MessagingWebhookPayload,
 } from './channels/messaging';
 
 export { SMSChannel } from './channels/sms';

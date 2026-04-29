@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TAC, TACConfig } from '@twilio/tac-core';
 import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
+import {
+  createConversationCreatedWebhook,
+  createCommunicationCreatedWebhook,
+} from './helpers/webhooks';
 
 describe('TAC Core', () => {
   const getTestConfig = () => ({
@@ -139,19 +143,17 @@ describe('TAC Core', () => {
 
       tac.onMessageReady(() => '');
 
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest' },
-      });
+      await channel.processWebhook(
+        createConversationCreatedWebhook({ id: 'CHtest' })
+      );
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
+      await channel.processWebhook(
+        createCommunicationCreatedWebhook({
           conversationId: 'CHtest',
           content: { type: 'TEXT', text: 'test' },
-          author: { address: '+15559876543', channel: 'SMS' },
-        },
-      });
+          author: { address: '+15559876543', channel: 'SMS', participantId: 'PA123' },
+        })
+      );
 
       await vi.waitFor(() => {
         expect(warnSpy).toHaveBeenCalledWith(

@@ -1,8 +1,11 @@
 import {
   ActionChannelSettings,
+  CommunicationSchema,
   ConversationAddress,
   ConversationId,
   ConversationParticipant,
+  ConversationParticipantSchema,
+  ConversationResponseSchema,
   InitiateConversationResult,
   ProfileId,
   SendMessageActionRequest,
@@ -11,42 +14,6 @@ import {
 } from '../types/index';
 import { BaseChannel, BaseChannelEvents } from './base';
 import type { TAC } from '../lib/tac';
-
-/**
- * Messaging webhook event types from Twilio Conversations Service
- * Supports the v2 format for SMS and Chat channels
- */
-export interface MessagingWebhookPayload {
-  eventType: string;
-  timestamp?: string;
-  data?: {
-    id?: string;
-    conversationId?: string;
-    accountId?: string;
-    serviceId?: string;
-    status?: string;
-    participantType?: string;
-    profileId?: string;
-    channelId?: string;
-    author?: {
-      address?: string;
-      channel?: string;
-      participantId?: string;
-    };
-    content?: {
-      type?: string;
-      text?: string;
-    };
-    recipients?: Array<{
-      address?: string;
-      channel?: string;
-      participantId?: string;
-      deliveryStatus?: string;
-    }>;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
 
 /**
  * Messaging channel configuration options
@@ -195,23 +162,20 @@ export abstract class MessagingChannel extends BaseChannel {
    * Check if this webhook event belongs to this channel.
    * Returns false if the event is clearly for a different channel type.
    */
-  private isEventForThisChannel(webhookData: MessagingWebhookPayload): boolean {
-    const eventType = webhookData.eventType;
-    const authorChannel = webhookData.data?.author?.channel;
-
+  private isEventForThisChannel(eventType: string, data: Record<string, unknown>): boolean {
     // COMMUNICATION_CREATED: require author.channel for safe filtering
-    // Reject events without channel to prevent fanout crosstalk
     if (eventType === 'COMMUNICATION_CREATED') {
-      if (!authorChannel) {
-        return false; // Missing channel - cannot safely determine ownership
+      const author = data.author as { channel?: string } | undefined;
+      if (!author?.channel) {
+        return false;
       }
-      return authorChannel === this.channelType.toUpperCase();
+      return author.channel === this.channelType.toUpperCase();
     }
 
     // CONVERSATION_UPDATED: only process if this channel tracks the conversation
     if (eventType === 'CONVERSATION_UPDATED') {
-      const conversationId = this.extractConversationId(webhookData);
-      if (conversationId && !this.isConversationActive(conversationId)) {
+      const convId = (data.id as string) || (data.conversationId as string);
+      if (convId && isConversationId(convId) && !this.isConversationActive(convId)) {
         return false;
       }
     }
@@ -235,12 +199,19 @@ export abstract class MessagingChannel extends BaseChannel {
         throw new Error('Invalid webhook payload');
       }
 
-      const webhookData = payload as MessagingWebhookPayload;
+      const webhookData = payload as { eventType?: string; data?: Record<string, unknown> };
       const eventType = webhookData.eventType;
-      const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+      const data = webhookData.data;
+
+      if (!eventType || !data) {
+        this.logger.warn({ payload }, 'Webhook missing eventType or data field');
+        return;
+      }
+
+      const conversationId = (data.conversationId as string) || (data.id as string);
 
       // Self-filter: ignore events meant for other channel types
-      if (!this.isEventForThisChannel(webhookData)) {
+      if (!this.isEventForThisChannel(eventType, data)) {
         this.logger.debug(
           { event_type: eventType, channel: this.channelType, conversation_id: conversationId },
           'Ignoring event for different channel type'
@@ -251,7 +222,7 @@ export abstract class MessagingChannel extends BaseChannel {
       this.logger.info(
         {
           event_type: eventType,
-          raw_event_type: webhookData.eventType,
+          raw_event_type: eventType,
           conversation_id: conversationId,
         },
         'Processing webhook event'
@@ -260,38 +231,38 @@ export abstract class MessagingChannel extends BaseChannel {
       switch (eventType) {
         case 'CONVERSATION_CREATED':
           this.logger.debug(
-            { conversation_id: conversationId, profile_id: webhookData.data?.profileId },
+            { conversation_id: conversationId, profile_id: data.profileId },
             'Handling CONVERSATION_CREATED'
           );
-          this.handleConversationCreated(webhookData);
+          this.handleConversationCreated(data);
           break;
 
         case 'PARTICIPANT_ADDED':
           this.logger.debug(
-            { conversation_id: conversationId, profile_id: webhookData.data?.profileId },
+            { conversation_id: conversationId, profile_id: data.profileId },
             'Handling PARTICIPANT_ADDED'
           );
-          this.handleParticipantAdded(webhookData);
+          this.handleParticipantAdded(data);
           break;
 
         case 'COMMUNICATION_CREATED':
           this.logger.debug({ conversation_id: conversationId }, 'Handling COMMUNICATION_CREATED');
-          await this.handleCommunicationCreated(webhookData);
+          await this.handleCommunicationCreated(data);
           break;
 
         case 'CONVERSATION_UPDATED':
           this.logger.debug(
-            { conversation_id: conversationId, status: webhookData.data?.status },
+            { conversation_id: conversationId, status: data.status },
             'Handling CONVERSATION_UPDATED'
           );
-          await this.handleConversationUpdated(webhookData);
+          await this.handleConversationUpdated(data);
           break;
 
         default:
           this.logger.warn(
             {
               event_type: eventType,
-              raw_event_type: webhookData.eventType,
+              raw_event_type: eventType,
               conversation_id: conversationId,
               payload,
             },
@@ -316,41 +287,53 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle conversation creation event
    */
-  private handleConversationCreated(payload: MessagingWebhookPayload): void {
-    const conversationId = this.extractConversationId(payload);
-    const profileId = this.extractProfileId(payload);
-
-    if (!conversationId) {
+  private handleConversationCreated(data: Record<string, unknown>): void {
+    const parseResult = ConversationResponseSchema.safeParse(data);
+    if (!parseResult.success) {
       this.logger.warn(
-        { payload, operation: 'handle_conversation_created' },
-        'Missing conversation ID in conversation.created event'
+        { validation_errors: parseResult.error.errors, data },
+        'Invalid conversation.created payload'
       );
-      throw new Error('Missing conversation ID in conversation.created event');
+      throw new Error('Invalid conversation.created payload');
     }
 
-    this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
+    const conversation = parseResult.data;
+    const conversationId = conversation.id;
+    const profileId = null;
+
+    if (!isConversationId(conversationId)) {
+      throw new Error('Invalid conversation ID in conversation.created event');
+    }
+
+    this.startConversation(conversationId, profileId ?? undefined, conversation.configurationId);
   }
 
   /**
    * Handle participant added event
    */
-  private handleParticipantAdded(payload: MessagingWebhookPayload): void {
-    const conversationId = this.extractConversationId(payload);
-    const profileId = this.extractProfileId(payload);
-
-    if (!conversationId) {
+  private handleParticipantAdded(data: Record<string, unknown>): void {
+    const parseResult = ConversationParticipantSchema.safeParse(data);
+    if (!parseResult.success) {
       this.logger.warn(
-        { payload, operation: 'handle_participant_added' },
-        'Missing conversation ID in participant.added event'
+        { validation_errors: parseResult.error.errors, data },
+        'Invalid participant.added payload'
       );
-      throw new Error('Missing conversation ID in participant.added event');
+      throw new Error('Invalid participant.added payload');
+    }
+
+    const participant = parseResult.data;
+    const conversationId = participant.conversationId;
+    const profileId = participant.profileId ?? null;
+
+    if (!isConversationId(conversationId)) {
+      throw new Error('Invalid conversation ID in participant.added event');
     }
 
     // Update conversation with profile ID if conversation exists
     if (this.isConversationActive(conversationId)) {
       const session = this.getConversationSession(conversationId);
       if (session) {
-        if (profileId) {
+        if (profileId && isProfileId(profileId)) {
           this.logger.debug(
             {
               conversation_id: conversationId,
@@ -362,16 +345,17 @@ export abstract class MessagingChannel extends BaseChannel {
           session.profileId = profileId;
         }
 
-        if (payload.data?.serviceId && session.serviceId !== payload.data.serviceId) {
+        const serviceId = (data.serviceId as string) || undefined;
+        if (serviceId && session.serviceId !== serviceId) {
           this.logger.debug(
             {
               conversation_id: conversationId,
               old_service_id: session.serviceId,
-              new_service_id: payload.data.serviceId,
+              new_service_id: serviceId,
             },
             'Updating conversation configuration ID from participant.added'
           );
-          session.serviceId = payload.data.serviceId;
+          session.serviceId = serviceId;
         }
       }
     } else {
@@ -380,25 +364,36 @@ export abstract class MessagingChannel extends BaseChannel {
         { conversation_id: conversationId, profile_id: profileId },
         'Auto-starting conversation from participant.added'
       );
-      this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
+      this.startConversation(
+        conversationId,
+        profileId && isProfileId(profileId) ? profileId : undefined,
+        (data.serviceId as string) || undefined
+      );
     }
   }
 
   /**
    * Handle new communication event (incoming message)
    */
-  private async handleCommunicationCreated(payload: MessagingWebhookPayload): Promise<void> {
-    const conversationId = this.extractConversationId(payload);
-    const profileId = this.extractProfileId(payload);
-    // Extract message text from data.content.text
-    const message = payload.data?.content?.text?.trim();
-    // Author is in data.author.address
-    const author = payload.data?.author?.address || 'unknown';
+  private async handleCommunicationCreated(data: Record<string, unknown>): Promise<void> {
+    const parseResult = CommunicationSchema.safeParse(data);
+    if (!parseResult.success) {
+      this.logger.warn(
+        { validation_errors: parseResult.error.errors, data },
+        'Invalid communication.created payload'
+      );
+      throw new Error('Invalid communication.created payload');
+    }
+
+    const communication = parseResult.data;
+    const conversationId = communication.conversationId;
+    const message = communication.content.text?.trim();
+    const author = communication.author.address;
+    const communicationId = communication.id;
 
     this.logger.info(
       {
         conversation_id: conversationId,
-        profile_id: profileId,
         author,
         message,
         message_length: message?.length,
@@ -407,12 +402,8 @@ export abstract class MessagingChannel extends BaseChannel {
       'Handling communication.created'
     );
 
-    if (!conversationId) {
-      this.logger.warn(
-        { payload, operation: 'handle_communication_created' },
-        'Missing conversation ID in communication.created event'
-      );
-      throw new Error('Missing conversation ID in communication.created event');
+    if (!isConversationId(conversationId)) {
+      throw new Error('Invalid conversation ID in communication.created event');
     }
 
     if (!message) {
@@ -420,24 +411,18 @@ export abstract class MessagingChannel extends BaseChannel {
       return;
     }
 
-    // Per-conversation communication ID dedup stored in the in-memory
-    // ConversationSession metadata. This only prevents duplicate processing
-    // within the current process/session lifetime; it does not deduplicate
-    // across horizontally-scaled instances or after a restart.
-    const communicationId = payload.data?.id;
-    if (communicationId) {
-      const session = this.getConversationSession(conversationId);
-      if (session?.metadata?.lastCommunicationId === communicationId) {
-        this.logger.debug(
-          { conversation_id: conversationId, communication_id: communicationId },
-          'Skipping already-processed communication'
-        );
-        return;
-      }
+    // Per-conversation communication ID dedup
+    const session = this.getConversationSession(conversationId);
+    if (session?.metadata?.lastCommunicationId === communicationId) {
+      this.logger.debug(
+        { conversation_id: conversationId, communication_id: communicationId },
+        'Skipping already-processed communication'
+      );
+      return;
     }
 
     // Filter out messages from the bot itself
-    if (await this.isOwnMessage(author, conversationId, payload.data?.author?.participantId)) {
+    if (await this.isOwnMessage(author, conversationId, communication.author.participantId)) {
       this.logger.info(
         {
           conversation_id: conversationId,
@@ -451,59 +436,57 @@ export abstract class MessagingChannel extends BaseChannel {
     // Initialize conversation if not already active
     if (!this.isConversationActive(conversationId)) {
       this.logger.debug({ conversation_id: conversationId }, 'Starting new conversation');
-      this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
-    } else if (payload.data?.serviceId) {
-      const session = this.getConversationSession(conversationId);
-      if (session && session.serviceId !== payload.data.serviceId) {
+      this.startConversation(conversationId, undefined, (data.serviceId as string) || undefined);
+    } else {
+      const serviceId = (data.serviceId as string) || undefined;
+      if (session && serviceId && session.serviceId !== serviceId) {
         this.logger.debug(
           {
             conversation_id: conversationId,
             old_service_id: session.serviceId,
-            new_service_id: payload.data.serviceId,
+            new_service_id: serviceId,
           },
           'Updating conversation configuration ID from communication.created'
         );
-        session.serviceId = payload.data.serviceId;
+        session.serviceId = serviceId;
       }
     }
 
     // Get session and update with author info for profile lookup
-    const session = this.getConversationSession(conversationId);
-    if (session) {
-      session.authorInfo = {
+    const updatedSession = this.getConversationSession(conversationId);
+    if (updatedSession) {
+      updatedSession.authorInfo = {
         address: author,
-        participantId: payload.data?.author?.participantId,
+        participantId: communication.author.participantId,
       };
 
       // Store channelId (Chat Channel SID) in session metadata for reply sending
-      if (payload.data?.channelId) {
-        if (!session.metadata) {
-          session.metadata = {};
+      if (communication.channelId) {
+        if (!updatedSession.metadata) {
+          updatedSession.metadata = {};
         }
-        session.metadata.channelId = payload.data.channelId;
+        updatedSession.metadata.channelId = communication.channelId;
         this.logger.debug(
-          { conversation_id: conversationId, channel_id: payload.data.channelId },
+          { conversation_id: conversationId, channel_id: communication.channelId },
           'Stored channelId in session metadata'
         );
       }
 
-      // Track communication ID for cross-process dedup
-      if (communicationId) {
-        if (!session.metadata) {
-          session.metadata = {};
-        }
-        session.metadata.lastCommunicationId = communicationId;
+      // Track communication ID for dedup
+      if (!updatedSession.metadata) {
+        updatedSession.metadata = {};
       }
+      updatedSession.metadata.lastCommunicationId = communicationId;
     }
 
-    // Retrieve user memory using tac.retrieveMemory, which handles profile lookup by address (e.g., phone number or email)
+    // Retrieve user memory
     let userMemory;
-    if (session) {
+    if (updatedSession) {
       this.logger.debug({ conversation_id: conversationId, author }, 'Retrieving user memory');
       try {
-        userMemory = await this.tac.retrieveMemory(session, message);
+        userMemory = await this.tac.retrieveMemory(updatedSession, message);
         this.logger.debug(
-          { conversation_id: conversationId, profile_id: session.profileId },
+          { conversation_id: conversationId, profile_id: updatedSession.profileId },
           'User memory retrieved'
         );
       } catch (error) {
@@ -519,7 +502,7 @@ export abstract class MessagingChannel extends BaseChannel {
       this.logger.debug({ conversation_id: conversationId }, 'Invoking message received callback');
       this.messagingCallbacks.onMessageReceived({
         conversationId,
-        profileId: (session?.profileId as ProfileId | undefined) ?? profileId ?? undefined,
+        profileId: (updatedSession?.profileId as ProfileId | undefined) ?? undefined,
         message,
         author,
         userMemory,
@@ -530,17 +513,27 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle conversation updated event
    */
-  private async handleConversationUpdated(payload: MessagingWebhookPayload): Promise<void> {
-    const conversationId = this.extractConversationId(payload);
+  private async handleConversationUpdated(data: Record<string, unknown>): Promise<void> {
+    const parseResult = ConversationResponseSchema.safeParse(data);
+    if (!parseResult.success) {
+      this.logger.warn(
+        { validation_errors: parseResult.error.errors, data },
+        'Invalid conversation.updated payload'
+      );
+      throw new Error('Invalid conversation.updated payload');
+    }
 
-    if (!conversationId) {
-      throw new Error('Missing conversation ID in conversation.updated event');
+    const conversation = parseResult.data;
+    const conversationId = conversation.id;
+
+    if (!isConversationId(conversationId)) {
+      throw new Error('Invalid conversation ID in conversation.updated event');
     }
 
     // Check if conversation is closed
-    if (payload.data?.status === 'CLOSED') {
+    if (conversation.status === 'CLOSED') {
       this.logger.info(
-        { conversation_id: conversationId, status: payload.data.status },
+        { conversation_id: conversationId, status: conversation.status },
         'Conversation closed, cleaning up'
       );
       await this.endConversation(conversationId);
@@ -548,12 +541,13 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Extract conversation ID from webhook payload
+   * Extract conversation ID from webhook payload (for compatibility)
    */
   protected extractConversationId(payload: unknown): ConversationId | null {
-    const webhookData = payload as MessagingWebhookPayload;
-    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+    const data = (payload as { data?: Record<string, unknown> }).data;
+    if (!data) return null;
 
+    const conversationId = (data.conversationId as string) || (data.id as string);
     if (conversationId && isConversationId(conversationId)) {
       return conversationId;
     }
@@ -562,22 +556,31 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Extract profile ID from webhook payload
+   * Extract profile ID from webhook data (for logging/compatibility)
    */
   protected extractProfileId(payload: unknown): ProfileId | null {
-    const webhookData = payload as MessagingWebhookPayload;
-    const profileId = webhookData.data?.profileId;
+    const data = (payload as { data?: Record<string, unknown> }).data;
+    if (!data) return null;
+
+    return this.extractProfileIdFromData(data);
+  }
+
+  /**
+   * Extract profile ID from parsed data
+   */
+  private extractProfileIdFromData(data: Record<string, unknown>): ProfileId | null {
+    const profileId = data.profileId as string | null | undefined;
 
     if (profileId && isProfileId(profileId)) {
       this.logger.debug(
-        { profile_id: profileId, conversation_id: webhookData.data?.conversationId },
+        { profile_id: profileId, conversation_id: data.conversationId || data.id },
         'Extracted profile ID from webhook payload'
       );
       return profileId;
     }
 
     this.logger.debug(
-      { conversation_id: webhookData.data?.conversationId },
+      { conversation_id: data.conversationId || data.id },
       'Profile ID missing or invalid in webhook payload'
     );
     return null;
@@ -591,7 +594,7 @@ export abstract class MessagingChannel extends BaseChannel {
       return false;
     }
 
-    const webhookData = payload as MessagingWebhookPayload;
+    const webhookData = payload as { eventType?: string; data?: unknown };
     return (
       typeof webhookData === 'object' &&
       typeof webhookData.eventType === 'string' &&
