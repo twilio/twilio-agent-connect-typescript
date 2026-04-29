@@ -7,7 +7,6 @@ import {
   scrubObject,
   SMSChannel,
   TAC,
-  ConversationClient,
 } from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
 import { Writable } from 'node:stream';
@@ -161,6 +160,38 @@ describe('PII masking', () => {
       expect(result.name).toBe('LookupError');
       expect(result.stack).toBeDefined();
       expect(result.stack).not.toContain('+15551234567');
+    });
+
+    it('should preserve Error subclass identity and custom properties', () => {
+      class ApiError extends Error {
+        code: number;
+        constructor(message: string, code: number) {
+          super(message);
+          this.name = 'ApiError';
+          this.code = code;
+        }
+      }
+      const err = new ApiError('User +15551234567 not found', 404);
+      const result = scrubObject(err);
+      expect(result).toBeInstanceOf(ApiError);
+      expect(result.message).toBe('User +1***4567 not found');
+      expect(result.code).toBe(404);
+    });
+
+    it('should pass through Date instances unchanged', () => {
+      const date = new Date('2024-01-01');
+      const obj = { timestamp: date, phone: '+15551234567' };
+      const result = scrubObject(obj);
+      expect(result.timestamp).toBe(date);
+      expect(result.phone).toBe('+1***4567');
+    });
+
+    it('should pass through class instances unchanged', () => {
+      const url = new URL('https://example.com');
+      const obj = { url, phone: '+15551234567' };
+      const result = scrubObject(obj);
+      expect(result.url).toBe(url);
+      expect(result.phone).toBe('+1***4567');
     });
   });
 

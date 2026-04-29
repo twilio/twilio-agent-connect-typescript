@@ -29,14 +29,29 @@ export function scrubObject(obj: any, seen?: WeakSet<object>): any {
   visited.add(obj);
 
   if (obj instanceof Error) {
-    const scrubbed = new Error(scrubPii(obj.message));
-    scrubbed.name = obj.name;
-    if (obj.stack) scrubbed.stack = scrubPii(obj.stack);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const scrubbed = Object.create(Object.getPrototypeOf(obj)) as Error;
+    for (const key of Object.keys(obj)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      (scrubbed as Record<string, unknown>)[key] = scrubObject(obj[key], visited);
+    }
+    if (!Object.prototype.hasOwnProperty.call(scrubbed, 'message')) {
+      scrubbed.message = scrubPii(obj.message);
+    }
+    if (!Object.prototype.hasOwnProperty.call(scrubbed, 'name')) {
+      scrubbed.name = obj.name;
+    }
+    if (obj.stack && !Object.prototype.hasOwnProperty.call(scrubbed, 'stack')) {
+      scrubbed.stack = scrubPii(obj.stack);
+    }
     return scrubbed;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   if (Array.isArray(obj)) return obj.map(item => scrubObject(item, visited));
+
+  // Only deep-scrub plain objects; leave class instances (Date, URL, Map, etc.) unchanged
+  if (Object.getPrototypeOf(obj) !== Object.prototype) return obj;
 
   const out: Record<string, unknown> = {};
   // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
