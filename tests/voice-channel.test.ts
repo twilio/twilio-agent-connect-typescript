@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestTAC } from './helpers/tac';
-import { VoiceChannel, TAC, TACConfig, ConversationSession } from '@twilio/tac-core';
+import {
+  VoiceChannel,
+  TAC,
+  TACConfig,
+  ConversationSession,
+  ConversationId,
+} from '@twilio/tac-core';
 import { InterruptMessageSchema } from '@twilio/tac-core';
 
 describe('VoiceChannel', () => {
@@ -464,10 +470,9 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
     });
 
-    it('should support async callback', async () => {
+    it('should emit webSocketDisconnected event when WebSocket closes', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const captured: ConversationSession[] = [];
 
       // Mock conversation client methods for initialization
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
