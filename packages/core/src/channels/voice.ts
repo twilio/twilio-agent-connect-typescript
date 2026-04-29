@@ -200,10 +200,7 @@ export class VoiceChannel extends BaseChannel {
         idempotency_token: idempotencyToken,
       };
 
-      this.logger.error(
-        { err: error, operation: 'webhook_processing', ...context },
-        'Webhook processing error'
-      );
+      // handleError will log the error
       this.handleError(error instanceof Error ? error : new Error(String(error)), context);
     }
   }

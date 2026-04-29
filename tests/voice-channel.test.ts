@@ -424,13 +424,14 @@ describe('VoiceChannel', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      const conversationId = 'CHcb_test12345' as ConversationId;
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
 
       mockWs._emit('close');
       await new Promise(resolve => setTimeout(resolve, 10));
 
       // Conversation should still be active (not ended by WS disconnect)
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
       expect(onConversationEnded).not.toHaveBeenCalled();
     });
 
@@ -458,18 +459,19 @@ describe('VoiceChannel', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
-      expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBe(mockWs);
+      const conversationId = 'CHcb_test12345' as ConversationId;
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
+      expect(voiceChannel.getWebsocket(conversationId)).toBe(mockWs);
 
       mockWs._emit('close');
 
       // Wait for WebSocket cleanup to complete
       await vi.waitFor(() => {
-        expect(voiceChannel.getWebsocket('CHcb_test12345' as ConversationId)).toBeNull();
+        expect(voiceChannel.getWebsocket(conversationId)).toBeNull();
       });
 
       // But conversation should still be active
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
     });
 
     it('should emit webSocketDisconnected event when WebSocket closes', async () => {
@@ -499,6 +501,7 @@ describe('VoiceChannel', () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
+      const conversationId = 'CHcb_test12345' as ConversationId;
       mockWs._emit('close');
 
       // Wait for disconnect event
@@ -508,7 +511,7 @@ describe('VoiceChannel', () => {
         });
       });
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
     });
 
     it('should call onError when initialization fails and not close WebSocket', async () => {
@@ -601,7 +604,8 @@ describe('VoiceChannel', () => {
 
       // Should have captured only the first error, second attempt succeeded
       expect(errorsCaptured).toHaveLength(1);
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      const conversationId = 'CHcb_test12345' as ConversationId;
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
 
       // WebSocket should NOT be closed
       expect(mockWs.close).not.toHaveBeenCalled();
@@ -700,7 +704,8 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
       await new Promise(resolve => setTimeout(resolve, 50));
       expect(errorsCaptured).toHaveLength(1); // No new errors
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      const conversationId = 'CHcb_test12345' as ConversationId;
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
 
       // Verify subsequent prompts work fine (retry counter was cleared)
       const capturedPrompts: string[] = [];
@@ -763,7 +768,8 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       // Should succeed because retry counter was cleared on disconnect
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      const conversationId = 'CHcb_test12345' as ConversationId;
+      expect(voiceChannel.isConversationActive(conversationId)).toBe(true);
     });
 
     it('should call onError when listParticipants fails and not close WebSocket', async () => {
