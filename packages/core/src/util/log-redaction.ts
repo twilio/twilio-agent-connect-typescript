@@ -32,8 +32,10 @@ export function scrubObject(obj: any, seen?: WeakSet<object>): any {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const scrubbed = Object.create(Object.getPrototypeOf(obj)) as Error;
     for (const key of Object.keys(obj)) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      (scrubbed as Record<string, unknown>)[key] = scrubObject(obj[key], visited);
+      (scrubbed as unknown as Record<string, unknown>)[key] = scrubObject(
+        (obj as unknown as Record<string, unknown>)[key],
+        visited
+      );
     }
     if (!Object.prototype.hasOwnProperty.call(scrubbed, 'message')) {
       scrubbed.message = scrubPii(obj.message);
