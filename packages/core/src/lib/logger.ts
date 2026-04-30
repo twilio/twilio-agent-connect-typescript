@@ -18,37 +18,12 @@ function piiLogMethod(this: any, args: unknown[], method: pino.LogFn) {
   return method.apply(this, scrubbed as Parameters<pino.LogFn>);
 }
 
-/**
- * Create a Pino logger with configured settings
- *
- * @param options - Logger configuration options
- * @returns Configured Pino logger
- */
-export function createLogger(options?: {
-  level?: string;
-  pretty?: boolean;
-  name?: string;
-}): Logger {
+export function createLogger(options?: { level?: string; name?: string }): Logger {
   const level = options?.level || process.env.TWILIO_LOG_LEVEL || 'info';
-  const isDevelopment = process.env.NODE_ENV !== 'production';
-  const usePretty = options?.pretty !== undefined ? options.pretty : isDevelopment;
 
-  const pinoOptions: pino.LoggerOptions = {
+  return pino({
     level,
     ...(options?.name && { name: options.name }),
     hooks: { logMethod: piiLogMethod },
-  };
-
-  // Use pretty printing in development for better readability
-  if (usePretty) {
-    return pino({
-      ...pinoOptions,
-      transport: {
-        target: 'pino-pretty',
-        options: {},
-      },
-    });
-  }
-
-  return pino(pinoOptions);
+  });
 }
