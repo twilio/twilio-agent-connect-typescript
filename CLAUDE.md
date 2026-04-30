@@ -74,7 +74,7 @@ getting_started/  # Example apps (OpenAI integration)
 
 ## Dependencies
 
-**Runtime**: twilio, fastify, @fastify/websocket, @fastify/formbody, ws, zod, pino, pino-pretty, dotenv, fastify-graceful-shutdown
+**Runtime**: twilio, fastify, @fastify/websocket, @fastify/formbody, ws, zod, pino, dotenv, fastify-graceful-shutdown
 **Dev**: typescript, tsup, vitest, @vitest/coverage-v8, eslint, prettier, rimraf, @types/node, @types/ws
 
 ## TACServer Configuration
@@ -95,7 +95,6 @@ The `TACServer` class (`packages/server/src/lib/server.ts`) provides a productio
   conversationRelayConfig: {
     welcomeGreeting: 'Hello! How can I assist you today?',
   },
-  development: false,
 }
 ```
 
