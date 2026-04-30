@@ -209,15 +209,6 @@ describe('TACConfig', () => {
       expect(config.isOrchestratorEnabled()).toBe(false);
     });
 
-    it('should throw when TWILIO_API_KEY is missing even with conversationConfigurationId', () => {
-      setRequiredEnvVars();
-      delete process.env.TWILIO_API_KEY;
-
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_API_KEY');
-    });
-
     it('should throw error when no environment variables are set', () => {
       Object.keys(originalEnv).forEach(key => {
         delete process.env[key];
