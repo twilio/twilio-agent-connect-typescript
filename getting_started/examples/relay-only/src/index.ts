@@ -22,6 +22,13 @@ const agent = new Agent({
 });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
+
+if (tac.isOrchestratorEnabled()) {
+  throw new Error(
+    'This example expects voice-only mode — unset TWILIO_CONVERSATION_CONFIGURATION_ID.'
+  );
+}
+
 const voiceChannel = new VoiceChannel(tac);
 
 tac.registerChannel(voiceChannel);
