@@ -173,24 +173,22 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_AUTH_TOKEN');
     });
 
-    it('should succeed without TWILIO_API_KEY in relay-only mode', () => {
+    it('should throw error when TWILIO_API_KEY is missing', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_API_KEY;
-      delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
-      const config = TACConfig.fromEnv();
-      expect(config.apiKey).toBeUndefined();
-      expect(config.isOrchestratorEnabled()).toBe(false);
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Missing required environment variable: TWILIO_API_KEY');
     });
 
-    it('should succeed without TWILIO_API_SECRET in relay-only mode', () => {
+    it('should throw error when TWILIO_API_SECRET is missing', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_API_SECRET;
-      delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
-      const config = TACConfig.fromEnv();
-      expect(config.apiSecret).toBeUndefined();
-      expect(config.isOrchestratorEnabled()).toBe(false);
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow('Missing required environment variable: TWILIO_API_SECRET');
     });
 
     it('should throw error when TWILIO_PHONE_NUMBER is missing', () => {
@@ -211,13 +209,13 @@ describe('TACConfig', () => {
       expect(config.isOrchestratorEnabled()).toBe(false);
     });
 
-    it('should throw when conversationConfigurationId is set without apiKey/apiSecret', () => {
+    it('should throw when TWILIO_API_KEY is missing even with conversationConfigurationId', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_API_KEY;
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('apiKey and apiSecret are required when conversationConfigurationId is set');
+      }).toThrow('Missing required environment variable: TWILIO_API_KEY');
     });
 
     it('should throw error when no environment variables are set', () => {

@@ -19,8 +19,8 @@ import { z } from 'zod';
 export class TACConfig {
   public readonly accountSid: string;
   public readonly authToken: string;
-  public readonly apiKey?: string;
-  public readonly apiSecret?: string;
+  public readonly apiKey: string;
+  public readonly apiSecret: string;
   public readonly phoneNumber: string;
   public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId?: string;
@@ -45,15 +45,11 @@ export class TACConfig {
     // Assign all properties
     this.accountSid = validatedConfig.accountSid;
     this.authToken = validatedConfig.authToken;
+    this.apiKey = validatedConfig.apiKey;
+    this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
     // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
     this.memoryConfig = validatedConfig.memoryConfig;
-    if (validatedConfig.apiKey) {
-      this.apiKey = validatedConfig.apiKey;
-    }
-    if (validatedConfig.apiSecret) {
-      this.apiSecret = validatedConfig.apiSecret;
-    }
     if (validatedConfig.conversationConfigurationId) {
       this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
     }
@@ -118,6 +114,8 @@ export class TACConfig {
     const requiredVars = [
       { key: EnvironmentVariables.TWILIO_ACCOUNT_SID, name: 'TWILIO_ACCOUNT_SID' },
       { key: EnvironmentVariables.TWILIO_AUTH_TOKEN, name: 'TWILIO_AUTH_TOKEN' },
+      { key: EnvironmentVariables.TWILIO_API_KEY, name: 'TWILIO_API_KEY' },
+      { key: EnvironmentVariables.TWILIO_API_SECRET, name: 'TWILIO_API_SECRET' },
       { key: EnvironmentVariables.TWILIO_PHONE_NUMBER, name: 'TWILIO_PHONE_NUMBER' },
     ];
 
@@ -193,8 +191,8 @@ export class TACConfig {
     const rawConfig = {
       accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
       authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
-      apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY] || undefined,
-      apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET] || undefined,
+      apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
+      apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
       memoryConfig: {
         traitGroups,

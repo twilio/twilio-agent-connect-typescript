@@ -23,52 +23,42 @@ export type TwilioMemoryConfig = z.infer<typeof TwilioMemoryConfigSchema>;
 /**
  * TAC configuration schema
  */
-export const TACConfigSchema = z
-  .object({
-    accountSid: z.string().min(1, 'Twilio Account SID is required'),
-    authToken: z.string().min(1, 'Twilio Auth Token is required'),
-    apiKey: z.string().min(1, 'Twilio API Key is required').optional(),
-    apiSecret: z.string().min(1, 'Twilio API Secret is required').optional(),
-    phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
-    memoryConfig: TwilioMemoryConfigSchema.default({}),
-    conversationConfigurationId: z
-      .string()
-      .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
-      .optional(),
-    voicePublicDomain: z.string().url().optional(),
-    cintelConfigurationId: z.string().optional(),
-    cintelObservationOperatorSid: z.string().optional(),
-    cintelSummaryOperatorSid: z.string().optional(),
-    region: z
-      .string()
-      .max(63, 'Invalid Twilio region format (must be a valid DNS label)')
-      .regex(
-        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
-        'Invalid Twilio region format (must be a valid DNS label)'
-      )
-      .optional(),
-    /**
-     * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
-     * TAC derives both the digital-handoff Studio Executions URL and the voice
-     * `<Connect action>` webhook URL from this SID.
-     */
-    studioHandoffFlowSid: z
-      .string()
-      .regex(
-        /^FW[0-9a-f]{32}$/,
-        'Invalid Studio Flow SID format (expected FW followed by 32 hex chars)'
-      )
-      .optional(),
-  })
-  .refine(
-    data =>
-      !data.conversationConfigurationId || (data.apiKey !== undefined && data.apiSecret !== undefined),
-    {
-      message:
-        'apiKey and apiSecret are required when conversationConfigurationId is set',
-      path: ['apiKey'],
-    }
-  );
+export const TACConfigSchema = z.object({
+  accountSid: z.string().min(1, 'Twilio Account SID is required'),
+  authToken: z.string().min(1, 'Twilio Auth Token is required'),
+  apiKey: z.string().min(1, 'Twilio API Key is required'),
+  apiSecret: z.string().min(1, 'Twilio API Secret is required'),
+  phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
+  memoryConfig: TwilioMemoryConfigSchema.default({}),
+  conversationConfigurationId: z
+    .string()
+    .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
+    .optional(),
+  voicePublicDomain: z.string().url().optional(),
+  cintelConfigurationId: z.string().optional(),
+  cintelObservationOperatorSid: z.string().optional(),
+  cintelSummaryOperatorSid: z.string().optional(),
+  region: z
+    .string()
+    .max(63, 'Invalid Twilio region format (must be a valid DNS label)')
+    .regex(
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+      'Invalid Twilio region format (must be a valid DNS label)'
+    )
+    .optional(),
+  /**
+   * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
+   * TAC derives both the digital-handoff Studio Executions URL and the voice
+   * `<Connect action>` webhook URL from this SID.
+   */
+  studioHandoffFlowSid: z
+    .string()
+    .regex(
+      /^FW[0-9a-f]{32}$/,
+      'Invalid Studio Flow SID format (expected FW followed by 32 hex chars)'
+    )
+    .optional(),
+});
 
 export type TACConfigData = z.infer<typeof TACConfigSchema>;
 

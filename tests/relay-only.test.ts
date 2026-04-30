@@ -4,6 +4,8 @@ import { TAC, TACConfig, VoiceChannel, SMSChannel, ChatChannel } from '@twilio/t
 const getRelayOnlyConfigData = () => ({
   accountSid: 'ACtest123456789',
   authToken: 'test_token_123',
+  apiKey: 'SKtest123456789',
+  apiSecret: 'test_api_secret_123',
   phoneNumber: '+15551234567',
 });
 
@@ -19,8 +21,8 @@ describe('Relay-Only Mode', () => {
     it('should create config without conversationConfigurationId', () => {
       const config = new TACConfig(getRelayOnlyConfigData());
       expect(config.conversationConfigurationId).toBeUndefined();
-      expect(config.apiKey).toBeUndefined();
-      expect(config.apiSecret).toBeUndefined();
+      expect(config.apiKey).toBe('SKtest123456789');
+      expect(config.apiSecret).toBe('test_api_secret_123');
     });
 
     it('isOrchestratorEnabled() returns false in relay-only mode', () => {
@@ -33,23 +35,18 @@ describe('Relay-Only Mode', () => {
       expect(config.isOrchestratorEnabled()).toBe(true);
     });
 
-    it('should throw when conversationConfigurationId is set without apiKey', () => {
+    it('should throw when apiKey is missing', () => {
+      const { apiKey: _, ...withoutApiKey } = getRelayOnlyConfigData();
       expect(() => {
-        new TACConfig({
-          ...getRelayOnlyConfigData(),
-          conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
-        });
-      }).toThrow('apiKey and apiSecret are required when conversationConfigurationId is set');
+        new TACConfig(withoutApiKey as any);
+      }).toThrow();
     });
 
-    it('should throw when conversationConfigurationId is set without apiSecret', () => {
+    it('should throw when apiSecret is missing', () => {
+      const { apiSecret: _, ...withoutApiSecret } = getRelayOnlyConfigData();
       expect(() => {
-        new TACConfig({
-          ...getRelayOnlyConfigData(),
-          apiKey: 'SKtest123456789',
-          conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
-        });
-      }).toThrow('apiKey and apiSecret are required when conversationConfigurationId is set');
+        new TACConfig(withoutApiSecret as any);
+      }).toThrow();
     });
   });
 
@@ -240,6 +237,32 @@ describe('Relay-Only Mode', () => {
       });
 
       expect(voiceChannel.getConversationSession('CA_cb_relay')).toBeUndefined();
+    });
+
+    it('handleConversationRelayCallback rejects mismatched AccountSid', async () => {
+      const connected = new Promise<void>(resolve => {
+        voiceChannel.on('webSocketConnected', () => resolve());
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockWs = createMockWebSocket() as any;
+      voiceChannel.handleWebSocketConnection(mockWs);
+
+      mockWs._emit('message', Buffer.from(setupMessage('CA_bad_acct')));
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await connected;
+
+      const result = await voiceChannel.handleConversationRelayCallback({
+        CallSid: 'CA_bad_acct',
+        CallStatus: 'completed',
+        AccountSid: 'AC_wrong_account',
+        From: '+15551112222',
+        To: '+15553334444',
+        Direction: 'inbound',
+      });
+
+      expect(result.status).toBe(403);
+      expect(voiceChannel.getConversationSession('CA_bad_acct')).toBeDefined();
     });
 
     it('handleConversationRelayCallback ignores non-completed status', async () => {

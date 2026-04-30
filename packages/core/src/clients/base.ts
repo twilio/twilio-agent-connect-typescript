@@ -29,10 +29,6 @@ export abstract class BaseClient {
     this.baseUrl = baseUrl;
     this.logger = logger || createLogger({ name: this.constructor.name });
 
-    if (!config.apiKey || !config.apiSecret) {
-      throw new Error('apiKey and apiSecret are required for API client authentication');
-    }
-
     // Create Authorization header for Basic Auth
     const authHeader =
       'Basic ' + Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString('base64');

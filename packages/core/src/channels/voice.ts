@@ -82,13 +82,9 @@ export class VoiceChannel extends BaseChannel {
 
   private getTwilioClient(): ReturnType<typeof Twilio> {
     if (!this.twilioClient) {
-      if (this.config.apiKey && this.config.apiSecret) {
-        this.twilioClient = Twilio(this.config.apiKey, this.config.apiSecret, {
-          accountSid: this.config.accountSid,
-        });
-      } else {
-        this.twilioClient = Twilio(this.config.accountSid, this.config.authToken);
-      }
+      this.twilioClient = Twilio(this.config.apiKey, this.config.apiSecret, {
+        accountSid: this.config.accountSid,
+      });
     }
     return this.twilioClient;
   }
@@ -702,6 +698,14 @@ export class VoiceChannel extends BaseChannel {
       { call_sid: payload.CallSid, call_status: payload.CallStatus },
       'ConversationRelay callback received'
     );
+
+    if (payload.AccountSid !== this.config.accountSid) {
+      this.logger.warn(
+        { expected: this.config.accountSid, received: payload.AccountSid },
+        'ConversationRelay callback AccountSid mismatch, ignoring'
+      );
+      return { status: 403, content: 'Forbidden', contentType: 'text/plain' };
+    }
 
     if (payload.CallStatus === 'completed') {
       const conversationId = this.callSidToConversationId.get(payload.CallSid);

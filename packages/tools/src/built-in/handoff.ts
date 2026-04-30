@@ -203,9 +203,6 @@ export function createStudioHandoffTool(
         // handoff_failed so the LLM can tell the user instead of claiming
         // success.
         try {
-          if (!config.apiKey || !config.apiSecret) {
-            throw new Error('apiKey and apiSecret are required for Studio handoff');
-          }
           await postStudioHandoff(payload, session, {
             handoffUrl: studioExecutionsUrl(flowSid),
             fromAddress: config.phoneNumber,
