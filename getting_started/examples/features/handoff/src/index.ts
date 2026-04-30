@@ -86,7 +86,6 @@ tac.onMessageReady(handleMessageReady);
 
 const server = new TACServer(tac, {
   voice: { host: '0.0.0.0', port: 8000 },
-  development: true,
 });
 
 server

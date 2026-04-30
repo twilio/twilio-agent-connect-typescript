@@ -52,9 +52,6 @@ export interface TACServerConfig {
   /** ConversationRelay configuration (welcomeGreeting, transcription, TTS, interaction settings, etc.) */
   conversationRelayConfig?: Partial<Omit<ConversationRelayConfig, 'url'>>;
 
-  /** Enable development features */
-  development?: boolean;
-
   /** Voice channel instance (alternative to registering on TAC) */
   voiceChannel?: VoiceChannel;
 
@@ -79,7 +76,6 @@ const DEFAULT_CONFIG = {
   conversationRelayConfig: {
     welcomeGreeting: 'Hello! How can I assist you today?',
   },
-  development: false,
 } satisfies Omit<
   TACServerConfig,
   'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'
@@ -159,19 +155,9 @@ export class TACServer {
       this.fastify = config.fastifyInstance;
     } else {
       this.fastify = Fastify({
-        logger: this.config.development
-          ? {
-              level: process.env.TWILIO_LOG_LEVEL || 'info',
-              transport: {
-                target: 'pino-pretty',
-                options: {
-                  colorize: true,
-                },
-              },
-            }
-          : {
-              level: process.env.TWILIO_LOG_LEVEL || 'info',
-            },
+        logger: {
+          level: process.env.TWILIO_LOG_LEVEL || 'info',
+        },
         ...config.fastify,
       });
     }

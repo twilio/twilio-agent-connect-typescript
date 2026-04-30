@@ -24,7 +24,6 @@ export default defineConfig({
     'fastify-graceful-shutdown',
     'ws',
     'pino',
-    'pino-pretty',
     'zod',
   ],
   esbuildOptions(options) {

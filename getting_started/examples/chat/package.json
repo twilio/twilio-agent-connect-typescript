@@ -5,8 +5,8 @@
   "private": true,
   "description": "TAC Chat channel example with OpenAI integration",
   "scripts": {
-    "start": "tsx watch src/index.ts",
-    "dev": "tsx watch src/index.ts"
+    "start": "tsx watch src/index.ts | pino-pretty",
+    "dev": "tsx watch src/index.ts | pino-pretty"
   },
   "dependencies": {
     "twilio-agent-connect": "file:../../..",
@@ -14,10 +14,10 @@
     "twilio": "^5.0.0",
     "fastify": "^5.0.0",
     "@fastify/static": "^9.1.1",
-    "dotenv": "^16.0.0",
-    "pino-pretty": "^13.0.0"
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
+    "pino-pretty": "^13.0.0",
     "tsx": "^4.0.0"
   }
 }
