@@ -58,13 +58,13 @@ export class TAC {
 
   private readonly config: TACConfig;
   public readonly logger: Logger;
-  private memoryClient!: MemoryClient;
-  private knowledgeClient!: KnowledgeClient;
-  private readonly conversationClient: ConversationClient;
+  private memoryClient: MemoryClient | null = null;
+  private knowledgeClient: KnowledgeClient | null = null;
+  private conversationClient: ConversationClient | null = null;
   private readonly channels: Map<ChannelType, BaseChannel>;
   private cintelProcessor?: OperatorResultProcessor;
 
-  private memoryStoreId!: string;
+  private memoryStoreId: string | undefined;
 
   /**
    * V1 Conversations service SID sourced from `conversationsV1Bridge.serviceId`
@@ -104,19 +104,28 @@ export class TAC {
     this.config = finalConfig;
     this.logger = finalLogger;
     this.channels = new Map();
-    this.conversationClient = new ConversationClient(
-      this.config,
-      this.logger.child({ component: 'conversation' })
-    );
   }
 
   public static async create(options: TACOptions = {}): Promise<TAC> {
     const tac = new TAC(TAC.FACTORY_TOKEN, options);
 
+    if (!tac.config.isOrchestratorEnabled()) {
+      tac.logger.info('Voice-only mode: conversationConfigurationId not set, skipping Conversation Orchestrator initialization');
+      return tac;
+    }
+
     try {
-      const conversationConfig = await tac.conversationClient.getConfiguration(
-        tac.config.conversationConfigurationId
+      tac.conversationClient = new ConversationClient(
+        tac.config,
+        tac.logger.child({ component: 'conversation' })
       );
+
+      const configId = tac.config.conversationConfigurationId;
+      if (!configId) {
+        throw new Error('conversationConfigurationId is required when orchestrator is enabled');
+      }
+
+      const conversationConfig = await tac.conversationClient.getConfiguration(configId);
 
       tac.memoryStoreId = conversationConfig.memoryStoreId;
       // TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID
@@ -334,7 +343,7 @@ export class TAC {
 
       // Get memory if not already provided and profile ID exists
       let memory = data.userMemory;
-      if (!memory && data.profileId) {
+      if (!memory && data.profileId && this.memoryClient) {
         this.logger.debug(
           { profile_id: data.profileId, operation: 'memory_retrieval' },
           'Retrieving memory for profile'
@@ -437,6 +446,14 @@ export class TAC {
   }
 
   /**
+   * Whether Conversation Orchestrator is configured.
+   * Returns false in voice-only mode.
+   */
+  public isOrchestratorEnabled(): boolean {
+    return this.config.isOrchestratorEnabled();
+  }
+
+  /**
    * Get registered channel by type
    */
   public getChannel<T extends BaseChannel>(channelType: ChannelType): T | undefined {
@@ -451,30 +468,34 @@ export class TAC {
   }
 
   /**
-   * Get memory client for advanced memory operations
+   * Get memory client for advanced memory operations.
+   * Returns null in voice-only mode.
    */
-  public getMemoryClient(): MemoryClient {
+  public getMemoryClient(): MemoryClient | null {
     return this.memoryClient;
   }
 
   /**
    * Get the memory store ID resolved from the ConversationConfiguration at startup.
+   * Returns undefined in voice-only mode.
    */
-  public getMemoryStoreId(): string {
+  public getMemoryStoreId(): string | undefined {
     return this.memoryStoreId;
   }
 
   /**
-   * Get knowledge client for knowledge base operations
+   * Get knowledge client for knowledge base operations.
+   * Returns null in voice-only mode.
    */
-  public getKnowledgeClient(): KnowledgeClient {
+  public getKnowledgeClient(): KnowledgeClient | null {
     return this.knowledgeClient;
   }
 
   /**
-   * Get conversation client for advanced conversation operations
+   * Get conversation client for advanced conversation operations.
+   * Returns null in voice-only mode.
    */
-  public getConversationClient(): ConversationClient {
+  public getConversationClient(): ConversationClient | null {
     return this.conversationClient;
   }
 
@@ -523,6 +544,10 @@ export class TAC {
     session: ConversationSession,
     query?: string
   ): Promise<TACMemoryResponse> {
+    if (!this.isOrchestratorEnabled()) {
+      return new TACMemoryResponse([]);
+    }
+
     try {
       // If profileId is missing, try to lookup profile using address
       if (!session.profileId) {
@@ -555,6 +580,10 @@ export class TAC {
           'profileId not found, attempting to lookup profile'
         );
 
+        if (!this.memoryClient) {
+          throw new Error('Memory client is not available');
+        }
+
         // Lookup profile using appropriate identity type
         const lookupResponse = await this.memoryClient.lookupProfile(
           identityType,
@@ -578,6 +607,10 @@ export class TAC {
         throw new Error('Profile ID is required but was not resolved');
       }
 
+      if (!this.memoryClient) {
+        throw new Error('Memory client is not available');
+      }
+
       const memoryResponse = await this.memoryClient.retrieveMemories(session.profileId, {
         conversationId: session.conversationId,
         query,
@@ -594,6 +627,9 @@ export class TAC {
       );
 
       try {
+        if (!this.conversationClient) {
+          throw new Error('Conversation client is not available');
+        }
         const communications = await this.conversationClient.listCommunications(
           session.conversationId
         );
@@ -615,6 +651,11 @@ export class TAC {
   public async fetchProfile(profileId: string): Promise<ProfileResponse | undefined> {
     if (!profileId) {
       this.logger.warn('profile_id is required for profile fetching but was not provided');
+      return undefined;
+    }
+
+    if (!this.memoryClient) {
+      this.logger.warn('Memory client is not available (voice-only mode)');
       return undefined;
     }
 

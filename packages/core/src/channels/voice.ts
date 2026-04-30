@@ -66,6 +66,7 @@ export class VoiceChannel extends BaseChannel {
   private readonly streamTasks: Map<ConversationId, StreamTask>;
   private readonly promptQueues: Map<ConversationId, Promise<void>>;
   private readonly initializationRetries: Map<string, number>;
+  private readonly callSidToConversationId: Map<string, ConversationId>;
   private readonly MAX_INITIALIZATION_RETRIES = 3;
   private twilioClient: ReturnType<typeof Twilio> | undefined;
 
@@ -76,13 +77,18 @@ export class VoiceChannel extends BaseChannel {
     this.streamTasks = new Map();
     this.promptQueues = new Map();
     this.initializationRetries = new Map();
+    this.callSidToConversationId = new Map();
   }
 
   private getTwilioClient(): ReturnType<typeof Twilio> {
     if (!this.twilioClient) {
-      this.twilioClient = Twilio(this.config.apiKey, this.config.apiSecret, {
-        accountSid: this.config.accountSid,
-      });
+      if (this.config.apiKey && this.config.apiSecret) {
+        this.twilioClient = Twilio(this.config.apiKey, this.config.apiSecret, {
+          accountSid: this.config.accountSid,
+        });
+      } else {
+        this.twilioClient = Twilio(this.config.accountSid, this.config.authToken);
+      }
     }
     return this.twilioClient;
   }
@@ -197,56 +203,73 @@ export class VoiceChannel extends BaseChannel {
                     );
                   }
 
-                  // Poll for the conversation — CO may not have created it yet
-                  const POLL_ATTEMPTS = 5;
-                  const POLL_DELAY_MS = 500;
-                  let conversations: Awaited<
-                    ReturnType<typeof this.conversationClient.listConversations>
-                  > = [];
+                  if (!this.tac.isOrchestratorEnabled()) {
+                    // Voice-only mode: use callSid as conversationId directly
+                    conversationId = callSid as ConversationId;
+                    this.webSocketConnections.set(conversationId, ws);
+                    this.callSidToConversationId.set(callSid, conversationId);
+                    const session = this.startConversation(conversationId);
 
-                  for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
-                    conversations = await this.conversationClient.listConversations({
-                      channelId: callSid,
-                    });
-                    if (conversations.length === 1) break;
-                    if (attempt < POLL_ATTEMPTS - 1) {
-                      this.logger.debug(
-                        { call_sid: callSid, attempt: attempt + 1, found: conversations.length },
-                        'Conversation not ready yet, polling again'
-                      );
-                      await new Promise(resolve => setTimeout(resolve, POLL_DELAY_MS));
+                    if (fromNumber) {
+                      session.authorInfo = { address: fromNumber };
                     }
-                  }
+                  } else {
+                    // Orchestrated mode: poll for conversation created by CO
+                    if (!this.conversationClient) {
+                      throw new Error('Conversation client is required in orchestrated mode');
+                    }
 
-                  if (conversations.length !== 1) {
-                    throw new Error(
-                      `Expected exactly 1 conversation for callSid ${callSid}, ` +
-                        `but found ${conversations.length} after ${POLL_ATTEMPTS} attempts`
-                    );
-                  }
+                    const POLL_ATTEMPTS = 5;
+                    const POLL_DELAY_MS = 500;
+                    let conversations: Awaited<
+                      ReturnType<typeof this.conversationClient.listConversations>
+                    > = [];
 
-                  const conversation = conversations[0]!;
-                  conversationId = conversation.id as ConversationId;
+                    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+                      conversations = await this.conversationClient.listConversations({
+                        channelId: callSid,
+                      });
+                      if (conversations.length === 1) break;
+                      if (attempt < POLL_ATTEMPTS - 1) {
+                        this.logger.debug(
+                          { call_sid: callSid, attempt: attempt + 1, found: conversations.length },
+                          'Conversation not ready yet, polling again'
+                        );
+                        await new Promise(resolve => setTimeout(resolve, POLL_DELAY_MS));
+                      }
+                    }
 
-                  const participants =
-                    await this.conversationClient.listParticipants(conversationId);
+                    if (conversations.length !== 1) {
+                      throw new Error(
+                        `Expected exactly 1 conversation for callSid ${callSid}, ` +
+                          `but found ${conversations.length} after ${POLL_ATTEMPTS} attempts`
+                      );
+                    }
 
-                  const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
-                  const customerAddress =
-                    customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
-                    fromNumber ??
-                    undefined;
-                  const profileId: ProfileId | undefined = customerParticipant?.profileId
-                    ? (customerParticipant.profileId as ProfileId)
-                    : undefined;
+                    const conversation = conversations[0]!;
+                    conversationId = conversation.id as ConversationId;
 
-                  this.webSocketConnections.set(conversationId, ws);
-                  const session = this.startConversation(conversationId, profileId);
+                    const participants =
+                      await this.conversationClient.listParticipants(conversationId);
 
-                  if (customerAddress) {
-                    session.authorInfo = {
-                      address: customerAddress,
-                    };
+                    const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
+                    const customerAddress =
+                      customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
+                      fromNumber ??
+                      undefined;
+                    const profileId: ProfileId | undefined = customerParticipant?.profileId
+                      ? (customerParticipant.profileId as ProfileId)
+                      : undefined;
+
+                    this.webSocketConnections.set(conversationId, ws);
+                    this.callSidToConversationId.set(callSid, conversationId);
+                    const session = this.startConversation(conversationId, profileId);
+
+                    if (customerAddress) {
+                      session.authorInfo = {
+                        address: customerAddress,
+                      };
+                    }
                   }
 
                   if (this.voiceCallbacks.onWebSocketConnected) {
@@ -580,12 +603,14 @@ export class VoiceChannel extends BaseChannel {
     conversationRelayConfig: ConversationRelayConfig;
   }): string {
     const { actionUrl, conversationRelayConfig } = options;
+    const conversationConfiguration = this.tac.isOrchestratorEnabled()
+      ? (conversationRelayConfig.conversationConfiguration ??
+        this.config.conversationConfigurationId)
+      : undefined;
     return this.connectConversationRelay(
       {
         ...conversationRelayConfig,
-        conversationConfiguration:
-          conversationRelayConfig.conversationConfiguration ??
-          this.config.conversationConfigurationId,
+        ...(conversationConfiguration !== undefined && { conversationConfiguration }),
       },
       actionUrl ? { actionUrl } : undefined
     );
@@ -620,13 +645,14 @@ export class VoiceChannel extends BaseChannel {
     );
 
     try {
-      // Generate TwiML — CO creates conversation via conversationConfiguration
+      const conversationConfiguration = this.tac.isOrchestratorEnabled()
+        ? (validated.conversationRelayConfig.conversationConfiguration ??
+          this.config.conversationConfigurationId)
+        : undefined;
       const twiml = this.connectConversationRelay(
         {
           ...validated.conversationRelayConfig,
-          conversationConfiguration:
-            validated.conversationRelayConfig.conversationConfiguration ??
-            this.config.conversationConfigurationId,
+          ...(conversationConfiguration !== undefined && { conversationConfiguration }),
         },
         {
           ...(validated.actionUrl ? { actionUrl: validated.actionUrl } : {}),
@@ -669,7 +695,7 @@ export class VoiceChannel extends BaseChannel {
    * @param payload - Callback payload from Twilio
    * @returns Response with status, content, and content type
    */
-  public handleConversationRelayCallback(
+  public async handleConversationRelayCallback(
     payload: ConversationRelayCallbackPayload
   ): Promise<{ status: number; content: string; contentType: string }> {
     this.logger.debug(
@@ -677,7 +703,15 @@ export class VoiceChannel extends BaseChannel {
       'ConversationRelay callback received'
     );
 
-    return Promise.resolve({ status: 200, content: 'OK', contentType: 'text/plain' });
+    if (payload.CallStatus === 'completed') {
+      const conversationId = this.callSidToConversationId.get(payload.CallSid);
+      if (conversationId) {
+        this.callSidToConversationId.delete(payload.CallSid);
+        await this.endConversation(conversationId);
+      }
+    }
+
+    return { status: 200, content: 'OK', contentType: 'text/plain' };
   }
 
   // =========================================================================
@@ -840,6 +874,7 @@ export class VoiceChannel extends BaseChannel {
     this.webSocketConnections.clear();
     this.promptQueues.clear();
     this.initializationRetries.clear();
+    this.callSidToConversationId.clear();
     super.shutdown();
   }
 }

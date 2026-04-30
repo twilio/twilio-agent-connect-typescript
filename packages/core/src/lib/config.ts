@@ -19,11 +19,11 @@ import { z } from 'zod';
 export class TACConfig {
   public readonly accountSid: string;
   public readonly authToken: string;
-  public readonly apiKey: string;
-  public readonly apiSecret: string;
+  public readonly apiKey?: string;
+  public readonly apiSecret?: string;
   public readonly phoneNumber: string;
   public readonly memoryConfig: TACConfigData['memoryConfig'];
-  public readonly conversationConfigurationId: string;
+  public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
@@ -45,12 +45,18 @@ export class TACConfig {
     // Assign all properties
     this.accountSid = validatedConfig.accountSid;
     this.authToken = validatedConfig.authToken;
-    this.apiKey = validatedConfig.apiKey;
-    this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
     // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
     this.memoryConfig = validatedConfig.memoryConfig;
-    this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
+    if (validatedConfig.apiKey) {
+      this.apiKey = validatedConfig.apiKey;
+    }
+    if (validatedConfig.apiSecret) {
+      this.apiSecret = validatedConfig.apiSecret;
+    }
+    if (validatedConfig.conversationConfigurationId) {
+      this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
+    }
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
@@ -77,9 +83,11 @@ export class TACConfig {
    * Required environment variables:
    * - TWILIO_ACCOUNT_SID: Twilio Account SID
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
+   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
+   *
+   * Required for orchestrated mode (when TWILIO_CONVERSATION_CONFIGURATION_ID is set):
    * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
    * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
-   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
    *
    * Optional environment variables:
@@ -110,13 +118,7 @@ export class TACConfig {
     const requiredVars = [
       { key: EnvironmentVariables.TWILIO_ACCOUNT_SID, name: 'TWILIO_ACCOUNT_SID' },
       { key: EnvironmentVariables.TWILIO_AUTH_TOKEN, name: 'TWILIO_AUTH_TOKEN' },
-      { key: EnvironmentVariables.TWILIO_API_KEY, name: 'TWILIO_API_KEY' },
-      { key: EnvironmentVariables.TWILIO_API_SECRET, name: 'TWILIO_API_SECRET' },
       { key: EnvironmentVariables.TWILIO_PHONE_NUMBER, name: 'TWILIO_PHONE_NUMBER' },
-      {
-        key: EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID,
-        name: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
-      },
     ];
 
     // Throw error for missing required variables (like Python's KeyError)
@@ -191,8 +193,8 @@ export class TACConfig {
     const rawConfig = {
       accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
       authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
-      apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
-      apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
+      apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY] || undefined,
+      apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET] || undefined,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
       memoryConfig: {
         traitGroups,
@@ -222,7 +224,7 @@ export class TACConfig {
         ),
       },
       conversationConfigurationId:
-        process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID]!,
+        process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
       voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid:
@@ -234,6 +236,14 @@ export class TACConfig {
     };
 
     return new TACConfig(rawConfig);
+  }
+
+  /**
+   * Whether Conversation Orchestrator is configured.
+   * Returns false in voice-only mode (no conversationConfigurationId).
+   */
+  public isOrchestratorEnabled(): boolean {
+    return this.conversationConfigurationId !== undefined;
   }
 
   /**

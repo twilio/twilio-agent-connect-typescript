@@ -47,11 +47,11 @@ getting_started/  # Example apps (OpenAI integration)
 
 - **TAC class** (`packages/core/src/lib/tac.ts`): Central orchestrator managing config, channels, callbacks, and API clients
 - **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by `SMSChannel` (webhooks/TwiML) and `VoiceChannel` (WebSocket)
-- **Voice channel initialization**: VoiceChannel waits for the first prompt message to initialize the conversation (fetches from ConversationRelay using `callSid`, extracts `profileId` from participants, then starts local session)
+- **Voice channel initialization**: In orchestrated mode, VoiceChannel waits for the first prompt message to initialize the conversation (polls Conversation Orchestrator using `callSid`, extracts `profileId` from participants, then starts local session). In voice-only mode (no `conversationConfigurationId`), uses `callSid` directly as the conversation ID without polling.
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onConversationEnded`) instead of EventEmitter
 - **Callback responses**: `onMessageReady` callbacks return `string` (auto-sent), `void`/`null` (manual `channel.sendResponse()`)
 - **Tool system** (`packages/tools/src/lib/builder.ts`): `defineTool()` with JSON schema; supports conversion to OpenAI and Anthropic formats
-- **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars
+- **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars. Only `accountSid`, `authToken`, and `phoneNumber` are required; `conversationConfigurationId`, `apiKey`, and `apiSecret` are optional (voice-only mode when omitted)
 - **API client architecture** (`packages/core/src/clients/`):
   - `BaseClient` abstract class provides common HTTP functionality using **axios**
   - All API clients (Memory, Conversation, Knowledge) inherit from BaseClient

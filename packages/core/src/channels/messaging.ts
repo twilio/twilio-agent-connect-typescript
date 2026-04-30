@@ -10,6 +10,7 @@ import {
   isProfileId,
 } from '../types/index';
 import { BaseChannel, BaseChannelEvents } from './base';
+import { ConversationClient } from '../clients/conversation';
 import type { TAC } from '../lib/tac';
 import { maskAddress } from '../util/log-redaction';
 
@@ -80,12 +81,21 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
  * (SMS and Chat) that use the Conversations Service webhooks.
  */
 export abstract class MessagingChannel extends BaseChannel {
+  protected override readonly conversationClient: ConversationClient;
   protected readonly messagingCallbacks: MessagingChannelEvents;
   private readonly processedTokens = new Set<string>();
   private readonly maxTrackedTokens: number;
 
   constructor(tac: TAC, config?: MessagingChannelConfig) {
     super(tac);
+    if (!tac.isOrchestratorEnabled()) {
+      throw new Error(
+        'Messaging channels require conversationConfigurationId to be configured. ' +
+          'Voice-only mode does not support SMS or Chat channels.'
+      );
+    }
+    // Safe: orchestrator is enabled so conversationClient is guaranteed non-null
+    this.conversationClient = tac.getConversationClient() as ConversationClient;
     this.messagingCallbacks = {};
     const capacity = config?.dedupCapacity ?? DEFAULT_DEDUP_CAPACITY;
     if (capacity < 1 || !Number.isInteger(capacity)) {

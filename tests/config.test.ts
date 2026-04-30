@@ -173,22 +173,24 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_AUTH_TOKEN');
     });
 
-    it('should throw error when TWILIO_API_KEY is missing', () => {
+    it('should succeed without TWILIO_API_KEY in relay-only mode', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_API_KEY;
+      delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_API_KEY');
+      const config = TACConfig.fromEnv();
+      expect(config.apiKey).toBeUndefined();
+      expect(config.isOrchestratorEnabled()).toBe(false);
     });
 
-    it('should throw error when TWILIO_API_SECRET is missing', () => {
+    it('should succeed without TWILIO_API_SECRET in relay-only mode', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_API_SECRET;
+      delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_API_SECRET');
+      const config = TACConfig.fromEnv();
+      expect(config.apiSecret).toBeUndefined();
+      expect(config.isOrchestratorEnabled()).toBe(false);
     });
 
     it('should throw error when TWILIO_PHONE_NUMBER is missing', () => {
@@ -200,13 +202,22 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_PHONE_NUMBER');
     });
 
-    it('should throw error when TWILIO_CONVERSATION_CONFIGURATION_ID is missing', () => {
+    it('should succeed without TWILIO_CONVERSATION_CONFIGURATION_ID (relay-only mode)', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
+      const config = TACConfig.fromEnv();
+      expect(config.conversationConfigurationId).toBeUndefined();
+      expect(config.isOrchestratorEnabled()).toBe(false);
+    });
+
+    it('should throw when conversationConfigurationId is set without apiKey/apiSecret', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_API_KEY;
+
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_CONVERSATION_CONFIGURATION_ID');
+      }).toThrow('apiKey and apiSecret are required when conversationConfigurationId is set');
     });
 
     it('should throw error when no environment variables are set', () => {

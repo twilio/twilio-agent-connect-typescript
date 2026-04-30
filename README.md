@@ -179,6 +179,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](.claude/CLAUDE.md)
 **Examples & Guides:**
 - **[Getting Started Guide](getting_started/)** - Examples and comprehensive documentation
 - **[OpenAI SDK Example](getting_started/examples/openai/)** - Complete multi-channel example with Voice and SMS
+- **[Voice-Only (Relay) Example](getting_started/examples/relay-only/)** - Voice-only mode with ConversationRelay and streaming
 - More examples coming soon
 
 **Documentation:**
