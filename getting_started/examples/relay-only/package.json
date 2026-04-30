@@ -1,7 +1,7 @@
 {
   "name": "tac-example-relay-only",
   "version": "1.0.0",
-  "description": "ConversationRelay-only example (no Conversation Orchestrator) for Twilio Agent Connect",
+  "description": "Voice-only mode example for Twilio Agent Connect",
   "private": true,
   "type": "module",
   "scripts": {
