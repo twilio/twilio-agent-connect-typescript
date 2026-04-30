@@ -107,6 +107,13 @@ const DEFAULT_HANDOFF_TOOL_DESCRIPTION =
  * The tool also sets the conversation to INACTIVE and clears status callbacks
  * to prevent further webhook events from being routed to TAC.
  *
+ * **Not available in voice-only mode.** This tool requires Conversation
+ * Orchestrator for conversation state management and Conversation Memory for
+ * the handoff payload. In voice-only mode, implement your own handoff by
+ * setting `session.pendingHandoffData` directly — the voice channel will
+ * send the WS `end` message with your payload, and your `<Connect action>`
+ * URL handler can route the call accordingly.
+ *
  * @throws Error if `tac.getConfig().studioHandoffFlowSid` is unset. The
  *   factory is Studio-specific; a missing SID is misconfiguration, not a
  *   soft fallback.
