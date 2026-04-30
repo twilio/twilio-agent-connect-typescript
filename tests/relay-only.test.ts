@@ -11,8 +11,6 @@ const getRelayOnlyConfigData = () => ({
 
 const getOrchestratedConfigData = () => ({
   ...getRelayOnlyConfigData(),
-  apiKey: 'SKtest123456789',
-  apiSecret: 'test_api_token_123',
   conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
 });
 

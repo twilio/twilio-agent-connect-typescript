@@ -110,7 +110,9 @@ export class TAC {
     const tac = new TAC(TAC.FACTORY_TOKEN, options);
 
     if (!tac.config.isOrchestratorEnabled()) {
-      tac.logger.info('Voice-only mode: conversationConfigurationId not set, skipping Conversation Orchestrator initialization');
+      tac.logger.info(
+        'Voice-only mode: conversationConfigurationId not set, skipping Conversation Orchestrator initialization'
+      );
       return tac;
     }
 
@@ -120,12 +122,10 @@ export class TAC {
         tac.logger.child({ component: 'conversation' })
       );
 
-      const configId = tac.config.conversationConfigurationId;
-      if (!configId) {
-        throw new Error('conversationConfigurationId is required when orchestrator is enabled');
-      }
-
-      const conversationConfig = await tac.conversationClient.getConfiguration(configId);
+      // Safe: we already returned early if !isOrchestratorEnabled(), so conversationConfigurationId is defined
+      const conversationConfig = await tac.conversationClient.getConfiguration(
+        tac.config.conversationConfigurationId!
+      );
 
       tac.memoryStoreId = conversationConfig.memoryStoreId;
       // TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID

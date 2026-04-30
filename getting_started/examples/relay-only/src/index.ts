@@ -5,7 +5,7 @@
  * This is the simplest way to get started — only requires Twilio account
  * credentials and a phone number. Conversation state is managed locally.
  *
- * Required env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+ * Required env vars: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_API_KEY, TWILIO_API_SECRET, TWILIO_PHONE_NUMBER
  */
 
 import { config } from 'dotenv';

@@ -79,14 +79,12 @@ export class TACConfig {
    * Required environment variables:
    * - TWILIO_ACCOUNT_SID: Twilio Account SID
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
-   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
-   *
-   * Required for orchestrated mode (when TWILIO_CONVERSATION_CONFIGURATION_ID is set):
    * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
    * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
-   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
+   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
    *
    * Optional environment variables:
+   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff

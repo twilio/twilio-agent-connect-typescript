@@ -51,7 +51,7 @@ getting_started/  # Example apps (OpenAI integration)
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onConversationEnded`) instead of EventEmitter
 - **Callback responses**: `onMessageReady` callbacks return `string` (auto-sent), `void`/`null` (manual `channel.sendResponse()`)
 - **Tool system** (`packages/tools/src/lib/builder.ts`): `defineTool()` with JSON schema; supports conversion to OpenAI and Anthropic formats
-- **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars. Only `accountSid`, `authToken`, and `phoneNumber` are required; `conversationConfigurationId`, `apiKey`, and `apiSecret` are optional (voice-only mode when omitted)
+- **Config via Zod** (`packages/core/src/lib/config.ts`): `TACConfig.fromEnv()` validates env vars. Only `accountSid`, `authToken`, `apiKey`, `apiSecret`, and `phoneNumber` are required; `conversationConfigurationId` is optional (voice-only mode when omitted)
 - **API client architecture** (`packages/core/src/clients/`):
   - `BaseClient` abstract class provides common HTTP functionality using **axios**
   - All API clients (Memory, Conversation, Knowledge) inherit from BaseClient

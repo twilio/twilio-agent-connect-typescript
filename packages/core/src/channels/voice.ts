@@ -345,6 +345,7 @@ export class VoiceChannel extends BaseChannel {
       }
       if (callSid) {
         this.initializationRetries.delete(callSid);
+        this.callSidToConversationId.delete(callSid);
       }
     });
 

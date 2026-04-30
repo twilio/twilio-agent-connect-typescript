@@ -152,7 +152,9 @@ export function createStudioHandoffTool(
 
       const coClient = tac.getConversationClient();
       if (!coClient) {
-        throw new Error('Handoff requires Conversation Orchestrator (not available in voice-only mode)');
+        throw new Error(
+          'Handoff requires Conversation Orchestrator (not available in voice-only mode)'
+        );
       }
       const memoryStoreId = tac.getMemoryStoreId();
       if (!memoryStoreId) {
