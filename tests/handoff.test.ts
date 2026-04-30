@@ -104,6 +104,22 @@ describe('createStudioHandoffTool factory', () => {
       /studioHandoffFlowSid/
     );
   });
+
+  it('throws in voice-only mode (no Conversation Orchestrator)', async () => {
+    const config = new (await import('@twilio/tac-core')).TACConfig({
+      accountSid: ACCOUNT_SID,
+      authToken: 'test_token_123',
+      apiKey: 'SK123',
+      apiSecret: 'test_api_secret',
+      phoneNumber: '+15551234567',
+      studioHandoffFlowSid: FLOW_SID,
+    });
+    const tac = await (await import('@twilio/tac-core')).TAC.create({ config });
+
+    expect(() => createStudioHandoffTool(tac, makeSession())).toThrowError(
+      /Conversation Orchestrator/
+    );
+  });
 });
 
 describe('handoff tool execution — voice channel', () => {

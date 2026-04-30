@@ -114,9 +114,9 @@ const DEFAULT_HANDOFF_TOOL_DESCRIPTION =
  * send the WS `end` message with your payload, and your `<Connect action>`
  * URL handler can route the call accordingly.
  *
- * @throws Error if `tac.getConfig().studioHandoffFlowSid` is unset. The
- *   factory is Studio-specific; a missing SID is misconfiguration, not a
- *   soft fallback.
+ * @throws Error if `tac.getConfig().studioHandoffFlowSid` is unset, if
+ *   Conversation Orchestrator is not configured (voice-only mode), or if
+ *   the memory store ID was not resolved at startup.
  */
 export function createStudioHandoffTool(
   tac: TAC,
@@ -135,6 +135,21 @@ export function createStudioHandoffTool(
     );
   }
   const flowSid = config.studioHandoffFlowSid;
+
+  const coClient = tac.getConversationClient();
+  if (!coClient) {
+    throw new Error(
+      'createStudioHandoffTool requires Conversation Orchestrator ' +
+        '(not available in voice-only mode)'
+    );
+  }
+  const memoryStoreId = tac.getMemoryStoreId();
+  if (!memoryStoreId) {
+    throw new Error(
+      'createStudioHandoffTool requires a memory store ID ' +
+        '(resolved from conversationConfigurationId at startup)'
+    );
+  }
 
   const staticAttributes = options.attributes ?? {};
   const toolName = options.name ?? DEFAULT_HANDOFF_TOOL_NAME;
@@ -156,18 +171,6 @@ export function createStudioHandoffTool(
     },
     async (params: HandoffParams): Promise<HandoffResult> => {
       const attributes = { ...staticAttributes, reason: params.reason };
-
-      const coClient = tac.getConversationClient();
-      if (!coClient) {
-        throw new Error(
-          'Handoff requires Conversation Orchestrator (not available in voice-only mode)'
-        );
-      }
-      const memoryStoreId = tac.getMemoryStoreId();
-      if (!memoryStoreId) {
-        throw new Error('Memory store ID is not available (required for handoff)');
-      }
-
       const payload = buildHandoffPayload(session, memoryStoreId, attributes);
 
       // 1. Set conversation to INACTIVE to trigger the CO-generated
