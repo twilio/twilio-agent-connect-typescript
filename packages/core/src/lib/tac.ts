@@ -537,19 +537,11 @@ export class TAC {
         }
 
         // Determine identity type based on address format
-        // Email addresses contain '@', phone numbers start with '+'
+        // Email addresses contain '@'
+        // Phone numbers start with '+' or have channel prefix like 'sms:', 'rcs:', 'whatsapp:'
+        // The Memory API will normalize the value (e.g., strip 'rcs:' prefix) automatically
         const address = session.authorInfo.address;
-        let identityType: 'email' | 'phone';
-        if (address.includes('@')) {
-          identityType = 'email';
-        } else if (address.startsWith('+')) {
-          identityType = 'phone';
-        } else {
-          throw new Error(
-            `Unsupported authorInfo.address format '${maskAddress(address)}'. ` +
-              "Expected an email address containing '@' or a phone number starting with '+'."
-          );
-        }
+        const identityType: 'email' | 'phone' = address.includes('@') ? 'email' : 'phone';
         this.logger.debug(
           { identityType, address: maskAddress(address), channel: session.channel },
           'profileId not found, attempting to lookup profile'

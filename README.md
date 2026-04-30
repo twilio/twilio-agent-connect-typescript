@@ -11,7 +11,7 @@ Explore the [getting_started](getting_started) directory to see the SDK in actio
 
 ## Key Features
 
-- **SMS Channel Support**: Built-in webhook handling for Twilio SMS conversations
+- **Multi-Channel Support**: Built-in webhook handling for SMS, RCS, and Chat channels
 - **Voice Channel Support**: WebSocket protocol handling for Twilio Voice with ConversationRelay
 - **Memory Management**: Automatic integration with Twilio Memory for persistent user context
 - **Conversation Lifecycle**: Automatic tracking of conversation sessions and state
@@ -58,7 +58,7 @@ Here's a minimal example to get started:
 
 ### Multi-Channel with OpenAI SDK
 
-Build an AI agent that works across both Voice and SMS channels with conversation memory and user context.
+Build an AI agent that works across Voice, SMS, and RCS channels with conversation memory and user context.
 
 First, install the required dependencies in the repository:
 
@@ -133,7 +133,7 @@ await server.start();
 
 **That's it!** The server automatically:
 - Creates Fastify app with `/twiml`, `/ws`, and `/webhook` endpoints
-- Handles both Voice and SMS conversations
+- Handles Voice, SMS, RCS, and Chat conversations
 - Provides conversation memory and user profile in the callback
 - Routes responses through the appropriate channel
 

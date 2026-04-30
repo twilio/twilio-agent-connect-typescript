@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Channel types supported by the framework
  */
-export const ChannelTypeSchema = z.enum(['sms', 'voice', 'chat']);
+export const ChannelTypeSchema = z.enum(['sms', 'voice', 'chat', 'rcs']);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
 /**

@@ -8,6 +8,10 @@ This example demonstrates how to initiate **outbound (agent-initiated) conversat
 
 The agent sends an initial SMS to the customer. When the customer replies, the message arrives via Conversation Orchestrator webhook and the agent responds using OpenAI.
 
+### RCS
+
+The agent sends an initial RCS message to the customer (requires Android device with Google Messages). When the customer replies, the message arrives via Conversation Orchestrator webhook and the agent responds using OpenAI.
+
 ### Voice
 
 The agent places an outbound phone call. When the customer answers, they can have a natural voice conversation powered by ConversationRelay (real-time speech-to-text and text-to-speech) and OpenAI.
@@ -64,6 +68,12 @@ TWILIO_CONVERSATION_CONFIGURATION_ID=conv_configuration_xxxxxxxxxxxxxxxxxxxxxxxx
 OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
+Required for RCS:
+
+```bash
+TWILIO_RCS_AGENT_ID=rcs:your_agent_id
+```
+
 Required for Voice:
 
 ```bash
@@ -104,6 +114,22 @@ npm run dev -- --to +16505551234 --channel sms --message "Hi! This is a follow-u
 
 The agent sends the initial message, then waits for the customer to reply. Each reply triggers an OpenAI-powered response.
 
+### RCS
+
+Send an outbound RCS message and wait for replies:
+
+```bash
+npm run dev -- --to +16505551234 --channel rcs --message "Hi! This is a follow-up about your recent order."
+```
+
+Or specify a custom RCS agent with the `--from` flag:
+
+```bash
+npm run dev -- --to +16505551234 --channel rcs --message "Hi there!" --from rcs:my_agent
+```
+
+The agent sends the initial message, then waits for the customer to reply. Each reply triggers an OpenAI-powered response.
+
 ### Voice
 
 Place an outbound call:
@@ -126,10 +152,11 @@ Note: the customer's "hello?" may interrupt the greeting. For most outbound use 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--to` | Yes | Recipient address (E.164 phone number for SMS/Voice) |
-| `--channel` | Yes | Channel type: `sms` or `voice` |
-| `--message` | SMS only | Initial outbound message text |
-| `--welcome-greeting` | No | Voice greeting spoken when the call is answered |
+| `--to` | Yes | Recipient address (E.164 phone number for SMS/RCS/Voice) |
+| `--channel` | Yes | Channel type: `sms`, `rcs`, or `voice` |
+| `--message` | SMS/RCS only | Initial outbound message text |
+| `--from` | RCS only | RCS agent address (optional if TWILIO_RCS_AGENT_ID is set) |
+| `--welcome-greeting` | Voice only | Voice greeting spoken when the call is answered |
 
 ## How It Works
 

@@ -88,7 +88,7 @@ const DEFAULT_CONFIG = {
 /**
  * Batteries-included Fastify server for TAC
  *
- * Provides out-of-the-box setup for SMS and Voice channels with
+ * Provides out-of-the-box setup for SMS, RCS, Chat, and Voice channels with
  * proper webhook handling, WebSocket support, and production-ready defaults.
  *
  * Customization:
@@ -141,16 +141,17 @@ export class TACServer {
     this.messagingChannels =
       config.messagingChannels ??
       (
-        [tac.getChannel<MessagingChannel>('sms'), tac.getChannel<MessagingChannel>('chat')] as (
-          | MessagingChannel
-          | undefined
-        )[]
+        [
+          tac.getChannel<MessagingChannel>('sms'),
+          tac.getChannel<MessagingChannel>('chat'),
+          tac.getChannel<MessagingChannel>('rcs'),
+        ] as (MessagingChannel | undefined)[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
     if (this.messagingChannels.length === 0) {
       // eslint-disable-next-line no-console -- Fastify logger not yet initialized
       console.warn(
-        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
+        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms", "rcs", or "chat") with TAC to enable messaging.'
       );
     }
     // Use the user-supplied Fastify instance if provided; otherwise create

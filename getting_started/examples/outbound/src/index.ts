@@ -1,13 +1,18 @@
 /**
- * Example: Outbound Conversations with SMS and Voice
+ * Example: Outbound Conversations with SMS, RCS, and Voice
  *
  * Demonstrates agent-initiated (outbound) conversations using TAC.
- * Sends an SMS or places a voice call, then handles the full conversation
- * loop with OpenAI.
+ * Sends an SMS, RCS message, or places a voice call, then handles the full
+ * conversation loop with OpenAI.
  *
  * Usage:
  *   npm run dev -- --to +16505551234 --channel sms --message "Hello!"
+ *   npm run dev -- --to +16505551234 --channel rcs --message "Hello!"
+ *   npm run dev -- --to +16505551234 --channel rcs --message "Hello!" --from rcs:my_agent
  *   npm run dev -- --to +16505551234 --channel voice
+ *   npm run dev -- --to +16505551234 --channel voice --welcome-greeting "Hi there!"
+ *
+ * For RCS, either TWILIO_RCS_AGENT_ID must be set OR --from flag must be provided.
  */
 
 import { parseArgs } from 'node:util';
@@ -18,12 +23,14 @@ import {
   TACConfig,
   VoiceChannel,
   SMSChannel,
+  RCSChannel,
   ConversationId,
   ChannelType,
   ProfileId,
   TACMemoryResponse,
   ConversationSession,
   TACServer,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // ---------------------------------------------------------------------------
@@ -35,30 +42,35 @@ const { values: args } = parseArgs({
     to: { type: 'string' },
     channel: { type: 'string' },
     message: { type: 'string' },
+    from: { type: 'string' },
     'welcome-greeting': { type: 'string' },
   },
   strict: true,
 });
 
 const to = args.to;
-const channel = args.channel as 'sms' | 'voice' | undefined;
+const channel = args.channel as 'sms' | 'rcs' | 'voice' | undefined;
 const message = args.message;
+const from = args.from;
 const welcomeGreeting = args['welcome-greeting'];
 
 if (!to || !channel) {
   console.error('Usage:');
   console.error('  npm run dev -- --to <address> --channel sms --message "Hello!"');
+  console.error(
+    '  npm run dev -- --to <address> --channel rcs --message "Hello!" [--from rcs:agent]'
+  );
   console.error('  npm run dev -- --to <address> --channel voice [--welcome-greeting "Hi!"]');
   process.exit(1);
 }
 
-if (channel !== 'sms' && channel !== 'voice') {
-  console.error(`Invalid channel "${channel}". Must be "sms" or "voice".`);
+if (channel !== 'sms' && channel !== 'rcs' && channel !== 'voice') {
+  console.error(`Invalid channel "${channel}". Must be "sms", "rcs", or "voice".`);
   process.exit(1);
 }
 
-if (channel === 'sms' && !message) {
-  console.error('--message is required for SMS channel.');
+if ((channel === 'sms' || channel === 'rcs') && !message) {
+  console.error(`--message is required for ${channel.toUpperCase()} channel.`);
   process.exit(1);
 }
 
@@ -74,8 +86,16 @@ const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac);
 const smsChannel = new SMSChannel(tac);
 
+// RCS channel requires agent_address - use env var or will be validated at runtime
+const rcsAgentId = process.env.TWILIO_RCS_AGENT_ID || '';
+const rcsChannel = new RCSChannel(tac, {
+  agentAddress: rcsAgentId || 'rcs:placeholder', // Will validate at runtime
+});
+
+// Register all channels - the server will auto-discover and route webhooks correctly
 tac.registerChannel(voiceChannel);
 tac.registerChannel(smsChannel);
+tac.registerChannel(rcsChannel);
 
 // ---------------------------------------------------------------------------
 // Conversation state
@@ -94,52 +114,6 @@ const SYSTEM_MESSAGE: OpenAI.Chat.ChatCompletionSystemMessageParam = {
     'You do not have the ability to transfer calls or connect to human agents. ' +
     'Only offer capabilities you actually have.',
 };
-
-function buildMemoryMessage(
-  memoryResponse: TACMemoryResponse | null,
-  context: ConversationSession
-): OpenAI.Chat.ChatCompletionSystemMessageParam | null {
-  const sections: string[] = [];
-
-  if (context.profile?.traits) {
-    const traitLines: string[] = [];
-    for (const [key, value] of Object.entries(context.profile.traits)) {
-      if (value !== null && value !== undefined) {
-        traitLines.push(
-          `- ${key}: ${typeof value === 'object' ? JSON.stringify(value) : (value as string | number | boolean)}`
-        );
-      }
-    }
-    if (traitLines.length > 0) {
-      sections.push(
-        ['## Customer Profile', 'Information about this customer:', ...traitLines].join('\n')
-      );
-    }
-  }
-
-  if (memoryResponse && memoryResponse.observations.length > 0) {
-    const lines = ['## Key Observations'];
-    for (const obs of memoryResponse.observations) {
-      lines.push(`- ${obs.content}`);
-    }
-    sections.push(lines.join('\n'));
-  }
-
-  if (memoryResponse && memoryResponse.summaries.length > 0) {
-    const lines = ['## Past Conversation Summaries'];
-    for (const summary of memoryResponse.summaries) {
-      lines.push(`- ${summary.content}`);
-    }
-    sections.push(lines.join('\n'));
-  }
-
-  if (sections.length === 0) return null;
-
-  return {
-    role: 'system',
-    content: '# Customer Context\n\n' + sections.join('\n\n'),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Message handler — called when the customer replies
@@ -163,10 +137,14 @@ async function handleMessageReady(params: {
   conversationMessages[convId].push({ role: 'user', content: params.message });
   console.log(`[${convId}] Customer: ${params.message}`);
 
-  const memoryMessage = buildMemoryMessage(params.memory ?? null, params.session);
+  // Build memory context using MemoryPromptBuilder
+  const memoryContent = params.memory
+    ? MemoryPromptBuilder.build(params.memory, params.session)
+    : null;
+
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     SYSTEM_MESSAGE,
-    ...(memoryMessage ? [memoryMessage] : []),
+    ...(memoryContent ? [{ role: 'system' as const, content: memoryContent }] : []),
     ...conversationMessages[convId],
   ];
 
@@ -207,6 +185,24 @@ server
         message: message!,
       });
       console.log(`SMS sent to ${to} (conversation: ${result.conversationId})`);
+      console.log(`[${result.conversationId}] Agent: ${message}`);
+      console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
+    } else if (channel === 'rcs') {
+      // Validate RCS configuration at runtime
+      if (!from && !process.env.TWILIO_RCS_AGENT_ID) {
+        console.error(
+          'Error: RCS requires either TWILIO_RCS_AGENT_ID environment variable ' +
+            'or --from flag to specify the agent address.'
+        );
+        process.exit(1);
+      }
+
+      const result = await rcsChannel.initiateOutboundConversation({
+        to,
+        from,
+        message: message!,
+      });
+      console.log(`RCS message sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {

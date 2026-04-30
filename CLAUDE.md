@@ -1,6 +1,6 @@
 # Twilio Agent Connect - TypeScript SDK
 
-A TypeScript framework for building AI-powered conversational agents on Twilio infrastructure. Provides channel abstractions (SMS, Voice), tool integration, memory/knowledge APIs, and a production-ready Fastify server — designed for 1:1 parity with the [Python SDK](https://github.com/twilio/twilio-agent-connect-python).
+A TypeScript framework for building AI-powered conversational agents on Twilio infrastructure. Provides channel abstractions (SMS, RCS, Voice), tool integration, memory/knowledge APIs, and a production-ready Fastify server — designed for 1:1 parity with the [Python SDK](https://github.com/twilio/twilio-agent-connect-python).
 
 ## Development Commands
 
@@ -21,7 +21,7 @@ npm run typecheck      # tsc --noEmit
 
 ```
 packages/
-  core/        # Central framework: TAC orchestrator, channels (SMS/Voice),
+  core/        # Central framework: TAC orchestrator, channels (SMS/RCS/Voice),
                #   API clients (Memory, Conversation, Knowledge), adapters
                #   (MemoryPromptBuilder), config, types
   tools/       # Tool system: TACTool class, defineTool(), built-in tools
@@ -46,7 +46,7 @@ getting_started/  # Example apps (OpenAI integration)
 ## Key Architecture
 
 - **TAC class** (`packages/core/src/lib/tac.ts`): Central orchestrator managing config, channels, callbacks, and API clients
-- **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by `SMSChannel` (webhooks/TwiML) and `VoiceChannel` (WebSocket)
+- **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by `SMSChannel`, `RCSChannel` (webhooks/TwiML) and `VoiceChannel` (WebSocket)
 - **Voice channel initialization**: VoiceChannel waits for the first prompt message to initialize the conversation (fetches from ConversationRelay using `callSid`, extracts `profileId` from participants, then starts local session)
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onConversationEnded`) instead of EventEmitter
 - **Callback responses**: `onMessageReady` callbacks return `string` (auto-sent), `void`/`null` (manual `channel.sendResponse()`)

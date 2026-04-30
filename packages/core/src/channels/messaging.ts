@@ -15,7 +15,7 @@ import { maskAddress } from '../util/log-redaction';
 
 /**
  * Messaging webhook event types from Twilio Conversations Service
- * Supports the v2 format for SMS and Chat channels
+ * Supports the v2 format for SMS, RCS, and Chat channels
  */
 export interface MessagingWebhookPayload {
   eventType: string;
@@ -74,10 +74,10 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
 }
 
 /**
- * Abstract Messaging Channel base class for SMS and Chat channels
+ * Abstract Messaging Channel base class for SMS, RCS, and Chat channels
  *
  * Provides shared webhook processing logic for messaging channels
- * (SMS and Chat) that use the Conversations Service webhooks.
+ * (SMS, RCS, and Chat) that use the Conversations Service webhooks.
  */
 export abstract class MessagingChannel extends BaseChannel {
   protected readonly messagingCallbacks: MessagingChannelEvents;
@@ -239,6 +239,19 @@ export abstract class MessagingChannel extends BaseChannel {
       const webhookData = payload as MessagingWebhookPayload;
       const eventType = webhookData.eventType;
       const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+
+      // Debug: log author channel for COMMUNICATION_CREATED events
+      if (eventType === 'COMMUNICATION_CREATED') {
+        this.logger.debug(
+          {
+            event_type: eventType,
+            author_channel: webhookData.data?.author?.channel,
+            this_channel_type: this.channelType,
+            author_address: maskAddress(webhookData.data?.author?.address || 'unknown'),
+          },
+          'DEBUG: Webhook author channel info'
+        );
+      }
 
       // Self-filter: ignore events meant for other channel types
       if (!this.isEventForThisChannel(webhookData)) {
@@ -684,13 +697,13 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Shared outbound conversation initiation for messaging channels (SMS/Chat).
+   * Shared outbound conversation initiation for messaging channels (SMS/Chat/RCS).
    *
    * Handles the full flow: create conversation → find participants → start
    * session → send initial message → error cleanup.
    */
   protected async initiateOutboundMessagingConversation(params: {
-    channel: 'SMS' | 'CHAT';
+    channel: 'SMS' | 'CHAT' | 'RCS';
     to: string;
     from: string;
     message: string;

@@ -1,10 +1,10 @@
 # OpenAI SDK Example
 
-This example demonstrates how to use OpenAI with Twilio Agent Connect (TAC) to build an intelligent conversational agent that works across both SMS and Voice channels.
+This example demonstrates how to use OpenAI with Twilio Agent Connect (TAC) to build an intelligent conversational agent that works across SMS, RCS, Chat, and Voice channels.
 
 ## What This Example Does
 
-- **Multi-Channel Support**: Handles both SMS and Voice conversations in a single application
+- **Multi-Channel Support**: Handles SMS, RCS, Chat, and Voice conversations in a single application
 - **OpenAI Integration**: Uses GPT-4o-mini for intelligent, context-aware responses
 - **Memory Integration**: Automatically retrieves user profiles and conversation history from Twilio Memory
 - **Profile Personalization**: Incorporates user profile traits into responses for personalized interactions

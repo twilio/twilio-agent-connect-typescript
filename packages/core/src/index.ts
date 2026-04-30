@@ -41,6 +41,9 @@ export type {
 
 export { SMSChannel } from './channels/sms';
 
+export { RCSChannel } from './channels/rcs';
+export type { RCSChannelConfig } from './channels/rcs';
+
 export { ChatChannel } from './channels/chat';
 export type {
   ChatChannelConfig,
