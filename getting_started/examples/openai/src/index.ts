@@ -99,7 +99,6 @@ const server = new TACServer(tac, {
     host: '0.0.0.0',
     port: 8000,
   },
-  development: true,
 });
 
 server
