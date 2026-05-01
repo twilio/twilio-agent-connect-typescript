@@ -531,12 +531,11 @@ describe('TACServer welcomeGreeting', () => {
     );
   });
 
-  it('should use wss:// protocol when X-Forwarded-Proto is https', async () => {
+  it('should always use wss:// protocol when publicDomain is set', async () => {
     const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
     handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
 
-    // Don't set publicDomain so it uses X-Forwarded-Proto from request
-    server = new TACServer({ tac, config: createServerConfig(currentPort, undefined, '') });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -544,7 +543,6 @@ describe('TACServer welcomeGreeting', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Forwarded-Proto': 'https',
       },
       body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
     });
@@ -558,11 +556,11 @@ describe('TACServer welcomeGreeting', () => {
     );
   });
 
-  it('should use ws:// protocol when X-Forwarded-Proto is http', async () => {
+  it('should warn and generate malformed URL when publicDomain is not set', async () => {
     const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
     handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
 
-    // Don't set publicDomain so it uses X-Forwarded-Proto from request
+    // Create server with empty publicDomain
     server = new TACServer({ tac, config: createServerConfig(currentPort, undefined, '') });
 
     await server.start();
@@ -571,16 +569,17 @@ describe('TACServer welcomeGreeting', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Forwarded-Proto': 'http',
       },
       body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
     });
 
+    // Should generate malformed URL (matches Python behavior)
     expect(handleIncomingCallSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^ws:\/\//),
+          url: 'wss:///ws',
         }),
+        actionUrl: 'https:///conversation-relay-callback',
       })
     );
   });

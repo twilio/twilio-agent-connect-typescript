@@ -184,7 +184,7 @@ export class TACServer {
     // Voice webhook (POST - Twilio calls this when an incoming call arrives)
     this.fastify.post(
       this.serverConfig.twimlPath,
-      async (request: FastifyRequest, reply: FastifyReply) => {
+      async (_request: FastifyRequest, reply: FastifyReply) => {
         try {
           if (!this.voiceChannel) {
             await reply.code(500).send({ error: 'Voice channel not available' });
@@ -193,27 +193,23 @@ export class TACServer {
 
           const voiceChannel = this.voiceChannel;
 
-          // Generate WebSocket URL using publicDomain from config or falling back to request headers
-          const publicDomain = this.serverConfig.publicDomain || this.getForwardedHost(request);
-          const protocol = this.serverConfig.publicDomain
-            ? 'wss'
-            : this.getForwardedProto(request) === 'https'
-              ? 'wss'
-              : 'ws';
-          const websocketUrl = `${protocol}://${publicDomain}${this.serverConfig.websocketPath}`;
+          // Generate WebSocket URL - requires publicDomain to be set
+          if (!this.serverConfig.publicDomain) {
+            this.fastify.log.warn(
+              'publicDomain is not set — voice URLs will be malformed. ' +
+                'Set TWILIO_VOICE_PUBLIC_DOMAIN environment variable.'
+            );
+          }
+          const websocketUrl = `wss://${this.serverConfig.publicDomain}${this.serverConfig.websocketPath}`;
 
           // If a Studio handoff flow is configured, point `<Connect action>`
           // directly at the Studio webhook so Studio (and Flex) takes over
           // when the ConversationRelay session ends. Otherwise, route the
           // post-CR action back to TAC's own callback.
           const tacConfig = this.tac.getConfig();
-          const callbackProtocol = this.serverConfig.publicDomain
-            ? 'https'
-            : this.getForwardedProto(request);
-          const callbackHost = this.serverConfig.publicDomain || this.getForwardedHost(request);
           const actionUrl = tacConfig.studioHandoffFlowSid
             ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid)
-            : `${callbackProtocol}://${callbackHost}${this.serverConfig.conversationRelayCallbackPath}`;
+            : `https://${this.serverConfig.publicDomain}${this.serverConfig.conversationRelayCallbackPath}`;
 
           // Generate TwiML to connect to ConversationRelay
           // ConversationRelay will create the conversation automatically
