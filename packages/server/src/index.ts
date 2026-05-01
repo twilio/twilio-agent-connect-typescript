@@ -6,4 +6,6 @@
  */
 
 export { TACServer } from './lib/server';
-export type { TACServerConfig } from './lib/server';
+export type { TACServerOptions } from './lib/server';
+export { TACServerConfig } from './lib/config';
+export type { TACServerConfigData } from './lib/config';

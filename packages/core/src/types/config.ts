@@ -34,7 +34,6 @@ export const TACConfigSchema = z.object({
     .string()
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
     .optional(),
-  voicePublicDomain: z.string().url().optional(),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
@@ -77,20 +76,9 @@ export const EnvironmentVariables = {
   TWILIO_MEMORY_COMMUNICATIONS_LIMIT: 'TWILIO_MEMORY_COMMUNICATIONS_LIMIT',
   TWILIO_MEMORY_RELEVANCE_THRESHOLD: 'TWILIO_MEMORY_RELEVANCE_THRESHOLD',
   TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
-  VOICE_PUBLIC_DOMAIN: 'VOICE_PUBLIC_DOMAIN',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',
   TWILIO_REGION: 'TWILIO_REGION',
   TWILIO_STUDIO_HANDOFF_FLOW_SID: 'TWILIO_STUDIO_HANDOFF_FLOW_SID',
 } as const;
-
-/**
- * Server configuration for built-in Fastify setup
- */
-export const VoiceServerConfigSchema = z.object({
-  host: z.string().default('0.0.0.0'),
-  port: z.number().int().positive().default(3000),
-});
-
-export type VoiceServerConfig = z.infer<typeof VoiceServerConfigSchema>;

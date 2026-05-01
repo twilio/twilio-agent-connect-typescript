@@ -125,7 +125,7 @@ tac.onMessageReady(async ({ conversationId, message, memory, session }) => {
   return llmResponse;
 });
 
-const server = new TACServer(tac);
+const server = new TACServer({ tac });
 await server.start();
 ```
 
@@ -152,7 +152,7 @@ import { TACServer } from 'twilio-agent-connect';
 const app = Fastify({ logger: true, trustProxy: true });
 await app.register(cors, { origin: '*' });
 
-const server = new TACServer(tac, { fastifyInstance: app });
+const server = new TACServer({ tac, app });
 
 // Add routes alongside TAC's voice/messaging/CI webhooks
 server.fastify.get('/health', async () => ({ status: 'ok' }));

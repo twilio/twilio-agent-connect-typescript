@@ -33,7 +33,8 @@ describe('package exports', () => {
     expect(tac.createKnowledgeSearchTool).toBeDefined();
   });
 
-  it('exports server class', () => {
+  it('exports server class and config', () => {
     expect(tac.TACServer).toBeDefined();
+    expect(tac.TACServerConfig).toBeDefined();
   });
 });

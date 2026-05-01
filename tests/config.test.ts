@@ -146,15 +146,6 @@ describe('TACConfig', () => {
       expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
-    it('should include optional voicePublicDomain when set', () => {
-      setRequiredEnvVars();
-      process.env.VOICE_PUBLIC_DOMAIN = 'https://example.com';
-
-      const config = TACConfig.fromEnv();
-
-      expect(config.voicePublicDomain).toBe('https://example.com');
-    });
-
     it('should throw error when TWILIO_ACCOUNT_SID is missing', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_ACCOUNT_SID;

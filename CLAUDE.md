@@ -79,41 +79,93 @@ getting_started/  # Example apps (OpenAI integration)
 
 ## TACServer Configuration
 
-The `TACServer` class (`packages/server/src/lib/server.ts`) provides a production-ready Fastify server with sensible defaults:
+The `TACServer` class (`packages/server/src/lib/server.ts`) provides a production-ready Fastify server with sensible defaults. Configuration is managed through the `TACServerConfig` class (`packages/server/src/lib/config.ts`).
+
+### Constructor Signature
+
+```typescript
+new TACServer(options: TACServerOptions)
+
+// TACServerOptions interface:
+{
+  tac: TAC;
+  voiceChannel?: VoiceChannel;
+  messagingChannels?: MessagingChannel[];
+  config?: TACServerConfig;
+  app?: FastifyInstance;
+}
+```
 
 ### Default Configuration
 
 ```typescript
 {
-  voice: { host: '0.0.0.0', port: 3000 },
-  webhookPaths: {
-    sms: '/webhook',
-    twiml: '/twiml',
-    ws: '/ws',
-    conversationRelayCallback: '/conversation-relay-callback',
-  },
-  conversationRelayConfig: {
-    welcomeGreeting: 'Hello! How can I assist you today?',
-  },
+  host: '0.0.0.0',
+  port: 8000,
+  publicDomain: '',  // Auto-detected from request headers if not set
+  welcomeGreeting: 'Hello! How can I assist you today?',
+  messagingWebhookPath: '/webhook',
+  twimlPath: '/twiml',
+  websocketPath: '/ws',
+  conversationRelayCallbackPath: '/conversation-relay-callback',
+  cintelWebhookPath: undefined,  // Optional - only registers route if provided
 }
 ```
 
-### Customizing Voice Greeting
+### Environment Variables
 
-The default `welcomeGreeting` is automatically applied to all voice calls. Customize it via `conversationRelayConfig`:
+Server configuration can be loaded from environment variables via `TACServerConfig.fromEnv()`:
+
+- `TWILIO_VOICE_PUBLIC_DOMAIN`: Public domain for WebSocket URLs (without protocol, e.g., 'example.ngrok.io')
+- `TWILIO_SERVER_HOST`: Host to bind to (default: 0.0.0.0)
+- `TWILIO_SERVER_PORT`: Port to bind to (default: 8000)
+
+### Usage Examples
 
 ```typescript
-const server = new TACServer(tac, {
-  conversationRelayConfig: {
-    welcomeGreeting: 'Welcome to our support line!',
-    welcomeGreetingInterruptible: 'any',
-    transcriptionProvider: 'Deepgram',
-    ttsProvider: 'Google',
-  },
+// Option 1: Auto-detect channels from TAC, load config from env
+const server = new TACServer({ tac });
+await server.start();
+
+// Option 2: Explicit channels, load config from env
+const voiceChannel = new VoiceChannel(tac);
+const smsChannel = new SMSChannel(tac);
+const server = new TACServer({ 
+  tac, 
+  voiceChannel, 
+  messagingChannels: [smsChannel] 
 });
+await server.start();
+
+// Option 3: Custom configuration
+const config = new TACServerConfig({
+  host: '0.0.0.0',
+  port: 8000,
+  publicDomain: 'example.ngrok.io',
+  welcomeGreeting: 'Welcome to our support line!',
+});
+const server = new TACServer({ 
+  tac, 
+  voiceChannel, 
+  messagingChannels: [smsChannel], 
+  config 
+});
+await server.start();
+
+// Option 4: Custom Fastify instance
+const app = Fastify({ logger: true, trustProxy: true });
+app.get('/health', async () => ({ status: 'ok' }));
+const server = new TACServer({ 
+  tac, 
+  voiceChannel, 
+  messagingChannels: [smsChannel], 
+  config,
+  app,
+});
+await server.start();
 ```
 
-All ConversationRelay attributes except `url` are supported (see `packages/core/src/types/crelay.ts`). The `url` field is automatically set by the server based on the request host and WebSocket path.
+**Note:** The server only supports setting `welcomeGreeting` via `TACServerConfig`. For advanced ConversationRelay configuration (transcription providers, TTS settings, etc.), pass them directly to `VoiceChannel.handleIncomingCall()` or configure them at the Twilio service level.
 
 ## Pull Requests
 

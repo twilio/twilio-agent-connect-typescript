@@ -21,6 +21,7 @@ import {
   ChannelType,
   ProfileId,
   TACServer,
+  TACServerConfig,
   TACMemoryResponse,
   createStudioHandoffTool,
 } from 'twilio-agent-connect';
@@ -84,8 +85,11 @@ async function handleMessageReady(params: {
 
 tac.onMessageReady(handleMessageReady);
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
+const server = new TACServer({
+  tac,
+  voiceChannel,
+  messagingChannels: [smsChannel],
+  config: TACServerConfig.fromEnv(),
 });
 
 server

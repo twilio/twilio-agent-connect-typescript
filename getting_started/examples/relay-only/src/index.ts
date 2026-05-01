@@ -11,7 +11,7 @@
 import { config } from 'dotenv';
 import { Agent, run } from '@openai/agents';
 import type { AgentInputItem } from '@openai/agents';
-import { TAC, TACConfig, VoiceChannel, TACServer } from 'twilio-agent-connect';
+import { TAC, TACConfig, VoiceChannel, TACServer, TACServerConfig } from 'twilio-agent-connect';
 
 config({ path: '../.env' });
 
@@ -103,9 +103,10 @@ tac.onConversationEnded(({ session }) => {
   console.log(`Conversation ${convId} ended, history cleaned up`);
 });
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
-  development: true,
+const server = new TACServer({
+  tac,
+  voiceChannel,
+  config: TACServerConfig.fromEnv(),
 });
 
 await server.start();

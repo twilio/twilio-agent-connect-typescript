@@ -24,6 +24,7 @@ import {
   TACMemoryResponse,
   ConversationSession,
   TACServer,
+  TACServerConfig,
 } from 'twilio-agent-connect';
 
 // ---------------------------------------------------------------------------
@@ -189,8 +190,11 @@ tac.onMessageReady(handleMessageReady);
 // Server startup & outbound initiation
 // ---------------------------------------------------------------------------
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
+const server = new TACServer({
+  tac,
+  voiceChannel,
+  messagingChannels: [smsChannel],
+  config: TACServerConfig.fromEnv(),
 });
 
 server
@@ -209,9 +213,9 @@ server
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {
-      const publicDomain = process.env.VOICE_PUBLIC_DOMAIN?.replace(/^https?:\/\//, '');
+      const publicDomain = process.env.TWILIO_VOICE_PUBLIC_DOMAIN?.replace(/^https?:\/\//, '');
       if (!publicDomain) {
-        console.error('VOICE_PUBLIC_DOMAIN is required for voice calls. Set it in your .env file.');
+        console.error('TWILIO_VOICE_PUBLIC_DOMAIN is required for voice calls. Set it in your .env file.');
         process.exit(1);
       }
 

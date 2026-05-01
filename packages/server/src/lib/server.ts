@@ -1,9 +1,4 @@
-import Fastify, {
-  FastifyInstance,
-  FastifyServerOptions,
-  FastifyRequest,
-  FastifyReply,
-} from 'fastify';
+import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import formbody from '@fastify/formbody';
 import websocket from '@fastify/websocket';
 import gracefulShutdown from 'fastify-graceful-shutdown';
@@ -11,75 +6,28 @@ import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
 import {
-  VoiceServerConfig,
-  VoiceServerConfigSchema,
   ConversationRelayCallbackPayloadSchema,
-  ConversationRelayConfig,
   studioVoiceHandoffUrl,
 } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
+import { TACServerConfig } from './config';
+
 
 /**
- * Server configuration options
+ * Constructor options for TACServer
  */
-export interface TACServerConfig {
-  /** Fastify server options (ignored if `fastifyInstance` is provided) */
-  fastify?: FastifyServerOptions;
-
-  /**
-   * Pre-configured Fastify instance to mount TAC routes onto.
-   *
-   * Use this to control construction-time settings (logger, `trustProxy`,
-   * schema, ...) or to register your own plugins/hooks before TAC's
-   * routes are set up. If provided, the `fastify` options field is
-   * ignored.
-   */
-  fastifyInstance?: FastifyInstance;
-
-  /** Voice server configuration */
-  voice?: Partial<VoiceServerConfig>;
-
-  /** Custom webhook paths */
-  webhookPaths?: {
-    messaging?: string;
-    twiml?: string;
-    ws?: string;
-    conversationRelayCallback?: string;
-    /** Path for Conversation Intelligence webhook (optional - only registered if provided) */
-    cintel?: string;
-  };
-
-  /** ConversationRelay configuration (welcomeGreeting, transcription, TTS, interaction settings, etc.) */
-  conversationRelayConfig?: Partial<Omit<ConversationRelayConfig, 'url'>>;
-
-  /** Voice channel instance (alternative to registering on TAC) */
+export interface TACServerOptions {
+  /** TAC instance */
+  tac: TAC;
+  /** Voice channel for handling voice calls (optional - auto-detected if not provided) */
   voiceChannel?: VoiceChannel;
-
-  /** Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC) */
+  /** Messaging channels for SMS/Chat (optional - auto-detected if not provided) */
   messagingChannels?: MessagingChannel[];
+  /** Server configuration (optional - loads from env if not provided) */
+  config?: TACServerConfig;
+  /** Custom Fastify instance (optional - creates default if not provided) */
+  app?: FastifyInstance;
 }
-
-/**
- * Default server configuration
- */
-const DEFAULT_CONFIG = {
-  voice: {
-    host: '0.0.0.0',
-    port: 3000,
-  },
-  webhookPaths: {
-    messaging: '/webhook',
-    twiml: '/twiml',
-    ws: '/ws',
-    conversationRelayCallback: '/conversation-relay-callback',
-  },
-  conversationRelayConfig: {
-    welcomeGreeting: 'Hello! How can I assist you today?',
-  },
-} satisfies Omit<
-  TACServerConfig,
-  'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'
->;
 
 /**
  * Batteries-included Fastify server for TAC
@@ -88,7 +36,7 @@ const DEFAULT_CONFIG = {
  * proper webhook handling, WebSocket support, and production-ready defaults.
  *
  * Customization:
- *   - Pass your own Fastify instance via `config.fastifyInstance` to control
+ *   - Pass your own Fastify instance via `app` to control
  *     construction-time settings (logger, `trustProxy`, schema, ...) and to
  *     register plugins/hooks before TAC's routes are set up.
  *   - Or mutate `server.fastify` after construction to add routes,
@@ -97,8 +45,8 @@ const DEFAULT_CONFIG = {
  * Example:
  *   import Fastify from 'fastify';
  *
- *   const app = Fastify({ logger: true, trustProxy: true });
- *   const server = new TACServer(tac, { fastifyInstance: app });
+ *   const customApp = Fastify({ logger: true, trustProxy: true });
+ *   const server = new TACServer({ tac, app: customApp });
  *
  *   server.fastify.get('/health', async () => ({ status: 'ok' }));
  *
@@ -107,58 +55,43 @@ const DEFAULT_CONFIG = {
 export class TACServer {
   public readonly fastify: FastifyInstance;
   private readonly tac: TAC;
-  private readonly config: Required<
-    Omit<TACServerConfig, 'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'>
-  >;
+  private readonly serverConfig: TACServerConfig;
   /** All enabled messaging channels — webhooks are fanned out to each one */
   private readonly messagingChannels: MessagingChannel[];
   /** Voice channel instance */
   private readonly voiceChannel: VoiceChannel | undefined;
 
-  constructor(tac: TAC, config: TACServerConfig = {}) {
-    this.tac = tac;
-    this.config = {
-      ...DEFAULT_CONFIG,
-      ...config,
-      // Deep merge webhookPaths to preserve defaults while allowing overrides
-      webhookPaths: {
-        ...DEFAULT_CONFIG.webhookPaths,
-        ...config.webhookPaths,
-      },
-      // Deep merge conversationRelayConfig to preserve defaults while allowing overrides
-      conversationRelayConfig: {
-        ...DEFAULT_CONFIG.conversationRelayConfig,
-        ...config.conversationRelayConfig,
-      },
-    };
+  constructor(options: TACServerOptions) {
+    this.tac = options.tac;
 
-    // Resolve channels: prefer explicit kwargs, fall back to tac.getChannel()
-    this.voiceChannel = config.voiceChannel ?? tac.getChannel<VoiceChannel>('voice');
+    // Use provided config or create from env
+    this.serverConfig = options.config ?? TACServerConfig.fromEnv();
+
+    // Resolve channels: prefer explicit parameters, fall back to tac.getChannel()
+    this.voiceChannel = options.voiceChannel ?? options.tac.getChannel<VoiceChannel>('voice');
     this.messagingChannels =
-      config.messagingChannels ??
+      options.messagingChannels ??
       (
-        [tac.getChannel<MessagingChannel>('sms'), tac.getChannel<MessagingChannel>('chat')] as (
-          | MessagingChannel
-          | undefined
-        )[]
+        [
+          options.tac.getChannel<MessagingChannel>('sms'),
+          options.tac.getChannel<MessagingChannel>('chat'),
+        ] as (MessagingChannel | undefined)[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
     if (this.messagingChannels.length === 0) {
-      // eslint-disable-next-line no-console -- Fastify logger not yet initialized
       console.warn(
         'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
       );
     }
     // Use the user-supplied Fastify instance if provided; otherwise create
     // a default one with Pino logging.
-    if (config.fastifyInstance) {
-      this.fastify = config.fastifyInstance;
+    if (options.app) {
+      this.fastify = options.app;
     } else {
       this.fastify = Fastify({
         logger: {
           level: process.env.TWILIO_LOG_LEVEL || 'info',
         },
-        ...config.fastify,
       });
     }
   }
@@ -231,7 +164,7 @@ export class TACServer {
     // Messaging webhook — fan out to all enabled messaging channels (each self-filters)
     if (this.messagingChannels.length > 0) {
       this.fastify.post(
-        this.config.webhookPaths.messaging || '/webhook',
+        this.serverConfig.messagingWebhookPath,
         async (request: FastifyRequest, reply: FastifyReply) => {
           const rawHeader = request.headers['i-twilio-idempotency-token'];
           const idempotencyToken = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
@@ -250,7 +183,7 @@ export class TACServer {
 
     // Voice webhook (POST - Twilio calls this when an incoming call arrives)
     this.fastify.post(
-      this.config.webhookPaths.twiml || '/twiml',
+      this.serverConfig.twimlPath,
       async (request: FastifyRequest, reply: FastifyReply) => {
         try {
           if (!this.voiceChannel) {
@@ -260,19 +193,27 @@ export class TACServer {
 
           const voiceChannel = this.voiceChannel;
 
-          // Generate WebSocket URL
-          const protocol = this.getForwardedProto(request);
-          const host = this.getForwardedHost(request);
-          const websocketUrl = `${protocol === 'https' ? 'wss' : 'ws'}://${host}${this.config.webhookPaths.ws || '/ws'}`;
+          // Generate WebSocket URL using publicDomain from config or falling back to request headers
+          const publicDomain = this.serverConfig.publicDomain || this.getForwardedHost(request);
+          const protocol = this.serverConfig.publicDomain
+            ? 'wss'
+            : this.getForwardedProto(request) === 'https'
+              ? 'wss'
+              : 'ws';
+          const websocketUrl = `${protocol}://${publicDomain}${this.serverConfig.websocketPath}`;
 
           // If a Studio handoff flow is configured, point `<Connect action>`
           // directly at the Studio webhook so Studio (and Flex) takes over
           // when the ConversationRelay session ends. Otherwise, route the
           // post-CR action back to TAC's own callback.
           const tacConfig = this.tac.getConfig();
+          const callbackProtocol = this.serverConfig.publicDomain
+            ? 'https'
+            : this.getForwardedProto(request);
+          const callbackHost = this.serverConfig.publicDomain || this.getForwardedHost(request);
           const actionUrl = tacConfig.studioHandoffFlowSid
             ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid)
-            : `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
+            : `${callbackProtocol}://${callbackHost}${this.serverConfig.conversationRelayCallbackPath}`;
 
           // Generate TwiML to connect to ConversationRelay
           // ConversationRelay will create the conversation automatically
@@ -280,7 +221,7 @@ export class TACServer {
             actionUrl,
             conversationRelayConfig: {
               url: websocketUrl,
-              ...this.config.conversationRelayConfig,
+              welcomeGreeting: this.serverConfig.welcomeGreeting,
             },
           });
 
@@ -299,7 +240,7 @@ export class TACServer {
 
     // ConversationRelay callback endpoint
     this.fastify.post(
-      this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback',
+      this.serverConfig.conversationRelayCallbackPath,
       async (request: FastifyRequest, reply: FastifyReply) => {
         try {
           if (!this.voiceChannel) {
@@ -338,7 +279,7 @@ export class TACServer {
     // Voice WebSocket endpoint
     await this.fastify.register(fastify => {
       fastify.get(
-        this.config.webhookPaths.ws || '/ws',
+        this.serverConfig.websocketPath,
         { websocket: true },
         (socket: WebSocket, request: FastifyRequest) => {
           const signature = request.headers['x-twilio-signature'] as string;
@@ -383,9 +324,9 @@ export class TACServer {
     });
 
     // Conversation Intelligence webhook endpoint (optional - only if path is configured)
-    if (this.config.webhookPaths.cintel) {
+    if (this.serverConfig.cintelWebhookPath) {
       this.fastify.post(
-        this.config.webhookPaths.cintel,
+        this.serverConfig.cintelWebhookPath,
         async (request: FastifyRequest, reply: FastifyReply) => {
           if (!this.tac.isCintelEnabled()) {
             await reply.code(400).send({
@@ -478,22 +419,22 @@ export class TACServer {
       });
 
       // Start Fastify server
-      const voiceConfig = VoiceServerConfigSchema.parse(this.config.voice);
       await this.fastify.listen({
-        host: voiceConfig.host,
-        port: voiceConfig.port,
+        host: this.serverConfig.host,
+        port: this.serverConfig.port,
       });
 
       this.fastify.log.info(
         {
-          host: voiceConfig.host,
-          port: voiceConfig.port,
-          messaging_webhook: this.config.webhookPaths.messaging,
-          twiml_webhook: this.config.webhookPaths.twiml,
-          ws_websocket: this.config.webhookPaths.ws,
-          conversation_relay_callback: this.config.webhookPaths.conversationRelayCallback,
-          ...(this.config.webhookPaths.cintel && {
-            cintel_webhook: this.config.webhookPaths.cintel,
+          host: this.serverConfig.host,
+          port: this.serverConfig.port,
+          public_domain: this.serverConfig.publicDomain || 'auto-detected',
+          messaging_webhook: this.serverConfig.messagingWebhookPath,
+          twiml_webhook: this.serverConfig.twimlPath,
+          ws_websocket: this.serverConfig.websocketPath,
+          conversation_relay_callback: this.serverConfig.conversationRelayCallbackPath,
+          ...(this.serverConfig.cintelWebhookPath && {
+            cintel_webhook: this.serverConfig.cintelWebhookPath,
           }),
         },
         'TAC Server started'

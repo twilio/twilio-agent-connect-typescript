@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestTAC } from './helpers/tac';
 import { TAC, TACConfig, SMSChannel, VoiceChannel } from '@twilio/tac-core';
-import { TACServer } from '@twilio/tac-server';
+import { TACServer, TACServerConfig } from '@twilio/tac-server';
 import WebSocket from 'ws';
 
 // Mock twilio module - use vi.hoisted since vi.mock is hoisted to top of file
@@ -28,6 +28,20 @@ vi.mock('twilio', () => {
 // Use different ports for parallel test execution
 let testPort = 4000;
 const getNextPort = () => testPort++;
+
+// Helper to create server config for testing
+const createServerConfig = (port: number, welcomeGreeting?: string, publicDomain?: string) => {
+  return new TACServerConfig({
+    host: '0.0.0.0',
+    port,
+    publicDomain: publicDomain ?? 'localhost',
+    messagingWebhookPath: '/webhook',
+    twimlPath: '/twiml',
+    websocketPath: '/ws',
+    conversationRelayCallbackPath: '/conversation-relay-callback',
+    welcomeGreeting: welcomeGreeting ?? 'Hello! How can I assist you today?',
+  });
+};
 
 describe('TACServer Webhook Validation', () => {
   const getTestConfig = () => ({
@@ -73,10 +87,7 @@ describe('TACServer Webhook Validation', () => {
   it('should reject requests with invalid signature', async () => {
     mockValidateRequest.mockReturnValue(false);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -97,10 +108,7 @@ describe('TACServer Webhook Validation', () => {
   it('should accept requests with valid signature', async () => {
     mockValidateRequest.mockReturnValue(true);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -119,10 +127,7 @@ describe('TACServer Webhook Validation', () => {
   it('should call validateRequest with correct parameters', async () => {
     mockValidateRequest.mockReturnValue(true);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -147,10 +152,7 @@ describe('TACServer Webhook Validation', () => {
     it('should handle X-Forwarded-Proto header', async () => {
       mockValidateRequest.mockReturnValue(true);
 
-      server = new TACServer(tac, {
-        development: true,
-        voice: { port: currentPort },
-      });
+      server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
       await server.start();
 
@@ -176,10 +178,7 @@ describe('TACServer Webhook Validation', () => {
     it('should handle X-Forwarded-Host header', async () => {
       mockValidateRequest.mockReturnValue(true);
 
-      server = new TACServer(tac, {
-        development: true,
-        voice: { port: currentPort },
-      });
+      server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
       await server.start();
 
@@ -205,10 +204,7 @@ describe('TACServer Webhook Validation', () => {
     it('should use first value from comma-separated X-Forwarded-Proto', async () => {
       mockValidateRequest.mockReturnValue(true);
 
-      server = new TACServer(tac, {
-        development: true,
-        voice: { port: currentPort },
-      });
+      server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
       await server.start();
 
@@ -233,10 +229,7 @@ describe('TACServer Webhook Validation', () => {
     it('should use first value from comma-separated X-Forwarded-Host', async () => {
       mockValidateRequest.mockReturnValue(true);
 
-      server = new TACServer(tac, {
-        development: true,
-        voice: { port: currentPort },
-      });
+      server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
       await server.start();
 
@@ -267,10 +260,7 @@ describe('TACServer Webhook Validation', () => {
     it('should default to https:// when X-Forwarded-Proto is absent', async () => {
       mockValidateRequest.mockReturnValue(true);
 
-      server = new TACServer(tac, {
-        development: true,
-        voice: { port: currentPort },
-      });
+      server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
       await server.start();
 
@@ -299,10 +289,7 @@ describe('TACServer Webhook Validation', () => {
       mockValidateRequest.mockReturnValue(false);
       endpointTestPort = currentPort;
 
-      server = new TACServer(tac, {
-        development: true,
-        voice: { port: endpointTestPort },
-      });
+      server = new TACServer({ tac, config: createServerConfig(endpointTestPort) });
 
       await server.start();
     });
@@ -337,10 +324,7 @@ describe('TACServer Webhook Validation', () => {
   it('should pass raw JSON body to validateRequestWithBody for bodySHA256 validation', async () => {
     mockValidateRequestWithBody.mockReturnValue(true);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -406,10 +390,7 @@ describe('TACServer idempotency token', () => {
   it('should pass i-twilio-idempotency-token header to channels', async () => {
     const processWebhookSpy = vi.spyOn(smsChannel, 'processWebhook');
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -436,10 +417,7 @@ describe('TACServer idempotency token', () => {
   it('should pass undefined when no idempotency token header is present', async () => {
     const processWebhookSpy = vi.spyOn(smsChannel, 'processWebhook');
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -463,7 +441,7 @@ describe('TACServer idempotency token', () => {
   });
 });
 
-describe('TACServer with conversationRelayConfig', () => {
+describe('TACServer welcomeGreeting', () => {
   const getTestConfig = () => ({
 
     accountSid: 'ACtest123456789',
@@ -482,7 +460,7 @@ describe('TACServer with conversationRelayConfig', () => {
   beforeEach(async () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
-    mockValidateRequest.mockReturnValue(true); // Default to valid
+    mockValidateRequest.mockReturnValue(true);
 
     currentPort = getNextPort();
 
@@ -502,78 +480,11 @@ describe('TACServer with conversationRelayConfig', () => {
     tac.shutdown();
   });
 
-  it('should accept conversationRelayConfig parameter', async () => {
-    // Create server with conversationRelayConfig
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-      conversationRelayConfig: {
-        welcomeGreeting: 'Hello from TACServer!',
-        transcriptionProvider: 'Deepgram',
-        ttsProvider: 'Google',
-        voice: 'en-US-Journey-O',
-        interruptible: 'any',
-      },
-    });
-
-    await server.start();
-
-    // Server should start successfully with config
-    expect(server).toBeDefined();
-  });
-
-  it('should pass server conversationRelayConfig to handleIncomingCall', async () => {
-    // Spy on handleIncomingCall to verify config is passed
+  it('should use default welcomeGreeting', async () => {
     const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
     handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-      conversationRelayConfig: {
-        welcomeGreeting: 'Test greeting',
-        transcriptionProvider: 'Deepgram',
-        interruptible: 'any',
-      },
-    });
-
-    await server.start();
-
-    // Make request to /voice endpoint
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Verify handleIncomingCall was called with conversationRelayConfig
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          welcomeGreeting: 'Test greeting',
-          transcriptionProvider: 'Deepgram',
-          interruptible: 'any',
-          url: expect.stringMatching(/^wss?:\/\//), // WebSocket URL should be added
-        }),
-      })
-    );
-  });
-
-  it('should merge server config with dynamic WebSocket URL', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-      conversationRelayConfig: {
-        welcomeGreeting: 'Dynamic merge test',
-        ttsProvider: 'Google',
-        interruptible: 'any',
-      },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -585,46 +496,36 @@ describe('TACServer with conversationRelayConfig', () => {
       body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
     });
 
-    // Verify server config is merged with dynamic URL
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^wss?:\/\//), // Dynamic WebSocket URL is added
-          welcomeGreeting: 'Dynamic merge test', // Server config is preserved
-          ttsProvider: 'Google', // Server config is preserved
-          interruptible: 'any', // Server config is preserved
-        }),
-      })
-    );
-  });
-
-  it('should handle undefined server conversationRelayConfig', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    // Create server without conversationRelayConfig
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-      // No conversationRelayConfig provided
-    });
-
-    await server.start();
-
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Should work with URL and default welcomeGreeting
     expect(handleIncomingCallSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationRelayConfig: expect.objectContaining({
           url: expect.stringMatching(/^wss?:\/\//),
-          welcomeGreeting: 'Hello! How can I assist you today?', // Default value
+          welcomeGreeting: 'Hello! How can I assist you today?',
+        }),
+      })
+    );
+  });
+
+  it('should use custom welcomeGreeting from config', async () => {
+    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
+    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
+
+    server = new TACServer({ tac, config: createServerConfig(currentPort, 'Custom greeting!') });
+
+    await server.start();
+
+    await fetch(`http://localhost:${currentPort}/twiml`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
+    });
+
+    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationRelayConfig: expect.objectContaining({
+          welcomeGreeting: 'Custom greeting!',
         }),
       })
     );
@@ -634,10 +535,8 @@ describe('TACServer with conversationRelayConfig', () => {
     const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
     handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    // Don't set publicDomain so it uses X-Forwarded-Proto from request
+    server = new TACServer({ tac, config: createServerConfig(currentPort, undefined, '') });
 
     await server.start();
 
@@ -653,7 +552,7 @@ describe('TACServer with conversationRelayConfig', () => {
     expect(handleIncomingCallSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^wss:\/\//), // Should be wss:// not ws://
+          url: expect.stringMatching(/^wss:\/\//),
         }),
       })
     );
@@ -663,10 +562,8 @@ describe('TACServer with conversationRelayConfig', () => {
     const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
     handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    // Don't set publicDomain so it uses X-Forwarded-Proto from request
+    server = new TACServer({ tac, config: createServerConfig(currentPort, undefined, '') });
 
     await server.start();
 
@@ -682,66 +579,7 @@ describe('TACServer with conversationRelayConfig', () => {
     expect(handleIncomingCallSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^ws:\/\//), // Should be ws:// not wss://
-        }),
-      })
-    );
-  });
-
-  it('should preserve all server config attributes', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-      conversationRelayConfig: {
-        welcomeGreeting: 'Full config test',
-        welcomeGreetingInterruptible: 'any',
-        transcriptionProvider: 'Deepgram',
-        transcriptionLanguage: 'en-US',
-        speechModel: 'nova-3-general',
-        ttsProvider: 'Google',
-        ttsLanguage: 'en-US',
-        voice: 'en-US-Journey-O',
-        interruptible: 'any',
-        interruptSensitivity: 'medium',
-        dtmfDetection: true,
-        hints: 'technical support, billing',
-        partialPrompts: false,
-        profanityFilter: false,
-      },
-    });
-
-    await server.start();
-
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Verify all attributes are preserved
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.any(String),
-          welcomeGreeting: 'Full config test',
-          welcomeGreetingInterruptible: 'any',
-          transcriptionProvider: 'Deepgram',
-          transcriptionLanguage: 'en-US',
-          speechModel: 'nova-3-general',
-          ttsProvider: 'Google',
-          ttsLanguage: 'en-US',
-          voice: 'en-US-Journey-O',
-          interruptible: 'any',
-          interruptSensitivity: 'medium',
-          dtmfDetection: true,
-          hints: 'technical support, billing',
-          partialPrompts: false,
-          profanityFilter: false,
+          url: expect.stringMatching(/^ws:\/\//),
         }),
       })
     );
@@ -790,10 +628,7 @@ describe('TACServer customization', () => {
     const Fastify = (await import('fastify')).default;
     const customApp = Fastify({ logger: false });
 
-    server = new TACServer(tac, {
-      fastifyInstance: customApp,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort), app: customApp });
 
     expect(server.fastify).toBe(customApp);
   });
@@ -809,10 +644,7 @@ describe('TACServer customization', () => {
       return payload;
     });
 
-    server = new TACServer(tac, {
-      fastifyInstance: customApp,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort), app: customApp });
 
     await server.start();
 
@@ -851,10 +683,7 @@ describe('TACServer customization', () => {
     await customApp.register(formbody);
     await customApp.register(websocket);
 
-    server = new TACServer(tac, {
-      fastifyInstance: customApp,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort), app: customApp });
 
     // Must not throw
     await server.start();
@@ -869,18 +698,14 @@ describe('TACServer customization', () => {
   });
 
   it('creates a default Fastify instance when none is provided', () => {
-    server = new TACServer(tac, {
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     expect(server.fastify).toBeDefined();
     expect(typeof server.fastify.listen).toBe('function');
   });
 
   it('exposes the same Fastify instance before and after start()', async () => {
-    server = new TACServer(tac, {
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     const before = server.fastify;
     await server.start();
@@ -890,9 +715,7 @@ describe('TACServer customization', () => {
   });
 
   it('allows adding a custom route to server.fastify after construction', async () => {
-    server = new TACServer(tac, {
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     server.fastify.get('/health', async () => ({ status: 'ok' }));
 
@@ -904,9 +727,7 @@ describe('TACServer customization', () => {
   });
 
   it('allows adding a hook to server.fastify after construction', async () => {
-    server = new TACServer(tac, {
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     server.fastify.addHook('onSend', async (_request, reply, payload) => {
       reply.header('x-test', 'yes');
@@ -922,9 +743,7 @@ describe('TACServer customization', () => {
   });
 
   it('allows adding a custom error handler on server.fastify', async () => {
-    server = new TACServer(tac, {
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     class MyError extends Error {}
 
@@ -987,10 +806,7 @@ describe('TACServer WebSocket signature validation', () => {
   it('should reject WebSocket without X-Twilio-Signature', async () => {
     mockValidateRequest.mockReturnValue(false);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -1007,10 +823,7 @@ describe('TACServer WebSocket signature validation', () => {
   it('should reject WebSocket with invalid Twilio signature', async () => {
     mockValidateRequest.mockReturnValue(false);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -1029,10 +842,7 @@ describe('TACServer WebSocket signature validation', () => {
   it('should accept WebSocket with valid Twilio signature', async () => {
     mockValidateRequest.mockReturnValue(true);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -1053,10 +863,7 @@ describe('TACServer WebSocket signature validation', () => {
   it('should call validateRequest with correct params for WebSocket upgrade', async () => {
     mockValidateRequest.mockReturnValue(true);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -1082,10 +889,7 @@ describe('TACServer WebSocket signature validation', () => {
   it('should extract query params from WebSocket URL for signature validation', async () => {
     mockValidateRequest.mockReturnValue(true);
 
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 
@@ -1112,10 +916,7 @@ describe('TACServer WebSocket signature validation', () => {
   });
 
   it('should reject WebSocket when host header is missing', async () => {
-    server = new TACServer(tac, {
-      development: true,
-      voice: { port: currentPort },
-    });
+    server = new TACServer({ tac, config: createServerConfig(currentPort) });
 
     await server.start();
 

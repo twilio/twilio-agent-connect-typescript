@@ -10,7 +10,7 @@
 import { config } from 'dotenv';
 import { Agent, run } from '@openai/agents';
 import type { AgentInputItem } from '@openai/agents';
-import { TAC, TACConfig, VoiceChannel, SMSChannel, TACServer } from 'twilio-agent-connect';
+import { TAC, TACConfig, VoiceChannel, SMSChannel, TACServer, TACServerConfig } from 'twilio-agent-connect';
 
 config({ path: '../.env' });
 
@@ -109,11 +109,11 @@ tac.onInterrupt(({ conversationId, utteranceUntilInterrupt }) => {
   }
 });
 
-const server = new TACServer(tac, {
-  voice: {
-    host: '0.0.0.0',
-    port: 8000,
-  },
+const server = new TACServer({
+  tac,
+  voiceChannel,
+  messagingChannels: [smsChannel],
+  config: TACServerConfig.fromEnv(),
 });
 
 server
