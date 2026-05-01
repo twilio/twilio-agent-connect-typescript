@@ -5,13 +5,9 @@ import gracefulShutdown from 'fastify-graceful-shutdown';
 import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
-import {
-  ConversationRelayCallbackPayloadSchema,
-  studioVoiceHandoffUrl,
-} from '@twilio/tac-core';
+import { ConversationRelayCallbackPayloadSchema, studioVoiceHandoffUrl } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 import { TACServerConfig } from './config';
-
 
 /**
  * Constructor options for TACServer

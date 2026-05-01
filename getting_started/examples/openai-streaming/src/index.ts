@@ -10,7 +10,14 @@
 import { config } from 'dotenv';
 import { Agent, run } from '@openai/agents';
 import type { AgentInputItem } from '@openai/agents';
-import { TAC, TACConfig, VoiceChannel, SMSChannel, TACServer, TACServerConfig } from 'twilio-agent-connect';
+import {
+  TAC,
+  TACConfig,
+  VoiceChannel,
+  SMSChannel,
+  TACServer,
+  TACServerConfig,
+} from 'twilio-agent-connect';
 
 config({ path: '../.env' });
 

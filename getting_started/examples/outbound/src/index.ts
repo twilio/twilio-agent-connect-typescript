@@ -215,7 +215,9 @@ server
     } else if (channel === 'voice') {
       const publicDomain = process.env.TWILIO_VOICE_PUBLIC_DOMAIN?.replace(/^https?:\/\//, '');
       if (!publicDomain) {
-        console.error('TWILIO_VOICE_PUBLIC_DOMAIN is required for voice calls. Set it in your .env file.');
+        console.error(
+          'TWILIO_VOICE_PUBLIC_DOMAIN is required for voice calls. Set it in your .env file.'
+        );
         process.exit(1);
       }
 
