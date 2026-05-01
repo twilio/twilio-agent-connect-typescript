@@ -12,19 +12,66 @@ export const TACServerConfigSchema = z.object({
   /** Port to bind the server to */
   port: z.number().int().positive().default(8000),
   /** Public domain for WebSocket URL (e.g., 'example.ngrok.io' - without protocol) */
-  publicDomain: z.string().default(''),
+  publicDomain: z
+    .string()
+    .default('')
+    .transform(val => {
+      if (!val) return '';
+      // Strip protocol if present (http://, https://)
+      let normalized = val.replace(/^https?:\/\//, '');
+      // Strip trailing slashes
+      normalized = normalized.replace(/\/+$/, '');
+      return normalized;
+    })
+    .refine(
+      val => {
+        // Empty is allowed (will trigger warning at runtime)
+        if (!val) return true;
+        // Reject if contains path or protocol separator
+        return !val.includes('/') && !val.includes('://');
+      },
+      {
+        message:
+          'publicDomain must be a domain only (e.g., "example.ngrok.io"), without protocol or paths',
+      }
+    ),
   /** Initial greeting message for callers */
   welcomeGreeting: z.string().default('Hello! How can I assist you today?'),
   /** Path for messaging webhook endpoint (for all channels) */
-  messagingWebhookPath: z.string().default('/webhook'),
+  messagingWebhookPath: z
+    .string()
+    .default('/webhook')
+    .refine(val => val.startsWith('/'), {
+      message: 'messagingWebhookPath must start with "/"',
+    }),
   /** Path for TwiML generation endpoint */
-  twimlPath: z.string().default('/twiml'),
+  twimlPath: z
+    .string()
+    .default('/twiml')
+    .refine(val => val.startsWith('/'), {
+      message: 'twimlPath must start with "/"',
+    }),
   /** Path for voice WebSocket endpoint */
-  websocketPath: z.string().default('/ws'),
+  websocketPath: z
+    .string()
+    .default('/ws')
+    .refine(val => val.startsWith('/'), {
+      message: 'websocketPath must start with "/"',
+    }),
   /** Path for ConversationRelay action callback endpoint */
-  conversationRelayCallbackPath: z.string().default('/conversation-relay-callback'),
+  conversationRelayCallbackPath: z
+    .string()
+    .default('/conversation-relay-callback')
+    .refine(val => val.startsWith('/'), {
+      message: 'conversationRelayCallbackPath must start with "/"',
+    }),
   /** Path for Conversation Intelligence webhook endpoint. Set to enable CI webhook route (e.g., '/ci-webhook') */
-  cintelWebhookPath: z.string().optional(),
+  cintelWebhookPath: z
+    .string()
+    .refine(val => val.startsWith('/'), {
+      message: 'cintelWebhookPath must start with "/"',
+    })
+    .optional(),
 });
 
 export type TACServerConfigData = z.infer<typeof TACServerConfigSchema>;
@@ -99,11 +146,10 @@ export class TACServerConfig {
   public static fromEnv(): TACServerConfig {
     const data: Partial<TACServerConfigData> = {};
 
-    // Extract public domain and strip protocol if present
+    // Extract public domain (schema will normalize it)
     const publicDomain = process.env[ServerEnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN];
     if (publicDomain) {
-      // Strip protocol if present (handle both http:// and https://)
-      data.publicDomain = publicDomain.replace(/^https?:\/\//, '');
+      data.publicDomain = publicDomain;
     }
 
     const host = process.env[ServerEnvironmentVariables.TWILIO_SERVER_HOST];
