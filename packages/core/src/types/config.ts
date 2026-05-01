@@ -32,7 +32,8 @@ export const TACConfigSchema = z.object({
   memoryConfig: TwilioMemoryConfigSchema.default({}),
   conversationConfigurationId: z
     .string()
-    .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format'),
+    .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
+    .optional(),
   voicePublicDomain: z.string().url().optional(),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),

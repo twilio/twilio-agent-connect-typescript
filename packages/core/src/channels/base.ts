@@ -23,7 +23,7 @@ export abstract class BaseChannel {
   protected readonly tac: TAC;
   protected readonly config: TACConfig;
   protected readonly logger: Logger;
-  protected readonly conversationClient: ConversationClient;
+  protected readonly conversationClient: ConversationClient | null;
   protected readonly activeConversations: Map<ConversationId, ConversationSession>;
   protected readonly callbacks: BaseChannelEvents;
 

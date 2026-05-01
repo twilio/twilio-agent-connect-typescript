@@ -33,6 +33,9 @@ export class ConversationClient extends BaseClient {
       ? `https://conversations.${config.region}.twilio.com`
       : 'https://conversations.twilio.com';
     super(baseUrl, config, logger);
+    if (!config.conversationConfigurationId) {
+      throw new Error('conversationConfigurationId is required to create ConversationClient');
+    }
     this.conversationConfigurationId = config.conversationConfigurationId;
   }
 

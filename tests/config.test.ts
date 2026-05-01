@@ -200,13 +200,13 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_PHONE_NUMBER');
     });
 
-    it('should throw error when TWILIO_CONVERSATION_CONFIGURATION_ID is missing', () => {
+    it('should succeed without TWILIO_CONVERSATION_CONFIGURATION_ID (relay-only mode)', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_CONVERSATION_CONFIGURATION_ID');
+      const config = TACConfig.fromEnv();
+      expect(config.conversationConfigurationId).toBeUndefined();
+      expect(config.isOrchestratorEnabled()).toBe(false);
     });
 
     it('should throw error when no environment variables are set', () => {

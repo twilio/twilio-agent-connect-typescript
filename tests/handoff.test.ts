@@ -3,6 +3,8 @@ import axios from 'axios';
 import {
   ConversationSession,
   HandoffPayload,
+  TAC,
+  TACConfig,
   TACConfigData,
   studioExecutionsUrl,
   studioVoiceHandoffUrl,
@@ -102,6 +104,22 @@ describe('createStudioHandoffTool factory', () => {
     const tac = await createTestTAC(getTestConfig({ studioHandoffFlowSid: undefined }));
     expect(() => createStudioHandoffTool(tac, makeSession())).toThrowError(
       /studioHandoffFlowSid/
+    );
+  });
+
+  it('throws in voice-only mode (no Conversation Orchestrator)', async () => {
+    const config = new TACConfig({
+      accountSid: ACCOUNT_SID,
+      authToken: 'test_token_123',
+      apiKey: 'SK123',
+      apiSecret: 'test_api_secret',
+      phoneNumber: '+15551234567',
+      studioHandoffFlowSid: FLOW_SID,
+    });
+    const tac = await TAC.create({ config });
+
+    expect(() => createStudioHandoffTool(tac, makeSession())).toThrowError(
+      /Conversation Orchestrator/
     );
   });
 });

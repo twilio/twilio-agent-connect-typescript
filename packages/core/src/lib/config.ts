@@ -23,7 +23,7 @@ export class TACConfig {
   public readonly apiSecret: string;
   public readonly phoneNumber: string;
   public readonly memoryConfig: TACConfigData['memoryConfig'];
-  public readonly conversationConfigurationId: string;
+  public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
@@ -50,7 +50,9 @@ export class TACConfig {
     this.phoneNumber = validatedConfig.phoneNumber;
     // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
     this.memoryConfig = validatedConfig.memoryConfig;
-    this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
+    if (validatedConfig.conversationConfigurationId) {
+      this.conversationConfigurationId = validatedConfig.conversationConfigurationId;
+    }
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
@@ -80,9 +82,9 @@ export class TACConfig {
    * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
    * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
    * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
-   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
    *
    * Optional environment variables:
+   * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
    * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
@@ -113,10 +115,6 @@ export class TACConfig {
       { key: EnvironmentVariables.TWILIO_API_KEY, name: 'TWILIO_API_KEY' },
       { key: EnvironmentVariables.TWILIO_API_SECRET, name: 'TWILIO_API_SECRET' },
       { key: EnvironmentVariables.TWILIO_PHONE_NUMBER, name: 'TWILIO_PHONE_NUMBER' },
-      {
-        key: EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID,
-        name: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
-      },
     ];
 
     // Throw error for missing required variables (like Python's KeyError)
@@ -222,7 +220,7 @@ export class TACConfig {
         ),
       },
       conversationConfigurationId:
-        process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID]!,
+        process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
       voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid:
@@ -234,6 +232,14 @@ export class TACConfig {
     };
 
     return new TACConfig(rawConfig);
+  }
+
+  /**
+   * Whether Conversation Orchestrator is configured.
+   * Returns false in voice-only mode (no conversationConfigurationId).
+   */
+  public isOrchestratorEnabled(): boolean {
+    return this.conversationConfigurationId !== undefined;
   }
 
   /**
