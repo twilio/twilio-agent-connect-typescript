@@ -556,32 +556,11 @@ describe('TACServer welcomeGreeting', () => {
     );
   });
 
-  it('should warn and generate malformed URL when publicDomain is not set', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    // Create server with empty publicDomain
-    server = new TACServer({ tac, config: createServerConfig(currentPort, undefined, '') });
-
-    await server.start();
-
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Should generate malformed URL (matches Python behavior)
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: 'wss:///ws',
-        }),
-        actionUrl: 'https:///conversation-relay-callback',
-      })
-    );
+  it('should throw error when publicDomain is not set and voice channel is enabled', () => {
+    // Should throw at construction time when voice channel exists but publicDomain is empty
+    expect(() => {
+      new TACServer({ tac, config: createServerConfig(currentPort, undefined, '') });
+    }).toThrow(/publicDomain is required when voice channel is enabled/);
   });
 });
 

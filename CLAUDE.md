@@ -102,7 +102,7 @@ new TACServer(options: TACServerOptions)
 {
   host: '0.0.0.0',
   port: 8000,
-  publicDomain: '',  // Auto-detected from request headers if not set
+  publicDomain: '',  // Required for voice calls - server will throw error if not set
   welcomeGreeting: 'Hello! How can I assist you today?',
   messagingWebhookPath: '/webhook',
   twimlPath: '/twiml',
@@ -116,7 +116,7 @@ new TACServer(options: TACServerOptions)
 
 Server configuration can be loaded from environment variables via `TACServerConfig.fromEnv()`:
 
-- `TWILIO_VOICE_PUBLIC_DOMAIN`: Public domain for WebSocket URLs (without protocol, e.g., 'example.ngrok.io')
+- `TWILIO_VOICE_PUBLIC_DOMAIN`: Public domain for WebSocket URLs (without protocol, e.g., 'example.ngrok.io'). **Required for voice calls** - the server will throw an error at construction time if voice channel is enabled but publicDomain is not set.
 - `TWILIO_SERVER_HOST`: Host to bind to (default: 0.0.0.0)
 - `TWILIO_SERVER_PORT`: Port to bind to (default: 8000)
 

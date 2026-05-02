@@ -79,6 +79,15 @@ export class TACServer {
         'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms" or "chat") with TAC to enable messaging.'
       );
     }
+
+    // Validate that publicDomain is set if voice channel is enabled
+    if (this.voiceChannel && !this.serverConfig.publicDomain) {
+      throw new Error(
+        'TACServer: publicDomain is required when voice channel is enabled. ' +
+          'Set TWILIO_VOICE_PUBLIC_DOMAIN environment variable or pass publicDomain in TACServerConfig.'
+      );
+    }
+
     // Use the user-supplied Fastify instance if provided; otherwise create
     // a default one with Pino logging.
     if (options.app) {
@@ -189,13 +198,7 @@ export class TACServer {
 
           const voiceChannel = this.voiceChannel;
 
-          // Generate WebSocket URL - requires publicDomain to be set
-          if (!this.serverConfig.publicDomain) {
-            this.fastify.log.warn(
-              'publicDomain is not set — voice URLs will be malformed. ' +
-                'Set TWILIO_VOICE_PUBLIC_DOMAIN environment variable.'
-            );
-          }
+          // Generate WebSocket URL (publicDomain validated at construction)
           const websocketUrl = `wss://${this.serverConfig.publicDomain}${this.serverConfig.websocketPath}`;
 
           // If a Studio handoff flow is configured, point `<Connect action>`
@@ -420,7 +423,7 @@ export class TACServer {
         {
           host: this.serverConfig.host,
           port: this.serverConfig.port,
-          public_domain: this.serverConfig.publicDomain || 'auto-detected',
+          public_domain: this.serverConfig.publicDomain,
           messaging_webhook: this.serverConfig.messagingWebhookPath,
           twiml_webhook: this.serverConfig.twimlPath,
           ws_websocket: this.serverConfig.websocketPath,
