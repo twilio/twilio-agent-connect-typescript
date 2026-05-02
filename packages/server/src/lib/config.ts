@@ -15,24 +15,31 @@ export const TACServerConfigSchema = z.object({
   publicDomain: z
     .string()
     .default('')
-    .transform(val => {
-      if (!val) return '';
-      // Strip protocol if present (http://, https://)
-      let normalized = val.replace(/^https?:\/\//, '');
-      // Strip trailing slashes
-      normalized = normalized.replace(/\/+$/, '');
-      return normalized;
-    })
     .refine(
       val => {
-        // Empty is allowed (will trigger warning at runtime)
+        // Empty is allowed (messaging-only servers)
         if (!val) return true;
-        // Reject if contains path or protocol separator
-        return !val.includes('/') && !val.includes('://');
+
+        // Trim whitespace
+        const trimmed = val.trim();
+        if (trimmed !== val) return false; // Reject if has whitespace
+
+        // Reject if has protocol
+        if (trimmed.includes('://')) return false;
+
+        // Validate as URL by prepending https://
+        try {
+          const url = new URL(`https://${trimmed}`);
+          // Must not have path, search, or hash (except trailing slash which URL normalizes)
+          if (url.pathname !== '/' || url.search || url.hash) return false;
+          return true;
+        } catch {
+          return false;
+        }
       },
       {
         message:
-          'publicDomain must be a domain only (e.g., "example.ngrok.io"), without protocol or paths',
+          'publicDomain must be a valid domain (e.g., "example.ngrok.io"), without protocol, paths, query strings, or fragments',
       }
     ),
   /** Initial greeting message for callers */
@@ -41,35 +48,36 @@ export const TACServerConfigSchema = z.object({
   messagingWebhookPath: z
     .string()
     .default('/webhook')
-    .refine(val => val.startsWith('/'), {
-      message: 'messagingWebhookPath must start with "/"',
+    .refine(val => val.startsWith('/') && val === val.trim(), {
+      message: 'messagingWebhookPath must start with "/" and have no leading/trailing whitespace',
     }),
   /** Path for TwiML generation endpoint */
   twimlPath: z
     .string()
     .default('/twiml')
-    .refine(val => val.startsWith('/'), {
-      message: 'twimlPath must start with "/"',
+    .refine(val => val.startsWith('/') && val === val.trim(), {
+      message: 'twimlPath must start with "/" and have no leading/trailing whitespace',
     }),
   /** Path for voice WebSocket endpoint */
   websocketPath: z
     .string()
     .default('/ws')
-    .refine(val => val.startsWith('/'), {
-      message: 'websocketPath must start with "/"',
+    .refine(val => val.startsWith('/') && val === val.trim(), {
+      message: 'websocketPath must start with "/" and have no leading/trailing whitespace',
     }),
   /** Path for ConversationRelay action callback endpoint */
   conversationRelayCallbackPath: z
     .string()
     .default('/conversation-relay-callback')
-    .refine(val => val.startsWith('/'), {
-      message: 'conversationRelayCallbackPath must start with "/"',
+    .refine(val => val.startsWith('/') && val === val.trim(), {
+      message:
+        'conversationRelayCallbackPath must start with "/" and have no leading/trailing whitespace',
     }),
   /** Path for Conversation Intelligence webhook endpoint. Set to enable CI webhook route (e.g., '/ci-webhook') */
   cintelWebhookPath: z
     .string()
-    .refine(val => val.startsWith('/'), {
-      message: 'cintelWebhookPath must start with "/"',
+    .refine(val => val.startsWith('/') && val === val.trim(), {
+      message: 'cintelWebhookPath must start with "/" and have no leading/trailing whitespace',
     })
     .optional(),
 });
@@ -159,9 +167,11 @@ export class TACServerConfig {
 
     const port = process.env[ServerEnvironmentVariables.TWILIO_SERVER_PORT];
     if (port) {
-      const parsed = parseInt(port, 10);
-      if (isNaN(parsed) || parsed <= 0) {
-        throw new Error(`Invalid TWILIO_SERVER_PORT: expected a positive integer, got "${port}"`);
+      const parsed = Number(port);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+        throw new Error(
+          `Invalid TWILIO_SERVER_PORT: expected an integer between 1-65535, got "${port}"`
+        );
       }
       data.port = parsed;
     }

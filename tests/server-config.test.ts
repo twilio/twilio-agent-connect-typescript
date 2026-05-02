@@ -2,32 +2,28 @@ import { describe, it, expect } from 'vitest';
 import { TACServerConfig } from '@twilio/tac-server';
 
 describe('TACServerConfig publicDomain validation', () => {
-  it('should strip http:// protocol from publicDomain', () => {
-    const config = new TACServerConfig({
-      publicDomain: 'http://example.ngrok.io',
-    });
-    expect(config.publicDomain).toBe('example.ngrok.io');
+  it('should reject http:// protocol in publicDomain', () => {
+    expect(() => {
+      new TACServerConfig({
+        publicDomain: 'http://example.ngrok.io',
+      });
+    }).toThrow(/publicDomain must be a valid domain/);
   });
 
-  it('should strip https:// protocol from publicDomain', () => {
-    const config = new TACServerConfig({
-      publicDomain: 'https://example.ngrok.io',
-    });
-    expect(config.publicDomain).toBe('example.ngrok.io');
+  it('should reject https:// protocol in publicDomain', () => {
+    expect(() => {
+      new TACServerConfig({
+        publicDomain: 'https://example.ngrok.io',
+      });
+    }).toThrow(/publicDomain must be a valid domain/);
   });
 
-  it('should strip trailing slashes from publicDomain', () => {
-    const config = new TACServerConfig({
-      publicDomain: 'example.ngrok.io///',
-    });
-    expect(config.publicDomain).toBe('example.ngrok.io');
-  });
-
-  it('should handle protocol and trailing slashes together', () => {
-    const config = new TACServerConfig({
-      publicDomain: 'https://example.ngrok.io/',
-    });
-    expect(config.publicDomain).toBe('example.ngrok.io');
+  it('should reject trailing slashes in publicDomain', () => {
+    expect(() => {
+      new TACServerConfig({
+        publicDomain: 'example.ngrok.io///',
+      });
+    }).toThrow(/publicDomain must be a valid domain/);
   });
 
   it('should reject publicDomain with paths', () => {
@@ -35,15 +31,39 @@ describe('TACServerConfig publicDomain validation', () => {
       new TACServerConfig({
         publicDomain: 'example.ngrok.io/path',
       });
-    }).toThrow('publicDomain must be a domain only');
+    }).toThrow(/publicDomain must be a valid domain/);
   });
 
-  it('should reject publicDomain with protocol after stripping', () => {
+  it('should reject publicDomain with query strings', () => {
     expect(() => {
       new TACServerConfig({
-        publicDomain: 'example://bad',
+        publicDomain: 'example.ngrok.io?foo=bar',
       });
-    }).toThrow('publicDomain must be a domain only');
+    }).toThrow(/publicDomain must be a valid domain/);
+  });
+
+  it('should reject publicDomain with fragments', () => {
+    expect(() => {
+      new TACServerConfig({
+        publicDomain: 'example.ngrok.io#section',
+      });
+    }).toThrow(/publicDomain must be a valid domain/);
+  });
+
+  it('should reject publicDomain with whitespace', () => {
+    expect(() => {
+      new TACServerConfig({
+        publicDomain: ' example.ngrok.io ',
+      });
+    }).toThrow(/publicDomain must be a valid domain/);
+  });
+
+  it('should reject invalid domain format', () => {
+    expect(() => {
+      new TACServerConfig({
+        publicDomain: 'not a valid domain!',
+      });
+    }).toThrow(/publicDomain must be a valid domain/);
   });
 
   it('should allow empty publicDomain', () => {
@@ -102,6 +122,22 @@ describe('TACServerConfig webhook path validation', () => {
     }).toThrow(/cintelWebhookPath must start with/);
   });
 
+  it('should reject webhook paths with trailing whitespace', () => {
+    expect(() => {
+      new TACServerConfig({
+        messagingWebhookPath: '/webhook ',
+      });
+    }).toThrow(/messagingWebhookPath must start with/);
+  });
+
+  it('should reject webhook paths with leading whitespace', () => {
+    expect(() => {
+      new TACServerConfig({
+        twimlPath: ' /twiml',
+      });
+    }).toThrow(/twimlPath must start with/);
+  });
+
   it('should accept valid webhook paths with leading slash', () => {
     const config = new TACServerConfig({
       messagingWebhookPath: '/my-webhook',
@@ -116,5 +152,51 @@ describe('TACServerConfig webhook path validation', () => {
     expect(config.websocketPath).toBe('/my-ws');
     expect(config.conversationRelayCallbackPath).toBe('/my-callback');
     expect(config.cintelWebhookPath).toBe('/my-ci');
+  });
+});
+
+describe('TACServerConfig.fromEnv() port validation', () => {
+  const originalEnv = process.env.TWILIO_SERVER_PORT;
+
+  afterEach(() => {
+    if (originalEnv !== undefined) {
+      process.env.TWILIO_SERVER_PORT = originalEnv;
+    } else {
+      delete process.env.TWILIO_SERVER_PORT;
+    }
+  });
+
+  it('should reject non-numeric port values', () => {
+    process.env.TWILIO_SERVER_PORT = 'abc';
+    expect(() => {
+      TACServerConfig.fromEnv();
+    }).toThrow(/Invalid TWILIO_SERVER_PORT.*expected an integer between 1-65535/);
+  });
+
+  it('should reject partial numeric port values', () => {
+    process.env.TWILIO_SERVER_PORT = '8000abc';
+    expect(() => {
+      TACServerConfig.fromEnv();
+    }).toThrow(/Invalid TWILIO_SERVER_PORT.*expected an integer between 1-65535/);
+  });
+
+  it('should reject port 0', () => {
+    process.env.TWILIO_SERVER_PORT = '0';
+    expect(() => {
+      TACServerConfig.fromEnv();
+    }).toThrow(/Invalid TWILIO_SERVER_PORT.*expected an integer between 1-65535/);
+  });
+
+  it('should reject port above 65535', () => {
+    process.env.TWILIO_SERVER_PORT = '70000';
+    expect(() => {
+      TACServerConfig.fromEnv();
+    }).toThrow(/Invalid TWILIO_SERVER_PORT.*expected an integer between 1-65535/);
+  });
+
+  it('should accept valid port numbers', () => {
+    process.env.TWILIO_SERVER_PORT = '8080';
+    const config = TACServerConfig.fromEnv();
+    expect(config.port).toBe(8080);
   });
 });
