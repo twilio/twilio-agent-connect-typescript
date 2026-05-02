@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TACServerConfig } from '../packages/server/src/lib/config';
+import { TACServerConfig } from '@twilio/tac-server';
 
 describe('TACServerConfig publicDomain validation', () => {
   it('should strip http:// protocol from publicDomain', () => {
