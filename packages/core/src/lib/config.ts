@@ -85,7 +85,7 @@ export class TACConfig {
    *
    * Optional environment variables:
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
-   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice WebSocket connections (without protocol, e.g., 'abc123.ngrok.app')
+   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice WebSocket connections (domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
