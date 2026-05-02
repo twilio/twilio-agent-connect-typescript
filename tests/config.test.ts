@@ -161,7 +161,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Invalid domain format/);
+      }).toThrow(/Invalid hostname format/);
     });
 
     it('should reject invalid voicePublicDomain format', () => {
@@ -170,7 +170,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Invalid domain format/);
+      }).toThrow(/Invalid hostname format/);
     });
 
     it('should reject voicePublicDomain with http protocol', () => {
@@ -179,7 +179,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Invalid domain format/);
+      }).toThrow(/Invalid hostname format/);
     });
 
     it('should reject voicePublicDomain with wss protocol', () => {
@@ -188,7 +188,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Invalid domain format/);
+      }).toThrow(/Invalid hostname format/);
     });
 
     it('should reject voicePublicDomain with path', () => {
@@ -197,7 +197,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Invalid domain format/);
+      }).toThrow(/Invalid hostname format/);
     });
 
     it('should reject voicePublicDomain with port', () => {
@@ -206,7 +206,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Invalid domain format/);
+      }).toThrow(/Invalid hostname format/);
     });
 
     it('should reject voicePublicDomain that is too long', () => {
@@ -217,7 +217,7 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow(/Domain name too long/);
+      }).toThrow(/Hostname too long/);
     });
 
     it('should accept valid subdomain', () => {

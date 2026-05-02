@@ -36,10 +36,10 @@ export const TACConfigSchema = z.object({
     .optional(),
   voicePublicDomain: z
     .string()
-    .max(253, 'Domain name too long (max 253 characters)')
+    .max(253, 'Hostname too long (max 253 characters)')
     .regex(
       /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
-      'Invalid domain format. Must be a domain without protocol, port, or path (e.g., "abc123.ngrok.app")'
+      'Invalid hostname format. Must be a hostname without protocol, port, or path (e.g., "abc123.ngrok.app", "localhost", or "192.168.1.100")'
     )
     .optional(),
   cintelConfigurationId: z.string().optional(),
