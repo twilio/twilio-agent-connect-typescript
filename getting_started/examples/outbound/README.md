@@ -67,7 +67,7 @@ OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 Required for Voice:
 
 ```bash
-VOICE_PUBLIC_DOMAIN=https://your-domain.ngrok.app
+TWILIO_VOICE_PUBLIC_DOMAIN=your-domain.ngrok.app
 ```
 
 ### 3. Start ngrok
@@ -78,7 +78,7 @@ In another terminal:
 ngrok http 8000
 ```
 
-Copy the ngrok domain (e.g., `abc123.ngrok.app`) and set `VOICE_PUBLIC_DOMAIN` in your `.env` file.
+Copy the ngrok domain (e.g., `abc123.ngrok.app`) and set `TWILIO_VOICE_PUBLIC_DOMAIN` in your `.env` file.
 
 ### 4. Configure Twilio Webhooks
 
@@ -177,8 +177,8 @@ getting_started/examples/outbound/
 
 ## Troubleshooting
 
-- **"VOICE_PUBLIC_DOMAIN is required"** — Set `VOICE_PUBLIC_DOMAIN` in your `.env` file to your ngrok URL (e.g., `https://abc123.ngrok.app`)
+- **"TWILIO_VOICE_PUBLIC_DOMAIN is required"** — Set `TWILIO_VOICE_PUBLIC_DOMAIN` in your `.env` file to your ngrok domain (e.g., `abc123.ngrok.app`, without `https://` prefix)
 - **Call goes to voicemail** — The recipient's phone may reject unknown numbers. Try calling a number you control first.
 - **No SMS replies received** — Verify the Conversation Orchestrator webhook is configured to point to your ngrok URL
 - **OpenAI errors** — Verify your `OPENAI_API_KEY` is set and valid
-- **WebSocket connection fails** — Ensure ngrok is running and the domain matches `VOICE_PUBLIC_DOMAIN`
+- **WebSocket connection fails** — Ensure ngrok is running and the domain matches `TWILIO_VOICE_PUBLIC_DOMAIN`

@@ -52,7 +52,7 @@ ngrok http 8000
 # Copy the ngrok URL (e.g., https://abc123.ngrok.io)
 ```
 
-Update `VOICE_PUBLIC_DOMAIN` in your `.env` file with the full ngrok URL (including `https://`). If you start the server first and then change the URL, you'll need to restart the server for it to pick up the new value.
+Update `TWILIO_VOICE_PUBLIC_DOMAIN` in your `.env` file with your ngrok domain (e.g., `abc123.ngrok.app`, without the `https://` prefix). If you start the server first and then change the URL, you'll need to restart the server for it to pick up the new value.
 
 ### Install Example Dependencies and Run the Server
 
@@ -82,7 +82,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 ### Optional (Server)
 
-- `VOICE_PUBLIC_DOMAIN`: Your ngrok domain (required for voice)
+- `TWILIO_VOICE_PUBLIC_DOMAIN`: Your ngrok domain without `https://` prefix (required for voice, e.g., `abc123.ngrok.app`)
 
 ### Optional (Handoff)
 

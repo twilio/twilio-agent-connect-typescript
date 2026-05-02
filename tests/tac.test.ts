@@ -33,7 +33,7 @@ describe('TAC Core', () => {
         'TWILIO_PHONE_NUMBER',
         'MEMORY_STORE_ID',
         'TWILIO_CONVERSATION_CONFIGURATION_ID',
-        'VOICE_PUBLIC_DOMAIN',
+        'TWILIO_VOICE_PUBLIC_DOMAIN',
       ] as const;
       const snapshot: Record<(typeof keys)[number], string | undefined> = {
         TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
@@ -41,7 +41,7 @@ describe('TAC Core', () => {
         TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
         MEMORY_STORE_ID: process.env.MEMORY_STORE_ID,
         TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
-        VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
+        TWILIO_VOICE_PUBLIC_DOMAIN: process.env.TWILIO_VOICE_PUBLIC_DOMAIN,
       };
 
       try {

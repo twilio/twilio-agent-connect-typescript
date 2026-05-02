@@ -22,7 +22,7 @@ describe('TACConfig', () => {
       TWILIO_API_SECRET: process.env.TWILIO_API_SECRET,
       TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
       TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
-      VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
+      TWILIO_VOICE_PUBLIC_DOMAIN: process.env.TWILIO_VOICE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
       TWILIO_STUDIO_HANDOFF_FLOW_SID: process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID,
       TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS,
@@ -148,11 +148,121 @@ describe('TACConfig', () => {
 
     it('should include optional voicePublicDomain when set', () => {
       setRequiredEnvVars();
-      process.env.VOICE_PUBLIC_DOMAIN = 'https://example.com';
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'example.ngrok.app';
 
       const config = TACConfig.fromEnv();
 
-      expect(config.voicePublicDomain).toBe('https://example.com');
+      expect(config.voicePublicDomain).toBe('example.ngrok.app');
+    });
+
+    it('should reject voicePublicDomain with protocol', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'https://example.ngrok.app';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Invalid domain format/);
+    });
+
+    it('should reject invalid voicePublicDomain format', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'not a valid domain!';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Invalid domain format/);
+    });
+
+    it('should reject voicePublicDomain with http protocol', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'http://example.ngrok.app';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Invalid domain format/);
+    });
+
+    it('should reject voicePublicDomain with wss protocol', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'wss://example.ngrok.app';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Invalid domain format/);
+    });
+
+    it('should reject voicePublicDomain with path', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'example.ngrok.app/path';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Invalid domain format/);
+    });
+
+    it('should reject voicePublicDomain with port', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'example.ngrok.app:8080';
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Invalid domain format/);
+    });
+
+    it('should reject voicePublicDomain that is too long', () => {
+      setRequiredEnvVars();
+      // Create a domain longer than 253 characters
+      const longDomain = 'a'.repeat(250) + '.com';
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = longDomain;
+
+      expect(() => {
+        TACConfig.fromEnv();
+      }).toThrow(/Domain name too long/);
+    });
+
+    it('should accept valid subdomain', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'my-app.example.ngrok.app';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('my-app.example.ngrok.app');
+    });
+
+    it('should accept valid domain with multiple subdomains', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'a.b.c.example.com';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('a.b.c.example.com');
+    });
+
+    it('should accept localhost', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'localhost';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('localhost');
+    });
+
+    it('should accept valid IP address', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = '192.168.1.100';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('192.168.1.100');
+    });
+
+    it('should allow voicePublicDomain to be undefined when not set', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_VOICE_PUBLIC_DOMAIN;
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBeUndefined();
     });
 
     it('should throw error when TWILIO_ACCOUNT_SID is missing', () => {
