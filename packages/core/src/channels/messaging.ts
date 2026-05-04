@@ -18,10 +18,10 @@ import { maskAddress } from '../util/log-redaction';
 /**
  * Participant types that represent TAC itself at TAC's (channel, address).
  *
- * `AI_AGENT` is the canonical type; `AGENT` is the legacy Maestro form. A
- * participant typed either way at TAC's address is recognized as TAC and not
- * overwritten; anything else (HUMAN_AGENT, CUSTOMER, …) is someone else's
- * assignment.
+ * `AI_AGENT` is the canonical type; `AGENT` is the legacy Conversation
+ * Orchestrator form. A participant typed either way at TAC's address is
+ * recognized as TAC and not overwritten; anything else (HUMAN_AGENT,
+ * CUSTOMER, …) is someone else's assignment.
  */
 const AGENT_TYPES = new Set<string>(['AGENT', 'AI_AGENT']);
 
@@ -605,7 +605,8 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Reconcile Maestro's participants to the types TAC needs for sending.
+   * Reconcile Conversation Orchestrator's participants to the types TAC
+   * needs for sending.
    *
    * v1-bridge capture can leave TAC's agent participant as `UNKNOWN` (wrong
    * type at our address), or omit it entirely (customer-only conversation).
@@ -682,7 +683,7 @@ export abstract class MessagingChannel extends BaseChannel {
           participant_type: agentCandidate.type,
         },
         "Participant at TAC's address has a conflicting type; refusing to overwrite. " +
-          'Check Maestro participant state — a non-agent participant is holding ' +
+          'Check Conversation Orchestrator participant state — a non-agent participant is holding ' +
           "TAC's (channel, address)."
       );
       return null;
@@ -723,7 +724,7 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Find or mint a Memora profile for a customer being promoted from UNKNOWN.
+   * Find or mint a Conversation Memory profile for a customer being promoted from UNKNOWN.
    *
    * Only resolves for phone-based channels (SMS, VOICE). Looks up by phone
    * identifier first; on miss, creates a new profile using the configured
@@ -776,14 +777,15 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * PUT a participant to `newType`.
    *
-   * Maestro's PUT is a full-resource replacement, so we pass the existing
-   * `name` and `addresses` back unchanged to avoid wiping them. `profileId`
-   * defaults to the participant's current value; pass a non-undefined override
-   * to attach a newly resolved profile during CUSTOMER reconciliation.
+   * Conversation Orchestrator's PUT is a full-resource replacement, so we
+   * pass the existing `name` and `addresses` back unchanged to avoid wiping
+   * them. `profileId` defaults to the participant's current value; pass a
+   * non-undefined override to attach a newly resolved profile during CUSTOMER
+   * reconciliation.
    *
-   * Returns undefined on any error (including 409). A 409 from Maestro here
-   * means the promotion is structurally blocked — stop and surface it; don't
-   * retry.
+   * Returns undefined on any error (including 409). A 409 from Conversation
+   * Orchestrator here means the promotion is structurally blocked — stop and
+   * surface it; don't retry.
    */
   private async promoteParticipant(
     conversationId: ConversationId,
@@ -825,9 +827,9 @@ export abstract class MessagingChannel extends BaseChannel {
             target_type: newType,
             conflicting_resource_id: this.extractConflictingResourceId(error),
           },
-          'Maestro returned 409 on participant promotion; skipping — likely a ' +
-            'conflicting conversation or grouping constraint. Check Maestro for ' +
-            'duplicate active conversations.'
+          'Conversation Orchestrator returned 409 on participant promotion; skipping — ' +
+            'likely a conflicting conversation or grouping constraint. Check ' +
+            'Conversation Orchestrator for duplicate active conversations.'
         );
         return undefined;
       }
@@ -873,9 +875,9 @@ export abstract class MessagingChannel extends BaseChannel {
             conversation_id: conversationId,
             conflicting_resource_id: this.extractConflictingResourceId(error),
           },
-          'Maestro returned 409 on AI_AGENT participant add; skipping — address is ' +
-            "already owned or the conversation can't accept a new AI_AGENT. Check " +
-            'Maestro participant state.'
+          'Conversation Orchestrator returned 409 on AI_AGENT participant add; skipping — ' +
+            "address is already owned or the conversation can't accept a new AI_AGENT. " +
+            'Check Conversation Orchestrator participant state.'
         );
         return undefined;
       }

@@ -205,16 +205,16 @@ export class ConversationClient extends BaseClient {
   /**
    * Replace an existing participant.
    *
-   * PUT is a full resource replacement per Maestro spec — any field omitted
-   * from the body is cleared on the server. Callers must pass the current
-   * `addresses` (and `name` if set) to preserve them.
+   * PUT is a full resource replacement per the Conversation Orchestrator spec —
+   * any field omitted from the body is cleared on the server. Callers must pass
+   * the current `addresses` (and `name` if set) to preserve them.
    *
    * @param conversationId - Conversation ID containing the participant
    * @param participantId - Participant ID to update
    * @param participantType - New participant type
    * @param addresses - Current participant addresses (required to avoid wiping)
    * @param options.name - Current participant display name (optional)
-   * @param options.profileId - Memora profile ID to attach (optional)
+   * @param options.profileId - Conversation Memory profile ID to attach (optional)
    * @returns Promise containing the updated participant
    */
   public async updateParticipant(

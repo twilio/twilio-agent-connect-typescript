@@ -18,7 +18,7 @@ export const TwilioMemoryConfigSchema = z.object({
   relevanceThreshold: z.number().min(0.0).max(1.0).default(0.0),
   /**
    * Trait group name that holds the phone identifier on newly created profiles.
-   * Must match the promoted-to-identifier configuration of the Memora store.
+   * Must match the promoted-to-identifier configuration of the Conversation Memory store.
    */
   phoneTraitGroup: z.string().default('Contact'),
   /** Trait field name within `phoneTraitGroup` that holds the phone identifier. */

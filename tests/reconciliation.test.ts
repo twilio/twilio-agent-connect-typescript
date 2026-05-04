@@ -9,7 +9,7 @@ import { createTestTAC } from './helpers/tac';
  * Tests for `reconcileParticipants` in MessagingChannel.
  *
  * Covers the matrix of participant states that v1-bridge capture can leave us
- * with. The resolution rules were agreed with the Maestro team.
+ * with. The resolution rules were agreed with the Conversation Orchestrator team.
  */
 describe('Reconcile participants', () => {
   const getTestConfig = () => ({
@@ -43,7 +43,7 @@ describe('Reconcile participants', () => {
   let channel: SMSChannel;
   let mockAdapter: MockAdapter;
   // Stub memory profile calls by default — reconciliation tests should not hit
-  // Memora. Individual tests can override.
+  // Conversation Memory. Individual tests can override.
   let stubLookupProfile: ReturnType<typeof vi.fn>;
   let stubCreateProfile: ReturnType<typeof vi.fn>;
 
@@ -210,7 +210,7 @@ describe('Reconcile participants', () => {
     expect(postBody.addresses[0].address).toBe(AGENT_ADDR);
   });
 
-  it('POST AI_AGENT returns 409 → null (Maestro structural conflict)', async () => {
+  it('POST AI_AGENT returns 409 → null (Conversation Orchestrator structural conflict)', async () => {
     // A 409 here signals something structural (duplicate conversation,
     // address already owned, grouping constraint) that TAC can't safely
     // paper over by retrying.
@@ -286,7 +286,7 @@ describe('Reconcile participants', () => {
 
     // Both lookup and create fail — reconciliation still promotes, just
     // without a profileId attached.
-    const networkErr = new AxiosError('memora down');
+    const networkErr = new AxiosError('conversation memory down');
     stubLookupProfile.mockRejectedValue(networkErr);
     stubCreateProfile.mockRejectedValue(networkErr);
 
@@ -300,7 +300,7 @@ describe('Reconcile participants', () => {
 
   it('reconciliation lifts customer profileId onto session.profileId', async () => {
     // When reconcile resolves a CUSTOMER that already has a profileId
-    // (set by a prior reconciliation / Memora identity-resolution), the
+    // (set by a prior reconciliation / Conversation Memory identity-resolution), the
     // handler should copy it onto session.profileId so retrieveMemory's
     // fallback path doesn't redo the lookup.
     const agent = participant('PA_A', 'AI_AGENT', AGENT_ADDR);
