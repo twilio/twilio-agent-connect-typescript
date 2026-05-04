@@ -31,8 +31,10 @@ describe('SMS Channel', () => {
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
     // Short-circuit reconcileParticipants so webhook processing tests don't
     // need to mock listParticipants. Tests that care about reconcile behavior
-    // should override this spy.
-    vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
+    // should override this spy. Spy on the prototype so the stub applies to
+    // any SMSChannel instance created in a test (e.g. memoryMode tests that
+    // construct their own channel).
+    vi.spyOn(SMSChannel.prototype as any, 'reconcileParticipants').mockResolvedValue([
       {
         id: 'PA111',
         conversationId: 'CHtest123456789',
