@@ -100,17 +100,12 @@ async function handleMessageReady(params: {
 tac.onMessageReady(handleMessageReady);
 
 // Create and start server (auto-discovers WhatsApp channel)
-const server = new TACServer(tac, {
-  voice: {
-    host: '0.0.0.0',
-    port: 8000,
-  },
-});
+const server = new TACServer(tac);
 
 server
   .start()
   .then(() => {
-    console.log('WhatsApp server started successfully on port 8000');
+    console.log('WhatsApp server started successfully');
     console.log('Send a WhatsApp message to your configured number to test');
   })
   .catch(error => {
