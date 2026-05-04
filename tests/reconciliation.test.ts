@@ -300,9 +300,9 @@ describe('Reconcile participants', () => {
   });
 
   it('reconciliation lifts customer profileId onto session.profileId', async () => {
-    // When reconcile resolves a CUSTOMER that already has a profile_id
+    // When reconcile resolves a CUSTOMER that already has a profileId
     // (set by a prior reconciliation / Memora identity-resolution), the
-    // handler should copy it onto session.profileId so retrieve_memory's
+    // handler should copy it onto session.profileId so retrieveMemory's
     // fallback path doesn't redo the lookup.
     const agent = participant('PA_A', 'AI_AGENT', AGENT_ADDR);
     const customerWithProfile: ConversationParticipant = {

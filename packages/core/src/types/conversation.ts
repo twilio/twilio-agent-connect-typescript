@@ -228,7 +228,7 @@ export const ConversationSessionSchema = z.object({
   /**
    * Agent-side participant info stashed by inbound reconciliation or outbound
    * initiation. `sendResponse` reads this to avoid re-listing participants at
-   * send time. Missing means reconciliation did not resolve an AI_AGENT.
+   * send time.
    */
   aiAgentInfo: AuthorInfoSchema.optional(),
   profile: z.custom<Profile>().optional(),

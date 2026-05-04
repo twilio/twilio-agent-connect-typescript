@@ -174,13 +174,9 @@ export class ConversationClient extends BaseClient {
   /**
    * Add a participant to a conversation.
    *
-   * Used by `reconcileParticipants` when the v1-bridge emits only the customer
-   * participant on an inbound SMS/chat — TAC adds itself as `AI_AGENT` before
-   * replying.
-   *
    * @param conversationId - The conversation ID
    * @param addresses - Array of participant addresses
-   * @param participantType - Type of participant (e.g., CUSTOMER, AI_AGENT, HUMAN_AGENT, AGENT)
+   * @param participantType - Type of participant (CUSTOMER, AI_AGENT, HUMAN_AGENT, AGENT)
    * @returns Promise containing participant response
    */
   public async addParticipant(
@@ -207,11 +203,11 @@ export class ConversationClient extends BaseClient {
   }
 
   /**
-   * Replace an existing participant (PUT is a full resource replacement per
-   * Maestro spec — any field omitted from the body is cleared on the server).
+   * Replace an existing participant.
    *
-   * Callers must pass the current `addresses` (and `name` if set) to preserve
-   * them. Pass a new `profileId` to attach a profile during reconciliation.
+   * PUT is a full resource replacement per Maestro spec — any field omitted
+   * from the body is cleared on the server. Callers must pass the current
+   * `addresses` (and `name` if set) to preserve them.
    *
    * @param conversationId - Conversation ID containing the participant
    * @param participantId - Participant ID to update

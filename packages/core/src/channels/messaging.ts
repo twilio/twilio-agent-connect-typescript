@@ -172,9 +172,6 @@ export abstract class MessagingChannel extends BaseChannel {
    *
    * 1. Default agent address (stateless, no API call)
    * 2. API fallback via listParticipants (cross-process / multi-worker)
-   *
-   * `HUMAN_AGENT` is deliberately NOT treated as TAC — a real human is a
-   * separate participant and their messages must reach the callback.
    */
   private async isOwnMessage(
     authorAddress: string,
@@ -464,17 +461,14 @@ export abstract class MessagingChannel extends BaseChannel {
       }
 
       // Reconcile participant types pre-LLM so v1-bridge's UNKNOWN gets
-      // promoted to CUSTOMER (with a Memora profile attached when possible)
-      // and to stash both participant ids on the session for sendResponse.
-      // If reconciliation can't identify both sides, any eventual reply would
-      // fail too — skip the callback so the LLM doesn't waste a turn on an
+      // promoted, and to stash both participant ids on the session for
+      // sendResponse. Reconcile failure means the reply would fail too —
+      // skip the callback so the LLM doesn't waste a turn on an
       // un-replyable conversation.
       //
-      // Skip reconcile entirely when both sides are already stashed from a
-      // prior turn — Maestro's state was written by us and doesn't drift.
-      // `authorInfo` is set from the webhook on every turn above; the gate
-      // reads `aiAgentInfo` (persistent across turns) as the signal that
-      // reconcile has already run.
+      // Gate on `aiAgentInfo` (persistent across turns) — `authorInfo` is
+      // overwritten from every webhook so it's not a reliable "already
+      // reconciled" signal.
       if (!session.aiAgentInfo || !session.authorInfo) {
         const resolved = await this.reconcileParticipants(conversationId);
         if (!resolved) {
@@ -492,7 +486,7 @@ export abstract class MessagingChannel extends BaseChannel {
           participantId: agentParticipant.id,
         };
         // When reconcile resolved a customer (SMS path — chat disables customer
-        // reconciliation and uses the author_info captured from the webhook
+        // reconciliation and uses the authorInfo captured from the webhook
         // above), use its authoritative participant id and lift any resolved
         // profile.
         if (customerParticipant && session.authorInfo) {
@@ -893,9 +887,6 @@ export abstract class MessagingChannel extends BaseChannel {
     }
   }
 
-  /**
-   * Unwrap the axios cause from a client-wrapped Error and check for 409.
-   */
   private isConflictError(error: unknown): boolean {
     const cause = error instanceof Error ? (error.cause ?? error) : error;
     return axios.isAxiosError(cause) && cause.response?.status === 409;
