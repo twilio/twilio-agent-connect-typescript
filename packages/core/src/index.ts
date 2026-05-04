@@ -43,6 +43,8 @@ export { SMSChannel } from './channels/sms';
 
 export { RCSChannel } from './channels/rcs';
 
+export { WhatsAppChannel } from './channels/whatsapp';
+
 export { ChatChannel } from './channels/chat';
 export type {
   ChatChannelConfig,

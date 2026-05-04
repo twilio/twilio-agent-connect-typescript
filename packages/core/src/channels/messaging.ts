@@ -711,17 +711,24 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Find or mint a Conversation Memory profile for a customer being promoted from UNKNOWN.
    *
-   * Only resolves for phone-based channels (SMS, VOICE, RCS). Looks up by the
-   * channel's identifier type (`phone` for SMS/VOICE, `rcs` for RCS) first;
-   * on miss, creates a new profile using the configured phone trait
-   * group/field. Returns undefined on any failure — the caller still promotes
-   * the participant, just without a `profileId` attached.
+   * Only resolves for phone-based channels (SMS, VOICE, RCS, WHATSAPP). Looks
+   * up by the channel's identifier type (`phone` for SMS/VOICE, `rcs` for
+   * RCS, `whatsapp` for WHATSAPP) first; on miss, creates a new profile
+   * using the configured phone trait group/field. Returns undefined on any
+   * failure — the caller still promotes the participant, just without a
+   * `profileId` attached.
    */
   private async resolveCustomerProfile(
     customer: ConversationParticipant,
     channel: string
   ): Promise<string | undefined> {
-    if (channel !== 'SMS' && channel !== 'VOICE' && channel !== 'RCS') return undefined;
+    if (
+      channel !== 'SMS' &&
+      channel !== 'VOICE' &&
+      channel !== 'RCS' &&
+      channel !== 'WHATSAPP'
+    )
+      return undefined;
 
     const memoryClient = this.tac.getMemoryClient();
     if (!memoryClient || !this.tac.getMemoryStoreId()) return undefined;
@@ -731,8 +738,9 @@ export abstract class MessagingChannel extends BaseChannel {
       : undefined;
     if (!phoneAddress) return undefined;
 
-    // Determine identity type: 'rcs' for RCS channel, 'phone' for SMS/Voice
-    const identityType = channel === 'RCS' ? 'rcs' : 'phone';
+    // Determine identity type: 'rcs' for RCS, 'whatsapp' for WhatsApp, 'phone' for SMS/Voice
+    const identityType =
+      channel === 'RCS' ? 'rcs' : channel === 'WHATSAPP' ? 'whatsapp' : 'phone';
 
     try {
       const lookup = await memoryClient.lookupProfile(identityType, phoneAddress);
@@ -892,13 +900,13 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Shared outbound conversation initiation for messaging channels (SMS/RCS/Chat).
+   * Shared outbound conversation initiation for messaging channels (SMS/RCS/Chat/WhatsApp).
    *
    * Handles the full flow: create conversation → find participants → start
    * session → send initial message → error cleanup.
    */
   protected async initiateOutboundMessagingConversation(params: {
-    channel: 'SMS' | 'CHAT' | 'RCS';
+    channel: 'SMS' | 'CHAT' | 'RCS' | 'WHATSAPP';
     to: string;
     from: string;
     message: string;

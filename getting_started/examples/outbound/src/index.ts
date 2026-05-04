@@ -1,13 +1,14 @@
 /**
- * Example: Outbound Conversations with SMS, RCS, and Voice
+ * Example: Outbound Conversations with SMS, RCS, WhatsApp, and Voice
  *
  * Demonstrates agent-initiated (outbound) conversations using TAC.
- * Sends an SMS, RCS message, or places a voice call, then handles the
- * full conversation loop with OpenAI.
+ * Sends an SMS, RCS, or WhatsApp message, or places a voice call, then
+ * handles the full conversation loop with OpenAI.
  *
  * Usage:
  *   npm run dev -- --to +16505551234 --channel sms --message "Hello!"
  *   npm run dev -- --to rcs:+16505551234 --channel rcs --message "Hello!"
+ *   npm run dev -- --to whatsapp:+16505551234 --channel whatsapp --message "Hello!"
  *   npm run dev -- --to +16505551234 --channel voice
  */
 
@@ -20,6 +21,7 @@ import {
   VoiceChannel,
   SMSChannel,
   RCSChannel,
+  WhatsAppChannel,
   ConversationId,
   ChannelType,
   ProfileId,
@@ -43,7 +45,7 @@ const { values: args } = parseArgs({
 });
 
 const to = args.to;
-const channel = args.channel as 'sms' | 'rcs' | 'voice' | undefined;
+const channel = args.channel as 'sms' | 'rcs' | 'whatsapp' | 'voice' | undefined;
 const message = args.message;
 const welcomeGreeting = args['welcome-greeting'];
 
@@ -51,16 +53,24 @@ if (!to || !channel) {
   console.error('Usage:');
   console.error('  npm run dev -- --to <address> --channel sms --message "Hello!"');
   console.error('  npm run dev -- --to <address> --channel rcs --message "Hello!"');
+  console.error('  npm run dev -- --to <address> --channel whatsapp --message "Hello!"');
   console.error('  npm run dev -- --to <address> --channel voice [--welcome-greeting "Hi!"]');
   process.exit(1);
 }
 
-if (channel !== 'sms' && channel !== 'rcs' && channel !== 'voice') {
-  console.error(`Invalid channel "${channel}". Must be "sms", "rcs", or "voice".`);
+if (channel !== 'sms' && channel !== 'rcs' && channel !== 'whatsapp' && channel !== 'voice') {
+  console.error(`Invalid channel "${channel}". Must be "sms", "rcs", "whatsapp", or "voice".`);
   process.exit(1);
 }
 
-if ((channel === 'sms' || channel === 'rcs') && !message) {
+if (channel === 'whatsapp' && !to.startsWith('whatsapp:')) {
+  console.error(
+    'Invalid WhatsApp destination. --to must include the "whatsapp:" prefix, e.g. "whatsapp:+16505551234".'
+  );
+  process.exit(1);
+}
+
+if ((channel === 'sms' || channel === 'rcs' || channel === 'whatsapp') && !message) {
   console.error(`--message is required for ${channel.toUpperCase()} channel.`);
   process.exit(1);
 }
@@ -79,11 +89,16 @@ const smsChannel = new SMSChannel(tac);
 
 // Only construct RCS channel if rcsSenderId is configured
 const rcsChannel = tac.getConfig().rcsSenderId ? new RCSChannel(tac) : undefined;
+// Only construct WhatsApp channel if whatsappNumber is configured
+const whatsappChannel = tac.getConfig().whatsappNumber ? new WhatsAppChannel(tac) : undefined;
 
 tac.registerChannel(voiceChannel);
 tac.registerChannel(smsChannel);
 if (rcsChannel) {
   tac.registerChannel(rcsChannel);
+}
+if (whatsappChannel) {
+  tac.registerChannel(whatsappChannel);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +242,20 @@ server
         message: message!,
       });
       console.log(`RCS sent to ${to} (conversation: ${result.conversationId})`);
+      console.log(`[${result.conversationId}] Agent: ${message}`);
+      console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
+    } else if (channel === 'whatsapp') {
+      if (!whatsappChannel) {
+        console.error(
+          'TWILIO_WHATSAPP_NUMBER is required for WhatsApp channel. Set it in your .env file (e.g., whatsapp:+15551234567)'
+        );
+        process.exit(1);
+      }
+      const result = await whatsappChannel.initiateOutboundConversation({
+        to,
+        message: message!,
+      });
+      console.log(`WhatsApp message sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {

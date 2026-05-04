@@ -141,13 +141,14 @@ export class TACServer {
           tac.getChannel<MessagingChannel>('sms'),
           tac.getChannel<MessagingChannel>('rcs'),
           tac.getChannel<MessagingChannel>('chat'),
+          tac.getChannel<MessagingChannel>('whatsapp'),
         ] as (MessagingChannel | undefined)[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
     if (this.messagingChannels.length === 0) {
       // eslint-disable-next-line no-console -- Fastify logger not yet initialized
       console.warn(
-        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms", "rcs", or "chat") with TAC to enable messaging.'
+        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms", "rcs", "chat", or "whatsapp") with TAC to enable messaging.'
       );
     }
     // Use the user-supplied Fastify instance if provided; otherwise create
