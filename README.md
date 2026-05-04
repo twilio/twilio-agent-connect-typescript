@@ -48,7 +48,7 @@ To get started, set up your Node.js environment (Node.js 22.13.0 or newer requir
 > [!IMPORTANT]
 > TAC packages are not yet published to npm. We recommend building your agent directly in this repository.
 
-### Option 1: Build in This Repository (Recommended)
+### Build in This Repository
 
 Clone this repository and work within it:
 
