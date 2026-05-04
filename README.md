@@ -63,14 +63,6 @@ npm install
 npm run build
 ```
 
-### Option 2: Install from GitHub (Alternative)
-
-If you have an existing project, you can install directly from GitHub:
-
-```bash
-npm install git@github.com:twilio/twilio-agent-connect-typescript.git
-```
-
 ## Quick Examples
 
 **Option 1: Use the Setup Wizard**
