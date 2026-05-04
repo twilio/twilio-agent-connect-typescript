@@ -888,13 +888,13 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Shared outbound conversation initiation for messaging channels (SMS/Chat).
+   * Shared outbound conversation initiation for messaging channels (SMS/Chat/WhatsApp).
    *
    * Handles the full flow: create conversation → find participants → start
    * session → send initial message → error cleanup.
    */
   protected async initiateOutboundMessagingConversation(params: {
-    channel: 'SMS' | 'CHAT';
+    channel: 'SMS' | 'CHAT' | 'WHATSAPP';
     to: string;
     from: string;
     message: string;

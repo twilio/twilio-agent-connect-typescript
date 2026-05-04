@@ -1,12 +1,16 @@
 # Outbound Conversations Example
 
-This example demonstrates how to initiate **outbound (agent-initiated) conversations** using Twilio Agent Connect (TAC). The agent reaches out to a customer via SMS or Voice, then handles a full conversation loop powered by OpenAI.
+This example demonstrates how to initiate **outbound (agent-initiated) conversations** using Twilio Agent Connect (TAC). The agent reaches out to a customer via SMS, WhatsApp, or Voice, then handles a full conversation loop powered by OpenAI.
 
 ## Supported Channels
 
 ### SMS
 
 The agent sends an initial SMS to the customer. When the customer replies, the message arrives via Conversation Orchestrator webhook and the agent responds using OpenAI.
+
+### WhatsApp
+
+The agent sends an initial WhatsApp message to the customer. When the customer replies, the message arrives via Conversation Orchestrator webhook and the agent responds using OpenAI. Requires `TWILIO_WHATSAPP_NUMBER` to be configured in your environment.
 
 ### Voice
 
@@ -64,6 +68,12 @@ TWILIO_CONVERSATION_CONFIGURATION_ID=conv_configuration_xxxxxxxxxxxxxxxxxxxxxxxx
 OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
+Optional for WhatsApp:
+
+```bash
+TWILIO_WHATSAPP_NUMBER=whatsapp:+1xxxxxxxxxx
+```
+
 Required for Voice:
 
 ```bash
@@ -104,6 +114,16 @@ npm run dev -- --to +16505551234 --channel sms --message "Hi! This is a follow-u
 
 The agent sends the initial message, then waits for the customer to reply. Each reply triggers an OpenAI-powered response.
 
+### WhatsApp
+
+Send an outbound WhatsApp message:
+
+```bash
+npm run dev -- --to whatsapp:+16505551234 --channel whatsapp --message "Hi! This is a follow-up about your recent order."
+```
+
+The agent sends the initial WhatsApp message, then waits for the customer to reply. Each reply triggers an OpenAI-powered response. Note: `TWILIO_WHATSAPP_NUMBER` must be configured in your `.env` file.
+
 ### Voice
 
 Place an outbound call:
@@ -126,14 +146,14 @@ Note: the customer's "hello?" may interrupt the greeting. For most outbound use 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `--to` | Yes | Recipient address (E.164 phone number for SMS/Voice) |
-| `--channel` | Yes | Channel type: `sms` or `voice` |
-| `--message` | SMS only | Initial outbound message text |
+| `--to` | Yes | Recipient address (E.164 phone number for SMS/Voice, or `whatsapp:+1234567890` for WhatsApp) |
+| `--channel` | Yes | Channel type: `sms`, `whatsapp`, or `voice` |
+| `--message` | SMS/WhatsApp | Initial outbound message text (required for `sms` and `whatsapp` channels) |
 | `--welcome-greeting` | No | Voice greeting spoken when the call is answered |
 
 ## How It Works
 
-### SMS Flow
+### SMS/WhatsApp Flow
 
 ```
 CLI args → Start server → Send SMS via CO Send API

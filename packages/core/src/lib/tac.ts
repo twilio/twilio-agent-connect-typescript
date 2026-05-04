@@ -50,8 +50,8 @@ export type ConversationEndedCallback = (params: {
 /**
  * Main Twilio Agent Connect class
  *
- * Central orchestrator that manages configuration, channels, callbacks,
- * and coordinates between memory, conversations, and LLM integrations.
+ * Central orchestrator that manages configuration, channels (SMS, WhatsApp, Chat, Voice),
+ * callbacks, and coordinates between memory, conversations, and LLM integrations.
  */
 export class TAC {
   private static readonly FACTORY_TOKEN = Symbol('TAC.create');

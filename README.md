@@ -31,9 +31,9 @@ Seamlessly integrate with Twilio's Memory Store and Conversation Orchestrator to
 
 ## Key Features
 
-- **Messaging Channel Support**: Built-in webhook handling for SMS and Chat conversations
+- **Messaging Channel Support**: Built-in webhook handling for SMS, WhatsApp, and Chat conversations
 - **Voice Channel Support**: WebSocket protocol handling for Twilio Voice with ConversationRelay
-- **Outbound Conversations**: Agent-initiated conversations via SMS, Chat, and Voice channels
+- **Outbound Conversations**: Agent-initiated conversations via SMS, WhatsApp, Chat, and Voice channels
 - **ConversationRelay-Only Mode**: Get started quickly with TAC's voice plumbing (TwiML, WebSocket, callbacks) before adding Conversation Orchestrator
 - **Memory Management**: Automatic integration with Twilio Memory for persistent user context
 - **Conversation Lifecycle**: Automatic tracking of conversation sessions and state
@@ -193,6 +193,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](CLAUDE.md).
 **Examples & Guides:**
 - **[Getting Started Guide](getting_started/)** - Examples and comprehensive documentation
 - **[OpenAI SDK Example](getting_started/examples/openai/)** - Complete multi-channel example with Voice, SMS, and Chat
+- **[WhatsApp Example](getting_started/examples/features/whatsapp/)** - WhatsApp channel with memory integration
 - **[Chat Example](getting_started/examples/chat/)** - Web chat integration example
 - **[ConversationRelay-Only Mode](getting_started/examples/relay-only/)** - Get started with voice using just ConversationRelay
 - **[Outbound Conversations](getting_started/examples/outbound/)** - Agent-initiated conversations example

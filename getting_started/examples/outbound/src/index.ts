@@ -1,12 +1,13 @@
 /**
- * Example: Outbound Conversations with SMS and Voice
+ * Example: Outbound Conversations with SMS, WhatsApp, and Voice
  *
  * Demonstrates agent-initiated (outbound) conversations using TAC.
- * Sends an SMS or places a voice call, then handles the full conversation
- * loop with OpenAI.
+ * Sends an SMS, WhatsApp message, or places a voice call, then handles
+ * the full conversation loop with OpenAI.
  *
  * Usage:
  *   npm run dev -- --to +16505551234 --channel sms --message "Hello!"
+ *   npm run dev -- --to whatsapp:+16505551234 --channel whatsapp --message "Hello!"
  *   npm run dev -- --to +16505551234 --channel voice
  */
 
@@ -18,6 +19,7 @@ import {
   TACConfig,
   VoiceChannel,
   SMSChannel,
+  WhatsAppChannel,
   ConversationId,
   ChannelType,
   ProfileId,
@@ -41,24 +43,25 @@ const { values: args } = parseArgs({
 });
 
 const to = args.to;
-const channel = args.channel as 'sms' | 'voice' | undefined;
+const channel = args.channel as 'sms' | 'whatsapp' | 'voice' | undefined;
 const message = args.message;
 const welcomeGreeting = args['welcome-greeting'];
 
 if (!to || !channel) {
   console.error('Usage:');
   console.error('  npm run dev -- --to <address> --channel sms --message "Hello!"');
+  console.error('  npm run dev -- --to <address> --channel whatsapp --message "Hello!"');
   console.error('  npm run dev -- --to <address> --channel voice [--welcome-greeting "Hi!"]');
   process.exit(1);
 }
 
-if (channel !== 'sms' && channel !== 'voice') {
-  console.error(`Invalid channel "${channel}". Must be "sms" or "voice".`);
+if (channel !== 'sms' && channel !== 'whatsapp' && channel !== 'voice') {
+  console.error(`Invalid channel "${channel}". Must be "sms", "whatsapp", or "voice".`);
   process.exit(1);
 }
 
-if (channel === 'sms' && !message) {
-  console.error('--message is required for SMS channel.');
+if ((channel === 'sms' || channel === 'whatsapp') && !message) {
+  console.error(`--message is required for ${channel} channel.`);
   process.exit(1);
 }
 
@@ -73,9 +76,13 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac);
 const smsChannel = new SMSChannel(tac);
+const whatsappChannel = process.env.TWILIO_WHATSAPP_NUMBER ? new WhatsAppChannel(tac) : null;
 
 tac.registerChannel(voiceChannel);
 tac.registerChannel(smsChannel);
+if (whatsappChannel) {
+  tac.registerChannel(whatsappChannel);
+}
 
 // ---------------------------------------------------------------------------
 // Conversation state
@@ -206,6 +213,20 @@ server
         message: message!,
       });
       console.log(`SMS sent to ${to} (conversation: ${result.conversationId})`);
+      console.log(`[${result.conversationId}] Agent: ${message}`);
+      console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
+    } else if (channel === 'whatsapp') {
+      if (!whatsappChannel) {
+        console.error(
+          'TWILIO_WHATSAPP_NUMBER is required for WhatsApp channel. Set it in your .env file (e.g., whatsapp:+15551234567)'
+        );
+        process.exit(1);
+      }
+      const result = await whatsappChannel.initiateOutboundConversation({
+        to,
+        message: message!,
+      });
+      console.log(`WhatsApp message sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {

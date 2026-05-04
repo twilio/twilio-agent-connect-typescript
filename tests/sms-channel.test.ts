@@ -777,6 +777,24 @@ describe('SMS Channel', () => {
       };
       const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(mockMemory as any);
 
+      // Mock reconcileParticipants for the new channel instance
+      vi.spyOn(channelAlways as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA111',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'SMS', address: '+15559876543' }],
+        },
+      ]);
+
       const webhookPayload = {
         eventType: 'COMMUNICATION_CREATED',
         data: {
@@ -803,6 +821,24 @@ describe('SMS Channel', () => {
       const retrieveMemorySpy = vi
         .spyOn(tac, 'retrieveMemory')
         .mockRejectedValue(new Error('Memory API error'));
+
+      // Mock reconcileParticipants for the new channel instance
+      vi.spyOn(channelAlways as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA111',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'SMS', address: '+15559876543' }],
+        },
+      ]);
 
       const webhookPayload = {
         eventType: 'COMMUNICATION_CREATED',

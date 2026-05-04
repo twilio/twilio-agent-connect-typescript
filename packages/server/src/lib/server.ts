@@ -55,7 +55,10 @@ export interface TACServerConfig {
   /** Voice channel instance (alternative to registering on TAC) */
   voiceChannel?: VoiceChannel;
 
-  /** Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC) */
+  /**
+   * Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC).
+   * If omitted, TACServer automatically discovers all registered messaging channels (SMS, WhatsApp, Chat).
+   */
   messagingChannels?: MessagingChannel[];
 }
 
@@ -137,10 +140,11 @@ export class TACServer {
     this.messagingChannels =
       config.messagingChannels ??
       (
-        [tac.getChannel<MessagingChannel>('sms'), tac.getChannel<MessagingChannel>('chat')] as (
-          | MessagingChannel
-          | undefined
-        )[]
+        [
+          tac.getChannel<MessagingChannel>('sms'),
+          tac.getChannel<MessagingChannel>('chat'),
+          tac.getChannel<MessagingChannel>('whatsapp'),
+        ] as (MessagingChannel | undefined)[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
     if (this.messagingChannels.length === 0) {
