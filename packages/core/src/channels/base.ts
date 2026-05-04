@@ -58,10 +58,11 @@ export abstract class BaseChannel {
     this.callbacks = {};
 
     // Validate memoryMode with runtime check for JS consumers
-    const providedMode = options?.memoryMode ?? 'never';
-    const parseResult = MemoryModeSchema.safeParse(providedMode);
+    const providedMode = options?.memoryMode;
+    const modeToValidate = providedMode === undefined ? 'never' : providedMode;
+    const parseResult = MemoryModeSchema.safeParse(modeToValidate);
     if (!parseResult.success) {
-      throw new Error(`Invalid memoryMode: "${providedMode}". Must be "always" or "never".`);
+      throw new Error(`Invalid memoryMode: "${modeToValidate}". Must be "always" or "never".`);
     }
     this.memoryMode = parseResult.data;
   }
