@@ -284,4 +284,142 @@ describe('WhatsApp Channel', () => {
       });
     });
   });
+
+  describe('memory retrieval', () => {
+    it('should not retrieve memory when memoryMode is "never"', async () => {
+      const channelNever = new WhatsAppChannel(tac, { memoryMode: 'never' });
+      const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory');
+
+      // Mock reconcileParticipants
+      vi.spyOn(channelNever as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA111',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15559876543' }],
+        },
+      ]);
+
+      const webhookPayload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: 'whatsapp:+15559876543',
+            channel: 'WHATSAPP',
+          },
+        },
+      };
+
+      await channelNever.processWebhook(webhookPayload);
+
+      // Memory should NOT be retrieved
+      expect(retrieveMemorySpy).not.toHaveBeenCalled();
+    });
+
+    it('should retrieve memory when memoryMode is "always"', async () => {
+      const channelAlways = new WhatsAppChannel(tac, { memoryMode: 'always' });
+      const mockMemory = {
+        observations: [{ id: 'obs1', content: 'Test observation' }],
+        summaries: [],
+        communications: [],
+      };
+      const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(mockMemory as any);
+
+      // Mock reconcileParticipants for the new channel instance
+      vi.spyOn(channelAlways as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA111',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15559876543' }],
+        },
+      ]);
+
+      const webhookPayload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: 'whatsapp:+15559876543',
+            channel: 'WHATSAPP',
+          },
+        },
+      };
+
+      await channelAlways.processWebhook(webhookPayload);
+
+      // Memory should be retrieved
+      expect(retrieveMemorySpy).toHaveBeenCalled();
+    });
+
+    it('should handle memory retrieval errors gracefully when memoryMode is "always"', async () => {
+      const channelAlways = new WhatsAppChannel(tac, { memoryMode: 'always' });
+      const retrieveMemorySpy = vi
+        .spyOn(tac, 'retrieveMemory')
+        .mockRejectedValue(new Error('Memory API error'));
+
+      // Mock reconcileParticipants for the new channel instance
+      vi.spyOn(channelAlways as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA111',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15559876543' }],
+        },
+      ]);
+
+      const webhookPayload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: 'whatsapp:+15559876543',
+            channel: 'WHATSAPP',
+          },
+        },
+      };
+
+      // Should not throw - error is handled gracefully
+      await expect(channelAlways.processWebhook(webhookPayload)).resolves.not.toThrow();
+
+      expect(retrieveMemorySpy).toHaveBeenCalled();
+    });
+  });
 });

@@ -1,8 +1,8 @@
 /**
  * Example: WhatsApp Channel with OpenAI Integration
  *
- * Demonstrates WhatsApp channel with TAC memory injection.
- * WhatsApp supports rich media and interactive messaging.
+ * Demonstrates WhatsApp text messaging with TAC memory injection.
+ * This example sends and receives text messages only.
  *
  * Requires OPENAI_API_KEY and TWILIO_WHATSAPP_NUMBER in addition to standard TAC env vars.
  *

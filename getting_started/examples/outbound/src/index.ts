@@ -60,6 +60,13 @@ if (channel !== 'sms' && channel !== 'whatsapp' && channel !== 'voice') {
   process.exit(1);
 }
 
+if (channel === 'whatsapp' && !to.startsWith('whatsapp:')) {
+  console.error(
+    'Invalid WhatsApp destination. --to must include the "whatsapp:" prefix, e.g. "whatsapp:+16505551234".'
+  );
+  process.exit(1);
+}
+
 if ((channel === 'sms' || channel === 'whatsapp') && !message) {
   console.error(`--message is required for ${channel} channel.`);
   process.exit(1);
