@@ -77,7 +77,7 @@ In another terminal, start ngrok:
 ngrok http 8000
 ```
 
-Copy the ngrok URL (e.g., `https://abc123.ngrok.io`).
+Copy the ngrok URL (e.g., `https://abc123.ngrok.app`).
 
 ### 5. Configure Twilio Webhooks
 
@@ -86,14 +86,14 @@ Copy the ngrok URL (e.g., `https://abc123.ngrok.io`).
 1. In the [Console](https://1console.twilio.com/), go to **Products & services** > **Conversation Orchestrator** > **Conversation Configurations**.
 2. Select your conversation configuration.
 3. In the **Overview** tab, click **Edit**.
-4. Set **Webhook > Callback method** to `https://abc123.ngrok.io/webhook` with HTTP method `POST`.
+4. Set **Webhook > Callback method** to `https://abc123.ngrok.app/webhook` with HTTP method `POST`.
 5. Click **Save changes**.
 
 **Voice:**
 
 1. In the [Console](https://1console.twilio.com/), go to **Products & services** > **Numbers & senders**.
 2. Select your Twilio phone number.
-3. Under **Voice configuration**, set the webhook URL to `https://abc123.ngrok.io/twiml` with HTTP method `POST`.
+3. Under **Voice configuration**, set the webhook URL to `https://abc123.ngrok.app/twiml` with HTTP method `POST`.
 
 ## Example Conversations
 

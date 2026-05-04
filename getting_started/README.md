@@ -49,7 +49,7 @@ Start ngrok before the server so you have a public URL to put in `.env`:
 
 ```bash
 ngrok http 8000
-# Copy the ngrok URL (e.g., https://abc123.ngrok.io)
+# Copy the ngrok URL (e.g., https://abc123.ngrok.app)
 ```
 
 Update `TWILIO_VOICE_PUBLIC_DOMAIN` in your `.env` file with your ngrok domain (e.g., `abc123.ngrok.app`, without the `https://` prefix). If you start the server first and then change the URL, you'll need to restart the server for it to pick up the new value.
