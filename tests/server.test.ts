@@ -75,7 +75,7 @@ describe('TACServer Webhook Validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -99,7 +99,7 @@ describe('TACServer Webhook Validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -121,7 +121,7 @@ describe('TACServer Webhook Validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -149,7 +149,7 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        voice: { port: currentPort },
+        port: currentPort,
       });
 
       await server.start();
@@ -178,7 +178,7 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        voice: { port: currentPort },
+        port: currentPort,
       });
 
       await server.start();
@@ -207,7 +207,7 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        voice: { port: currentPort },
+        port: currentPort,
       });
 
       await server.start();
@@ -235,7 +235,7 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        voice: { port: currentPort },
+        port: currentPort,
       });
 
       await server.start();
@@ -269,7 +269,7 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        voice: { port: currentPort },
+        port: currentPort,
       });
 
       await server.start();
@@ -301,7 +301,7 @@ describe('TACServer Webhook Validation', () => {
 
       server = new TACServer(tac, {
         development: true,
-        voice: { port: endpointTestPort },
+        port: endpointTestPort,
       });
 
       await server.start();
@@ -339,7 +339,7 @@ describe('TACServer Webhook Validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -408,7 +408,7 @@ describe('TACServer idempotency token', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -438,7 +438,7 @@ describe('TACServer idempotency token', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -506,7 +506,7 @@ describe('TACServer with conversationRelayConfig', () => {
     // Create server with conversationRelayConfig
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
       conversationRelayConfig: {
         welcomeGreeting: 'Hello from TACServer!',
         transcriptionProvider: 'Deepgram',
@@ -529,7 +529,7 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
       conversationRelayConfig: {
         welcomeGreeting: 'Test greeting',
         transcriptionProvider: 'Deepgram',
@@ -567,7 +567,7 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
       conversationRelayConfig: {
         welcomeGreeting: 'Dynamic merge test',
         ttsProvider: 'Google',
@@ -605,7 +605,7 @@ describe('TACServer with conversationRelayConfig', () => {
     // Create server without conversationRelayConfig
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
       // No conversationRelayConfig provided
     });
 
@@ -636,7 +636,7 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -665,7 +665,7 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -694,7 +694,7 @@ describe('TACServer with conversationRelayConfig', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
       conversationRelayConfig: {
         welcomeGreeting: 'Full config test',
         welcomeGreetingInterruptible: 'any',
@@ -792,7 +792,7 @@ describe('TACServer customization', () => {
 
     server = new TACServer(tac, {
       fastifyInstance: customApp,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     expect(server.fastify).toBe(customApp);
@@ -811,7 +811,7 @@ describe('TACServer customization', () => {
 
     server = new TACServer(tac, {
       fastifyInstance: customApp,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -853,7 +853,7 @@ describe('TACServer customization', () => {
 
     server = new TACServer(tac, {
       fastifyInstance: customApp,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     // Must not throw
@@ -870,7 +870,7 @@ describe('TACServer customization', () => {
 
   it('creates a default Fastify instance when none is provided', () => {
     server = new TACServer(tac, {
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     expect(server.fastify).toBeDefined();
@@ -879,7 +879,7 @@ describe('TACServer customization', () => {
 
   it('exposes the same Fastify instance before and after start()', async () => {
     server = new TACServer(tac, {
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     const before = server.fastify;
@@ -891,7 +891,7 @@ describe('TACServer customization', () => {
 
   it('allows adding a custom route to server.fastify after construction', async () => {
     server = new TACServer(tac, {
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     server.fastify.get('/health', async () => ({ status: 'ok' }));
@@ -905,7 +905,7 @@ describe('TACServer customization', () => {
 
   it('allows adding a hook to server.fastify after construction', async () => {
     server = new TACServer(tac, {
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     server.fastify.addHook('onSend', async (_request, reply, payload) => {
@@ -923,7 +923,7 @@ describe('TACServer customization', () => {
 
   it('allows adding a custom error handler on server.fastify', async () => {
     server = new TACServer(tac, {
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     class MyError extends Error {}
@@ -989,7 +989,7 @@ describe('TACServer WebSocket signature validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -1009,7 +1009,7 @@ describe('TACServer WebSocket signature validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -1031,7 +1031,7 @@ describe('TACServer WebSocket signature validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -1055,7 +1055,7 @@ describe('TACServer WebSocket signature validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -1084,7 +1084,7 @@ describe('TACServer WebSocket signature validation', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
@@ -1114,7 +1114,7 @@ describe('TACServer WebSocket signature validation', () => {
   it('should reject WebSocket when host header is missing', async () => {
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();

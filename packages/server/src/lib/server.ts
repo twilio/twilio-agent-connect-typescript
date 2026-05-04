@@ -11,8 +11,6 @@ import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
 import {
-  VoiceServerConfig,
-  VoiceServerConfigSchema,
   ConversationRelayCallbackPayloadSchema,
   ConversationRelayConfig,
   studioVoiceHandoffUrl,
@@ -36,8 +34,11 @@ export interface TACServerConfig {
    */
   fastifyInstance?: FastifyInstance;
 
-  /** Voice server configuration */
-  voice?: Partial<VoiceServerConfig>;
+  /** Host to bind the server to (default: '0.0.0.0') */
+  host?: string;
+
+  /** Port to bind the server to (default: 8000) */
+  port?: number;
 
   /** Custom webhook paths */
   webhookPaths?: {
@@ -63,10 +64,8 @@ export interface TACServerConfig {
  * Default server configuration
  */
 const DEFAULT_CONFIG = {
-  voice: {
-    host: '0.0.0.0',
-    port: 3000,
-  },
+  host: '0.0.0.0',
+  port: 8000,
   webhookPaths: {
     messaging: '/webhook',
     twiml: '/twiml',
@@ -479,16 +478,15 @@ export class TACServer {
       });
 
       // Start Fastify server
-      const voiceConfig = VoiceServerConfigSchema.parse(this.config.voice);
       await this.fastify.listen({
-        host: voiceConfig.host,
-        port: voiceConfig.port,
+        host: this.config.host,
+        port: this.config.port,
       });
 
       this.fastify.log.info(
         {
-          host: voiceConfig.host,
-          port: voiceConfig.port,
+          host: this.config.host,
+          port: this.config.port,
           messaging_webhook: this.config.webhookPaths.messaging,
           twiml_webhook: this.config.webhookPaths.twiml,
           ws_websocket: this.config.webhookPaths.ws,

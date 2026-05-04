@@ -148,9 +148,7 @@ tac.onMessageReady(handleMessageReady);
 // Server startup & outbound initiation
 // ---------------------------------------------------------------------------
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
-});
+const server = new TACServer(tac);
 
 server
   .start()

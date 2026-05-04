@@ -107,9 +107,6 @@ tac.onConversationEnded(({ session }) => {
   console.log(`Conversation ${convId} ended, history cleaned up`);
 });
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
-  development: true,
-});
+const server = new TACServer(tac);
 
 await server.start();
