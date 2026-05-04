@@ -25,7 +25,7 @@ import {
   createStudioHandoffTool,
 } from 'twilio-agent-connect';
 
-config({ path: '../../.env' });
+config({ path: '../.env' });
 setTracingDisabled(true);
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
