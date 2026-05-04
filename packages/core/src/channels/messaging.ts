@@ -27,6 +27,18 @@ import { maskAddress } from '../util/log-redaction';
 const AGENT_TYPES = new Set<string>(['AGENT', 'AI_AGENT']);
 
 /**
+ * Memora identifier type to use when looking up / creating a profile for a
+ * channel's customer address. Channels absent from this map skip profile
+ * resolution during participant reconciliation.
+ */
+const CHANNEL_IDENTITY_TYPES: Record<string, string> = {
+  SMS: 'phone',
+  VOICE: 'phone',
+  RCS: 'rcs',
+  WHATSAPP: 'whatsapp',
+};
+
+/**
  * Messaging webhook event types from Twilio Conversations Service
  * Supports the v2 format for SMS and Chat channels
  */
@@ -722,13 +734,8 @@ export abstract class MessagingChannel extends BaseChannel {
     customer: ConversationParticipant,
     channel: string
   ): Promise<string | undefined> {
-    if (
-      channel !== 'SMS' &&
-      channel !== 'VOICE' &&
-      channel !== 'RCS' &&
-      channel !== 'WHATSAPP'
-    )
-      return undefined;
+    const identityType = CHANNEL_IDENTITY_TYPES[channel];
+    if (!identityType) return undefined;
 
     const memoryClient = this.tac.getMemoryClient();
     if (!memoryClient || !this.tac.getMemoryStoreId()) return undefined;
@@ -737,10 +744,6 @@ export abstract class MessagingChannel extends BaseChannel {
       ? (customer.addresses.find(a => a.channel === channel && !!a.address)?.address ?? undefined)
       : undefined;
     if (!phoneAddress) return undefined;
-
-    // Determine identity type: 'rcs' for RCS, 'whatsapp' for WhatsApp, 'phone' for SMS/Voice
-    const identityType =
-      channel === 'RCS' ? 'rcs' : channel === 'WHATSAPP' ? 'whatsapp' : 'phone';
 
     try {
       const lookup = await memoryClient.lookupProfile(identityType, phoneAddress);
