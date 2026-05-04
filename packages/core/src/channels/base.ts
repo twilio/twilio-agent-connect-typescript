@@ -1,8 +1,16 @@
-import { ConversationSession, ChannelType, ConversationId, ProfileId } from '../types/index';
+import {
+  ConversationSession,
+  ChannelType,
+  ConversationId,
+  ProfileId,
+  MemoryMode,
+  MemoryModeSchema,
+} from '../types/index';
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
 import { Logger } from '../lib/logger';
 import type { TAC } from '../lib/tac';
+import { TACMemoryResponse } from '../lib/tac-memory-response';
 
 /**
  * Base channel event callbacks
@@ -11,6 +19,19 @@ export interface BaseChannelEvents {
   onConversationStarted?: (data: { session: ConversationSession }) => void;
   onConversationEnded?: (data: { session: ConversationSession }) => Promise<void> | void;
   onError?: (data: { error: Error; context?: Record<string, unknown> }) => void;
+}
+
+/**
+ * Base channel options
+ */
+export interface BaseChannelOptions {
+  /**
+   * Memory retrieval mode for this channel. Default is "never".
+   *
+   * - "never": Memory is not automatically retrieved. Use the memory TAC tool or manually call `tac.retrieveMemory()` in callbacks for conditional retrieval.
+   * - "always": Memory is automatically retrieved for every inbound message and available in `onMessageReady` callback.
+   */
+  memoryMode?: MemoryMode;
 }
 
 /**
@@ -26,14 +47,24 @@ export abstract class BaseChannel {
   protected readonly conversationClient: ConversationClient | null;
   protected readonly activeConversations: Map<ConversationId, ConversationSession>;
   protected readonly callbacks: BaseChannelEvents;
+  protected readonly memoryMode: MemoryMode;
 
-  constructor(tac: TAC) {
+  constructor(tac: TAC, options?: BaseChannelOptions) {
     this.tac = tac;
     this.config = tac.getConfig();
     this.logger = tac.logger.child({ component: 'channel' });
     this.conversationClient = tac.getConversationClient();
     this.activeConversations = new Map();
     this.callbacks = {};
+
+    // Validate memoryMode with runtime check for JS consumers
+    const providedMode = options?.memoryMode;
+    const modeToValidate = providedMode === undefined ? 'never' : providedMode;
+    const parseResult = MemoryModeSchema.safeParse(modeToValidate);
+    if (!parseResult.success) {
+      throw new Error(`Invalid memoryMode: "${modeToValidate}". Must be "always" or "never".`);
+    }
+    this.memoryMode = parseResult.data;
   }
 
   /**
@@ -206,6 +237,38 @@ export abstract class BaseChannel {
    * Extract profile ID from webhook payload (implemented by subclasses)
    */
   protected abstract extractProfileId(payload: unknown): ProfileId | null;
+
+  /**
+   * Retrieve memory only when memoryMode === 'always'.
+   *
+   * This method handles the common logic for memory retrieval across all channels,
+   * including error handling and debug logging. If memoryMode is 'never',
+   * automatic memory retrieval is skipped.
+   */
+  protected async retrieveMemoryIfEnabled(
+    session: ConversationSession,
+    query?: string
+  ): Promise<TACMemoryResponse | undefined> {
+    if (this.memoryMode !== 'always') {
+      return undefined;
+    }
+
+    try {
+      const memory = await this.tac.retrieveMemory(session, query);
+      this.logger.debug(
+        { conversation_id: session.conversationId },
+        'Memory retrieved successfully'
+      );
+      return memory;
+    } catch (error) {
+      this.logger.warn(
+        { err: error, conversation_id: session.conversationId },
+        'Failed to retrieve memory, continuing without memory context'
+      );
+      // Continue without memory rather than failing entire message processing
+      return undefined;
+    }
+  }
 
   /**
    * Cleanup resources when shutting down

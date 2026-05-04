@@ -341,27 +341,8 @@ export class TAC {
         throw new Error(`No session found for conversation ${data.conversationId}`);
       }
 
-      // Get memory if not already provided and profile ID exists
-      let memory = data.userMemory;
-      if (!memory && data.profileId && this.memoryClient) {
-        this.logger.debug(
-          { profile_id: data.profileId, operation: 'memory_retrieval' },
-          'Retrieving memory for profile'
-        );
-        try {
-          const memoryResponse = await this.memoryClient.retrieveMemories(data.profileId, {
-            conversationId: data.conversationId,
-            observationsLimit: this.config.memoryConfig.observationsLimit,
-            summariesLimit: this.config.memoryConfig.summariesLimit,
-            communicationsLimit: this.config.memoryConfig.communicationsLimit,
-            relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
-          });
-          memory = new TACMemoryResponse(memoryResponse);
-          this.logger.debug({ profile_id: data.profileId }, 'Memory retrieved');
-        } catch (error) {
-          this.logger.warn({ err: error, profile_id: data.profileId }, 'Failed to retrieve memory');
-        }
-      }
+      // Memory is now fetched by channels based on their memoryMode configuration
+      const memory = data.userMemory;
 
       // Execute callback
       this.logger.debug(

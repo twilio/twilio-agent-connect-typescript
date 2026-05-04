@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
 /**
+ * Memory retrieval mode for channels
+ */
+export const MemoryModeSchema = z.enum(['always', 'never']);
+export type MemoryMode = z.infer<typeof MemoryModeSchema>;
+
+/**
  * Message direction in a conversation
  */
 export const MessageDirectionSchema = z.enum(['inbound', 'outbound']);

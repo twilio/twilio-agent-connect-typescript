@@ -128,11 +128,20 @@ getting_started/examples/openai/
 
 ### Memory Integration
 
-When Memory is configured, TAC automatically:
+When Memory is configured and channels are set to `memoryMode: 'always'`, TAC automatically:
 
-- Retrieves user profile information before each conversation
+- Retrieves user profile information before each message
 - Includes profile traits (name, preferences, etc.) in the AI context
 - Loads recent conversation history for context continuity
+
+The example configures channels with automatic memory retrieval:
+
+```typescript
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
+const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
+```
+
+To disable automatic memory retrieval (default is `'never'`), omit the `memoryMode` option or use `tac.retrieveMemory()` in your callback for conditional retrieval.
 
 ### MemoryPromptBuilder
 
