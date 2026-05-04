@@ -18,12 +18,9 @@ import {
   TAC,
   TACConfig,
   WhatsAppChannel,
-  ConversationSession,
-  TACMemoryResponse,
   ConversationId,
   ProfileId,
   TACServer,
-  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // Load environment variables from parent directory
@@ -36,11 +33,7 @@ const openai = new OpenAI({
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
-// Memory mode: "always" fetches memory with query on every message for semantic search
-// Alternative: "never" (no automatic retrieval, use manual tac.retrieveMemory() in callback)
-const whatsappChannel = new WhatsAppChannel(tac, {
-  memoryMode: 'always',
-});
+const whatsappChannel = new WhatsAppChannel(tac);
 
 // Register channel
 tac.registerChannel(whatsappChannel);
@@ -58,10 +51,8 @@ async function handleMessageReady(params: {
   profileId: ProfileId | undefined;
   message: string;
   author: string;
-  memory: TACMemoryResponse | undefined;
-  session: ConversationSession;
 }): Promise<string> {
-  const { conversationId, message, memory: memoryResponse, session: context } = params;
+  const { conversationId, message } = params;
   const convId = conversationId as string;
 
   try {
@@ -76,12 +67,8 @@ async function handleMessageReady(params: {
       content: message,
     });
 
-    // Build system prompt with memory context
-    const memoryContext = MemoryPromptBuilder.build(memoryResponse, context);
-    const systemContent = SYSTEM_INSTRUCTIONS + (memoryContext ? `\n\n${memoryContext}` : '');
-
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemContent },
+      { role: 'system', content: SYSTEM_INSTRUCTIONS },
       ...conversationMessages[convId],
     ];
 

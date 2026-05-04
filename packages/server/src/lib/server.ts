@@ -55,10 +55,7 @@ export interface TACServerConfig {
   /** Voice channel instance (alternative to registering on TAC) */
   voiceChannel?: VoiceChannel;
 
-  /**
-   * Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC).
-   * If omitted, TACServer automatically discovers all registered messaging channels (SMS, WhatsApp, Chat).
-   */
+  /** Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC) */
   messagingChannels?: MessagingChannel[];
 }
 
