@@ -711,8 +711,8 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Find or mint a Conversation Memory profile for a customer being promoted from UNKNOWN.
    *
-   * Only resolves for phone-based channels (SMS, VOICE). Looks up by phone
-   * identifier first; on miss, creates a new profile using the configured
+   * Only resolves for phone-based channels (SMS, VOICE, WHATSAPP). Looks up by phone
+   * or WhatsApp identifier first; on miss, creates a new profile using the configured
    * phone trait group/field. Returns undefined on any failure — the caller
    * still promotes the participant, just without a `profileId` attached.
    */
@@ -720,7 +720,7 @@ export abstract class MessagingChannel extends BaseChannel {
     customer: ConversationParticipant,
     channel: string
   ): Promise<string | undefined> {
-    if (channel !== 'SMS' && channel !== 'VOICE') return undefined;
+    if (channel !== 'SMS' && channel !== 'VOICE' && channel !== 'WHATSAPP') return undefined;
 
     const memoryClient = this.tac.getMemoryClient();
     if (!memoryClient || !this.tac.getMemoryStoreId()) return undefined;
@@ -730,8 +730,11 @@ export abstract class MessagingChannel extends BaseChannel {
       : undefined;
     if (!phoneAddress) return undefined;
 
+    // Determine identity type: 'whatsapp' for WhatsApp channel, 'phone' for SMS/Voice
+    const identityType = channel === 'WHATSAPP' ? 'whatsapp' : 'phone';
+
     try {
-      const lookup = await memoryClient.lookupProfile('phone', phoneAddress);
+      const lookup = await memoryClient.lookupProfile(identityType, phoneAddress);
       if (lookup.profiles && lookup.profiles.length > 0) {
         return lookup.profiles[0];
       }
@@ -888,13 +891,13 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Shared outbound conversation initiation for messaging channels (SMS/Chat).
+   * Shared outbound conversation initiation for messaging channels (SMS/Chat/WhatsApp).
    *
    * Handles the full flow: create conversation → find participants → start
    * session → send initial message → error cleanup.
    */
   protected async initiateOutboundMessagingConversation(params: {
-    channel: 'SMS' | 'CHAT';
+    channel: 'SMS' | 'CHAT' | 'WHATSAPP';
     to: string;
     from: string;
     message: string;

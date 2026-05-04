@@ -137,10 +137,11 @@ export class TACServer {
     this.messagingChannels =
       config.messagingChannels ??
       (
-        [tac.getChannel<MessagingChannel>('sms'), tac.getChannel<MessagingChannel>('chat')] as (
-          | MessagingChannel
-          | undefined
-        )[]
+        [
+          tac.getChannel<MessagingChannel>('sms'),
+          tac.getChannel<MessagingChannel>('chat'),
+          tac.getChannel<MessagingChannel>('whatsapp'),
+        ] as (MessagingChannel | undefined)[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
     if (this.messagingChannels.length === 0) {

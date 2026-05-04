@@ -83,6 +83,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 ### Optional (Server)
 
 - `TWILIO_VOICE_PUBLIC_DOMAIN`: Your ngrok domain without `https://` prefix (required for voice, e.g., `abc123.ngrok.app`)
+- `TWILIO_WHATSAPP_NUMBER`: Your Twilio WhatsApp number (required for WhatsApp channel, e.g., `whatsapp:+1234567890`)
 
 ### Optional (Handoff)
 
@@ -94,7 +95,9 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 ## Other Examples
 
+- **[WhatsApp Example](examples/features/whatsapp/)** - WhatsApp channel with memory integration
 - **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel
+- **[Outbound Example](examples/outbound/)** - Agent-initiated SMS, WhatsApp, and Voice conversations
 
 ## Next Steps
 

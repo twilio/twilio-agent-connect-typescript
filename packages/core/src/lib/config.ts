@@ -22,6 +22,7 @@ export class TACConfig {
   public readonly apiKey: string;
   public readonly apiSecret: string;
   public readonly phoneNumber: string;
+  public readonly whatsappNumber?: string;
   public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
@@ -48,6 +49,9 @@ export class TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
+    if (validatedConfig.whatsappNumber) {
+      this.whatsappNumber = validatedConfig.whatsappNumber;
+    }
     // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
     this.memoryConfig = validatedConfig.memoryConfig;
     if (validatedConfig.conversationConfigurationId) {
@@ -84,6 +88,7 @@ export class TACConfig {
    * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
    *
    * Optional environment variables:
+   * - TWILIO_WHATSAPP_NUMBER: WhatsApp number for WhatsApp channel (e.g., 'whatsapp:+1234567890')
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
    * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice WebSocket connections (domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
@@ -194,6 +199,7 @@ export class TACConfig {
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
+      whatsappNumber: process.env[EnvironmentVariables.TWILIO_WHATSAPP_NUMBER] || undefined,
       memoryConfig: {
         traitGroups,
         observationsLimit: parseIntEnv(

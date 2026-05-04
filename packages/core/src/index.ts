@@ -41,6 +41,8 @@ export type {
 
 export { SMSChannel } from './channels/sms';
 
+export { WhatsAppChannel } from './channels/whatsapp';
+
 export { ChatChannel } from './channels/chat';
 export type {
   ChatChannelConfig,

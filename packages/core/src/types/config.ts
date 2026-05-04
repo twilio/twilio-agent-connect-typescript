@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Channel types supported by the framework
  */
-export const ChannelTypeSchema = z.enum(['sms', 'voice', 'chat']);
+export const ChannelTypeSchema = z.enum(['sms', 'voice', 'chat', 'whatsapp']);
 export type ChannelType = z.infer<typeof ChannelTypeSchema>;
 
 /**
@@ -36,6 +36,10 @@ export const TACConfigSchema = z.object({
   apiKey: z.string().min(1, 'Twilio API Key is required'),
   apiSecret: z.string().min(1, 'Twilio API Secret is required'),
   phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
+  whatsappNumber: z
+    .string()
+    .regex(/^whatsapp:\+\d+$/, 'WhatsApp number must be in format: whatsapp:+1234567890')
+    .optional(),
   memoryConfig: TwilioMemoryConfigSchema.default({}),
   conversationConfigurationId: z
     .string()
@@ -85,6 +89,7 @@ export const EnvironmentVariables = {
   TWILIO_API_KEY: 'TWILIO_API_KEY',
   TWILIO_API_SECRET: 'TWILIO_API_SECRET',
   TWILIO_PHONE_NUMBER: 'TWILIO_PHONE_NUMBER',
+  TWILIO_WHATSAPP_NUMBER: 'TWILIO_WHATSAPP_NUMBER',
   TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: 'TWILIO_MEMORY_PROFILE_TRAIT_GROUPS',
   TWILIO_MEMORY_OBSERVATIONS_LIMIT: 'TWILIO_MEMORY_OBSERVATIONS_LIMIT',
   TWILIO_MEMORY_SUMMARIES_LIMIT: 'TWILIO_MEMORY_SUMMARIES_LIMIT',
