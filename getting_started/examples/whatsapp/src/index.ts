@@ -24,7 +24,7 @@ import {
 } from 'twilio-agent-connect';
 
 // Load environment variables from parent directory
-config({ path: '../../.env' });
+config({ path: '../.env' });
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -100,7 +100,9 @@ async function handleMessageReady(params: {
 tac.onMessageReady(handleMessageReady);
 
 // Create and start server (auto-discovers WhatsApp channel)
-const server = new TACServer(tac);
+const server = new TACServer(tac, {
+  voice: { host: '0.0.0.0', port: 8000 },
+});
 
 server
   .start()
