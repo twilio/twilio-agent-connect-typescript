@@ -172,17 +172,17 @@ export class ConversationClient extends BaseClient {
   }
 
   /**
-   * Add a participant to a conversation
+   * Add a participant to a conversation.
    *
    * @param conversationId - The conversation ID
    * @param addresses - Array of participant addresses
-   * @param participantType - Type of participant (CUSTOMER, AI_AGENT, HUMAN_AGENT)
+   * @param participantType - Type of participant (CUSTOMER, AI_AGENT, HUMAN_AGENT, AGENT)
    * @returns Promise containing participant response
    */
   public async addParticipant(
     conversationId: string,
     addresses: ConversationAddress[],
-    participantType: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT'
+    participantType: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT' | 'AGENT'
   ): Promise<ConversationParticipant> {
     const url = `/v2/Conversations/${conversationId}/Participants`;
 
@@ -197,6 +197,52 @@ export class ConversationClient extends BaseClient {
     } catch (error) {
       throw new Error(
         `Failed to add participant: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+  }
+
+  /**
+   * Replace an existing participant.
+   *
+   * PUT is a full resource replacement per the Conversation Orchestrator spec —
+   * any field omitted from the body is cleared on the server. Callers must pass
+   * the current `addresses` (and `name` if set) to preserve them.
+   *
+   * @param conversationId - Conversation ID containing the participant
+   * @param participantId - Participant ID to update
+   * @param participantType - New participant type
+   * @param addresses - Current participant addresses (required to avoid wiping)
+   * @param options.name - Current participant display name (optional)
+   * @param options.profileId - Conversation Memory profile ID to attach (optional)
+   * @returns Promise containing the updated participant
+   */
+  public async updateParticipant(
+    conversationId: string,
+    participantId: string,
+    participantType: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT' | 'AGENT',
+    addresses: ConversationAddress[],
+    options?: { name?: string; profileId?: string }
+  ): Promise<ConversationParticipant> {
+    const url = `/v2/Conversations/${conversationId}/Participants/${participantId}`;
+
+    const requestBody: Record<string, unknown> = {
+      type: participantType,
+      addresses,
+    };
+    if (options?.name !== undefined) {
+      requestBody.name = options.name;
+    }
+    if (options?.profileId !== undefined) {
+      requestBody.profileId = options.profileId;
+    }
+
+    try {
+      const data = await this.makeRequest<ConversationParticipant>(url, 'PUT', requestBody);
+      return ConversationParticipantSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to update participant: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
     }

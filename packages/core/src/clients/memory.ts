@@ -157,6 +157,45 @@ export class MemoryClient extends BaseClient {
   }
 
   /**
+   * Create a profile via identity resolution (upsert).
+   *
+   * Conversation Memory runs identity resolution on the submitted traits: if an identifier
+   * match is found, the existing canonical profile ID is returned; otherwise a
+   * new profile is minted. The body must contain at least one
+   * trait-promoted-to-identifier per the store's identity resolution settings,
+   * else resolution fails with 400.
+   *
+   * The write is queued (202 Accepted) — the canonical profile ID is returned
+   * synchronously in the response body, but downstream traits may not be fully
+   * persisted immediately.
+   *
+   * @param traits - Trait-group → field → value mapping (e.g. `{"Contact": {"phone": "+13175551234"}}`)
+   * @returns Canonical profile ID (`mem_profile_…`)
+   * @throws Error if the API request fails or the response is missing an `id` field
+   */
+  public async createProfile(traits: Record<string, Record<string, unknown>>): Promise<string> {
+    const url = `/v1/Stores/${this.storeId}/Profiles`;
+    const requestBody = { traits };
+
+    let data: unknown;
+    try {
+      data = await this.makeRequest<unknown>(url, 'POST', requestBody);
+    } catch (error) {
+      throw new Error(
+        `Failed to create profile: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+
+    const profileId =
+      data && typeof data === 'object' && 'id' in data ? (data as { id: unknown }).id : undefined;
+    if (typeof profileId !== 'string') {
+      throw new Error(`CreateProfile response missing 'id' field: ${JSON.stringify(data)}`);
+    }
+    return profileId;
+  }
+
+  /**
    * Fetch profile information with traits
    *
    * @param profileId - The profile ID to fetch

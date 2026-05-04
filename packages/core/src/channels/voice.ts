@@ -625,7 +625,7 @@ export class VoiceChannel extends BaseChannel {
     options: InitiateVoiceConversationOptions
   ): Promise<InitiateVoiceConversationResult> {
     const validated = InitiateVoiceConversationOptionsSchema.parse(options);
-    const fromNumber = validated.from ?? this.config.phoneNumber;
+    const fromNumber = this.config.phoneNumber;
 
     this.logger.info(
       { to: validated.to, from: fromNumber },

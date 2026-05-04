@@ -95,6 +95,8 @@ export class TACConfig {
    * - TWILIO_MEMORY_SUMMARIES_LIMIT: Max summaries in memory retrieval
    * - TWILIO_MEMORY_COMMUNICATIONS_LIMIT: Max communications in memory retrieval
    * - TWILIO_MEMORY_RELEVANCE_THRESHOLD: Min relevance score (0.0-1.0)
+   * - TWILIO_MEMORY_PHONE_TRAIT_GROUP: Trait group that holds the phone identifier on new profiles (default "Contact")
+   * - TWILIO_MEMORY_PHONE_TRAIT_FIELD: Trait field within phoneTraitGroup (default "phone")
    *
    * @throws Error if required environment variables are not set or invalid
    *
@@ -218,6 +220,10 @@ export class TACConfig {
           0.0,
           1.0
         ),
+        phoneTraitGroup:
+          process.env[EnvironmentVariables.TWILIO_MEMORY_PHONE_TRAIT_GROUP] || undefined,
+        phoneTraitField:
+          process.env[EnvironmentVariables.TWILIO_MEMORY_PHONE_TRAIT_FIELD] || undefined,
       },
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,

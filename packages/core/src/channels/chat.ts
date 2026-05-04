@@ -1,6 +1,7 @@
 import {
   ActionChannelSettings,
   ChannelType,
+  ConversationAddress,
   ConversationId,
   SendMessageActionRequest,
   InitiateConversationResult,
@@ -11,16 +12,13 @@ import type { TAC } from '../lib/tac';
 import { maskAddress } from '../util/log-redaction';
 
 /**
- * Options for initiating an outbound chat conversation
+ * Options for initiating an outbound chat conversation.
+ *
+ * The sender is always the channel's configured `agentAddress`. Multi-sender
+ * deployments should run one TAC instance per sender.
  */
 export const InitiateChatConversationOptionsSchema = z.object({
   to: z.string().min(1, 'Recipient identity is required'),
-  /**
-   * Custom sender address. Defaults to agentAddress.
-   * Own-message filtering considers outbound sender values, including
-   * agentAddress and session metadata such as fromAddress.
-   */
-  from: z.string().optional(),
   channelId: z.string().min(1, 'Chat Channel SID is required'),
   message: z.string().min(1, 'Initial message is required'),
   metadata: z.record(z.unknown()).optional(),
@@ -46,6 +44,11 @@ export interface ChatChannelConfig extends MessagingChannelConfig {
 export class ChatChannel extends MessagingChannel {
   private readonly agentAddress: string;
 
+  // Chat identifies the customer author-driven from the webhook's
+  // `author.participantId`; promoting some other channel-matching UNKNOWN
+  // CHAT participant could pick the wrong recipient.
+  protected override reconcileCustomerType: boolean = false;
+
   constructor(tac: TAC, config?: ChatChannelConfig) {
     super(tac, config);
     this.agentAddress = config?.agentAddress ?? 'ai-assistant';
@@ -59,8 +62,27 @@ export class ChatChannel extends MessagingChannel {
     return authorAddress === this.agentAddress;
   }
 
+  protected getAgentAddress(conversationId: ConversationId): ConversationAddress {
+    const session = this.getConversationSession(conversationId);
+    const channelId =
+      session && typeof session.metadata?.channelId === 'string'
+        ? session.metadata.channelId
+        : undefined;
+    return {
+      channel: 'CHAT',
+      address: this.agentAddress,
+      ...(channelId ? { channelId } : {}),
+    };
+  }
+
   /**
    * Send chat response using the Conversation Orchestrator Actions API (SEND_MESSAGE).
+   *
+   * Reads the agent and customer participant ids stashed on the session by
+   * inbound reconciliation or outbound initiation. Missing ids are a misuse —
+   * `sendResponse` is only expected to be called after an inbound webhook
+   * (COMMUNICATION_CREATED → reconcile) or after `initiateOutboundConversation`,
+   * both of which populate the session.
    */
   public async sendResponse(
     conversationId: ConversationId,
@@ -79,19 +101,21 @@ export class ChatChannel extends MessagingChannel {
     try {
       const session = this.getConversationSession(conversationId);
 
-      if (!session) {
-        throw new Error(`No active session found for conversation ${conversationId}`);
-      }
-
-      if (!session.authorInfo) {
+      if (!session || !session.authorInfo || !session.aiAgentInfo) {
         throw new Error(
-          `No author info found for conversation ${conversationId} - no inbound message received yet`
+          `Unable to send chat message: sendResponse called without a reconciled session ` +
+            `for conversation ${conversationId}. Wait for an inbound webhook or call ` +
+            `initiateOutboundConversation first.`
         );
       }
 
-      const recipientParticipantId = session.authorInfo.participantId;
-      if (!recipientParticipantId) {
-        throw new Error(`No recipient participant ID found for conversation ${conversationId}`);
+      const customerParticipantId = session.authorInfo.participantId;
+      const agentParticipantId = session.aiAgentInfo.participantId;
+      if (!customerParticipantId || !agentParticipantId) {
+        throw new Error(
+          `Unable to send chat message: session for conversation ${conversationId} is ` +
+            `missing participant ids.`
+        );
       }
 
       // channelId (Chat Channel SID) is required for CHAT delivery — the V1
@@ -109,27 +133,6 @@ export class ChatChannel extends MessagingChannel {
         );
       }
 
-      // Fetch current participants from Conversation Orchestrator
-      const participants = await this.conversationClient.listParticipants(conversationId);
-
-      // Use fromAddress from session metadata (set during outbound initiation),
-      // falling back to the default agent address for inbound conversations
-      const effectiveAgentAddress =
-        typeof session.metadata?.fromAddress === 'string'
-          ? session.metadata.fromAddress
-          : this.agentAddress;
-
-      const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
-        channel: 'CHAT',
-        address: effectiveAgentAddress,
-        channelId: chatChannelSid,
-      });
-      if (!agentParticipant) {
-        throw new Error(
-          `Failed to resolve AI_AGENT participant for conversation ${conversationId}`
-        );
-      }
-
       // TODO(conv-orch): Drop `chatService` here once the Actions API resolves
       // the V1 Chat service SID server-side. Confirmed this should not be
       // required client-side; keep the workaround until the server-side fix
@@ -143,9 +146,8 @@ export class ChatChannel extends MessagingChannel {
       this.logger.debug(
         {
           conversation_id: conversationId,
-          recipient_participant_id: session.authorInfo.participantId,
-          agent_participant_id: agentParticipant.id,
-          agent_address: effectiveAgentAddress,
+          recipient_participant_id: customerParticipantId,
+          agent_participant_id: agentParticipantId,
           channel_id: chatChannelSid,
         },
         'Sending chat message via Actions API'
@@ -156,12 +158,12 @@ export class ChatChannel extends MessagingChannel {
         payload: {
           from: {
             channel: 'CHAT',
-            participantId: agentParticipant.id,
+            participantId: agentParticipantId,
           },
           to: [
             {
               channel: 'CHAT',
-              participantId: recipientParticipantId,
+              participantId: customerParticipantId,
             },
           ],
           content: { text: message },
@@ -191,6 +193,7 @@ export class ChatChannel extends MessagingChannel {
    *
    * Creates a conversation via Conversation Orchestrator, adds customer and
    * agent participants, then sends the initial message via the Actions API.
+   * The sender is always this channel's configured `agentAddress`.
    */
   public async initiateOutboundConversation(
     options: InitiateChatConversationOptions
@@ -207,7 +210,7 @@ export class ChatChannel extends MessagingChannel {
     return this.initiateOutboundMessagingConversation({
       channel: 'CHAT',
       to: validated.to,
-      from: validated.from ?? this.agentAddress,
+      from: this.agentAddress,
       message: validated.message,
       ...(validated.metadata ? { metadata: validated.metadata } : {}),
       channelId: validated.channelId,

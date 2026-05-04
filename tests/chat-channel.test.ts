@@ -30,6 +30,20 @@ describe('Chat Channel', () => {
     // Short-circuit memory retrieval so webhook processing tests don't hit
     // real Twilio APIs with fake credentials and spam the logs with 401s.
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
+    // Short-circuit reconcileParticipants so webhook processing tests don't
+    // need to mock listParticipants. Chat disables customer reconcile so the
+    // second element is null. Tests that care about reconcile behavior should
+    // override this spy.
+    vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
+      {
+        id: 'PA_agent_123',
+        conversationId: 'CHtest123456789',
+        accountId: 'ACtest123456789',
+        type: 'AI_AGENT',
+        addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
+      },
+      null,
+    ]);
   });
 
   describe('initialization', () => {
@@ -248,68 +262,58 @@ describe('Chat Channel', () => {
   });
 
   describe('send response', () => {
+    /**
+     * Pre-populate a fully-reconciled chat session. `sendResponse` now reads
+     * ids directly from `session.authorInfo` and `session.aiAgentInfo`; it no
+     * longer calls `listParticipants`/`addParticipant` at send time.
+     */
+    const seedReconciledSession = (conversationId: string, opts?: {
+      channelId?: string;
+      agentParticipantId?: string;
+      customerParticipantId?: string;
+    }) => {
+      (channel as any).activeConversations.set(conversationId, {
+        conversationId,
+        channel: 'chat',
+        startedAt: new Date(),
+        authorInfo: {
+          address: 'customer@example.com',
+          participantId: opts?.customerParticipantId ?? 'PA_customer_123',
+        },
+        aiAgentInfo: {
+          address: 'ai-assistant',
+          participantId: opts?.agentParticipantId ?? 'PA_agent_123',
+        },
+        metadata: opts?.channelId ? { channelId: opts.channelId } : {},
+      });
+    };
+
     beforeEach(() => {
       // Access the conversation client's axios instance through TAC
       const conversationClient = (tac as any).conversationClient;
       mockAdapter = new MockAdapter(conversationClient.axiosInstance);
       // Reset history to clear the getConfiguration call from TAC initialization
       mockAdapter.resetHistory();
-    });
 
-    it('should send response via Actions API with existing AI_AGENT', async () => {
-      // Start conversation, then receive message to populate session
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
-
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            participantId: 'PA_customer_123',
-            channel: 'CHAT',
-          },
-          content: { type: 'TEXT', text: 'Hello' },
-          channelId: 'CH00000000000000000000000000000000',
-        },
-      });
-
-      // Mock listParticipants (AI_AGENT exists)
-      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
-        participants: [
-          {
-            id: 'PA_agent_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'AI_AGENT',
-            addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
-          },
-          {
-            id: 'PA_customer_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-          },
-        ],
-      });
-
-      // Mock createAction
+      // Mock createAction. sendResponse no longer lists participants.
       mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
         id: 'conv_action_01abcdef',
         type: 'SEND_MESSAGE',
         status: 'PENDING',
         conversationId: 'CHtest123456789',
       });
+    });
+
+    it('should send response via Actions API', async () => {
+      seedReconciledSession('CHtest123456789', {
+        channelId: 'CH00000000000000000000000000000000',
+      });
 
       await channel.sendResponse('CHtest123456789', 'Hello from bot');
 
-      // Verify requests (listParticipants + createAction)
+      // sendResponse no longer calls listParticipants — only createAction
       const history = mockAdapter.history;
-      expect(history.get.length).toBe(1); // listParticipants
+      expect(history.get.length).toBe(0);
       expect(history.post.length).toBe(1);
       expect(history.post[0]!.url).toBe('/v2/Conversations/CHtest123456789/Actions');
       const body = JSON.parse(history.post[0]!.data);
@@ -333,44 +337,8 @@ describe('Chat Channel', () => {
       // TODO(conv-orch): Drop this test when the chatService workaround is removed.
       tac.conversationsV1ServiceSid = 'ISabcdef1234567890abcdef1234567890';
 
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            participantId: 'PA_customer_123',
-            channel: 'CHAT',
-          },
-          content: { type: 'TEXT', text: 'Hello' },
-          channelId: 'CH00000000000000000000000000000000',
-        },
-      });
-
-      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
-        participants: [
-          {
-            id: 'PA_agent_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'AI_AGENT',
-            addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
-          },
-          {
-            id: 'PA_customer_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-          },
-        ],
-      });
-
-      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
-        id: 'conv_action_01abcdef',
-        type: 'SEND_MESSAGE',
-        status: 'PENDING',
-        conversationId: 'CHtest123456789',
+      seedReconciledSession('CHtest123456789', {
+        channelId: 'CH00000000000000000000000000000000',
       });
 
       await channel.sendResponse('CHtest123456789', 'Hello');
@@ -385,223 +353,44 @@ describe('Chat Channel', () => {
     });
 
     it('should throw when channelId missing from session metadata', async () => {
-      // Seed a session with inbound but no channelId
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            participantId: 'PA_customer_123',
-            channel: 'CHAT',
-          },
-          content: { type: 'TEXT', text: 'Hello' },
-          // no channelId
-        },
-      });
+      // Seed a reconciled session but without channelId
+      seedReconciledSession('CHtest123456789');
 
       await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
         /session\.metadata\['channelId'\]/
       );
     });
 
-    it('should create AI_AGENT participant if not exists', async () => {
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
-
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            participantId: 'PA_customer_123',
-            channel: 'CHAT',
-          },
-          content: { type: 'TEXT', text: 'Hello' },
-          channelId: 'CH00000000000000000000000000000000',
-        },
-      });
-
-      // Mock listParticipants (no AI_AGENT)
-      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
-        participants: [
-          {
-            id: 'PA_customer_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-          },
-        ],
-      });
-
-      // Mock addParticipant
-      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(201, {
-        id: 'PA_agent_123',
-        conversationId: 'CHtest123456789',
-        accountId: 'ACtest123456789',
-        type: 'AI_AGENT',
-        addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
-      });
-
-      // Mock createAction
-      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
-        id: 'conv_action_01abcdef',
-        type: 'SEND_MESSAGE',
-        status: 'PENDING',
-        conversationId: 'CHtest123456789',
-      });
-
-      await channel.sendResponse('CHtest123456789', 'Hello from bot');
-
-      // Verify requests (listParticipants + addParticipant + createAction)
-      const history = mockAdapter.history;
-      expect(history.get.length).toBe(1); // listParticipants
-      expect(history.post.length).toBe(2); // addParticipant + createAction
-
-      // Verify addParticipant call
-      const addCall = history.post.find(p => p.url?.endsWith('/Participants'));
-      expect(addCall).toBeDefined();
-      const addBody = JSON.parse(addCall!.data);
-      expect(addBody).toMatchObject({
-        type: 'AI_AGENT',
-        addresses: [
-          {
-            channel: 'CHAT',
-            address: 'ai-assistant',
-            channelId: 'CH00000000000000000000000000000000',
-          },
-        ],
-      });
-    });
-
-    it('should handle race condition when creating AI_AGENT', async () => {
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
-
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            participantId: 'PA_customer_123',
-            channel: 'CHAT',
-          },
-          content: { type: 'TEXT', text: 'Hello' },
-          channelId: 'CH00000000000000000000000000000000',
-        },
-      });
-
-      // Mock listParticipants - first call returns no AI_AGENT, second call returns AI_AGENT
-      mockAdapter
-        .onGet('/v2/Conversations/CHtest123456789/Participants')
-        .replyOnce(200, {
-          participants: [
-            {
-              id: 'PA_customer_123',
-              conversationId: 'CHtest123456789',
-              accountId: 'ACtest123456789',
-              type: 'CUSTOMER',
-              addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-            },
-          ],
-        })
-        .onGet('/v2/Conversations/CHtest123456789/Participants')
-        .replyOnce(200, {
-          participants: [
-            {
-              id: 'PA_agent_123',
-              conversationId: 'CHtest123456789',
-              accountId: 'ACtest123456789',
-              type: 'AI_AGENT',
-              addresses: [{ channel: 'CHAT', address: 'ai-assistant' }],
-            },
-            {
-              id: 'PA_customer_123',
-              conversationId: 'CHtest123456789',
-              accountId: 'ACtest123456789',
-              type: 'CUSTOMER',
-              addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-            },
-          ],
-        });
-
-      // Mock addParticipant failure (already exists)
-      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(409, {
-        error: 'Participant already exists',
-      });
-
-      // Mock createAction
-      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
-        id: 'conv_action_01abcdef',
-        type: 'SEND_MESSAGE',
-        status: 'PENDING',
-        conversationId: 'CHtest123456789',
-      });
-
-      await channel.sendResponse('CHtest123456789', 'Hello from bot');
-
-      // Verify requests: 2x listParticipants + addParticipant + createAction
-      const history = mockAdapter.history;
-      expect(history.get.length).toBe(2); // 2x listParticipants (retry after 409)
-      expect(history.post.length).toBe(2); // addParticipant + createAction
-    });
-
-    it('should throw when ensureAgentParticipant fails (addParticipant fails and retry finds none)', async () => {
-      await channel.processWebhook({
-        eventType: 'COMMUNICATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          author: {
-            address: 'customer@example.com',
-            participantId: 'PA_customer_123',
-            channel: 'CHAT',
-          },
-          content: { type: 'TEXT', text: 'Hello' },
-          channelId: 'CH00000000000000000000000000000000',
-        },
-      });
-
-      // Both list calls return no AI_AGENT; addParticipant also fails
-      mockAdapter.onGet('/v2/Conversations/CHtest123456789/Participants').reply(200, {
-        participants: [
-          {
-            id: 'PA_customer_123',
-            conversationId: 'CHtest123456789',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com' }],
-          },
-        ],
-      });
-      mockAdapter.onPost('/v2/Conversations/CHtest123456789/Participants').reply(500);
-
+    it('should throw when no session exists', async () => {
       await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        'Failed to resolve AI_AGENT participant'
+        'without a reconciled session'
       );
     });
 
-    it('should throw error if no active session', async () => {
-      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        'No active session found'
-      );
-    });
-
-    it('should throw error if no author info', async () => {
-      // Create conversation without author info
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
+    it('should throw when session is missing authorInfo', async () => {
+      (channel as any).activeConversations.set('CHtest123456789', {
+        conversationId: 'CHtest123456789',
+        channel: 'chat',
+        startedAt: new Date(),
+        metadata: {},
       });
 
       await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        'No author info found'
+        'without a reconciled session'
+      );
+    });
+
+    it('should throw when session is missing aiAgentInfo', async () => {
+      (channel as any).activeConversations.set('CHtest123456789', {
+        conversationId: 'CHtest123456789',
+        channel: 'chat',
+        startedAt: new Date(),
+        authorInfo: { address: 'customer@example.com', participantId: 'PA_customer_123' },
+        metadata: {},
+      });
+
+      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
+        'without a reconciled session'
       );
     });
   });

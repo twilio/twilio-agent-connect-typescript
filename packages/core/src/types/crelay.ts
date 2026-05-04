@@ -282,11 +282,13 @@ export type ConversationRelayCallbackPayload = z.infer<
 // =========================================================================
 
 /**
- * Options for initiating an outbound voice conversation
+ * Options for initiating an outbound voice conversation.
+ *
+ * The caller identity is always TAC's configured `config.phoneNumber`.
+ * Multi-number deployments should run one TAC instance per line.
  */
 export interface InitiateVoiceConversationOptions {
   to: string;
-  from?: string | undefined;
   conversationRelayConfig: ConversationRelayConfig;
   actionUrl?: string | undefined;
 }
@@ -294,7 +296,6 @@ export interface InitiateVoiceConversationOptions {
 export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> =
   z.object({
     to: z.string().min(1, 'Recipient phone number is required'),
-    from: z.string().optional(),
     conversationRelayConfig: ConversationRelayConfigSchema,
     actionUrl: z.string().url().optional(),
   });
