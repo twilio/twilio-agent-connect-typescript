@@ -25,6 +25,7 @@ describe('TACConfig', () => {
       TWILIO_VOICE_PUBLIC_DOMAIN: process.env.TWILIO_VOICE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
       TWILIO_STUDIO_HANDOFF_FLOW_SID: process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID,
+      TWILIO_RCS_SENDER_ID: process.env.TWILIO_RCS_SENDER_ID,
       TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS,
       TWILIO_MEMORY_OBSERVATIONS_LIMIT: process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT,
       TWILIO_MEMORY_SUMMARIES_LIMIT: process.env.TWILIO_MEMORY_SUMMARIES_LIMIT,
@@ -97,6 +98,21 @@ describe('TACConfig', () => {
       const config = new TACConfig(getTestConfigData());
 
       expect(config.region).toBeUndefined();
+    });
+
+    it('should store rcsSenderId when provided', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        rcsSenderId: 'rcs:my_agent',
+      });
+
+      expect(config.rcsSenderId).toBe('rcs:my_agent');
+    });
+
+    it('should leave rcsSenderId undefined when not provided', () => {
+      const config = new TACConfig(getTestConfigData());
+
+      expect(config.rcsSenderId).toBeUndefined();
     });
 
     it('should accept single-character region', () => {
@@ -363,6 +379,24 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.studioHandoffFlowSid).toBeUndefined();
+    });
+
+    it('should read TWILIO_RCS_SENDER_ID from environment', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_RCS_SENDER_ID = 'rcs:my_agent';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.rcsSenderId).toBe('rcs:my_agent');
+    });
+
+    it('should leave rcsSenderId undefined when TWILIO_RCS_SENDER_ID is not set', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_RCS_SENDER_ID;
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.rcsSenderId).toBeUndefined();
     });
 
     it('should use default memory configuration values when env vars not set', () => {

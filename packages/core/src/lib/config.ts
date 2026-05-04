@@ -22,6 +22,7 @@ export class TACConfig {
   public readonly apiKey: string;
   public readonly apiSecret: string;
   public readonly phoneNumber: string;
+  public readonly rcsSenderId?: string;
   public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
@@ -48,6 +49,9 @@ export class TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
+    if (validatedConfig.rcsSenderId) {
+      this.rcsSenderId = validatedConfig.rcsSenderId;
+    }
     // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
     this.memoryConfig = validatedConfig.memoryConfig;
     if (validatedConfig.conversationConfigurationId) {
@@ -88,6 +92,7 @@ export class TACConfig {
    * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice WebSocket connections (domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
+   * - TWILIO_RCS_SENDER_ID: RCS Sender ID for the RCS channel
    *
    * Memory Configuration (defaults defined in TwilioMemoryConfigSchema):
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
@@ -194,6 +199,7 @@ export class TACConfig {
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
+      rcsSenderId: process.env[EnvironmentVariables.TWILIO_RCS_SENDER_ID],
       memoryConfig: {
         traitGroups,
         observationsLimit: parseIntEnv(

@@ -1,12 +1,13 @@
 /**
- * Example: Outbound Conversations with SMS and Voice
+ * Example: Outbound Conversations with SMS, RCS, and Voice
  *
  * Demonstrates agent-initiated (outbound) conversations using TAC.
- * Sends an SMS or places a voice call, then handles the full conversation
- * loop with OpenAI.
+ * Sends an SMS, RCS message, or places a voice call, then handles the
+ * full conversation loop with OpenAI.
  *
  * Usage:
  *   npm run dev -- --to +16505551234 --channel sms --message "Hello!"
+ *   npm run dev -- --to rcs:+16505551234 --channel rcs --message "Hello!"
  *   npm run dev -- --to +16505551234 --channel voice
  */
 
@@ -18,6 +19,7 @@ import {
   TACConfig,
   VoiceChannel,
   SMSChannel,
+  RCSChannel,
   ConversationId,
   ChannelType,
   ProfileId,
@@ -41,24 +43,25 @@ const { values: args } = parseArgs({
 });
 
 const to = args.to;
-const channel = args.channel as 'sms' | 'voice' | undefined;
+const channel = args.channel as 'sms' | 'rcs' | 'voice' | undefined;
 const message = args.message;
 const welcomeGreeting = args['welcome-greeting'];
 
 if (!to || !channel) {
   console.error('Usage:');
   console.error('  npm run dev -- --to <address> --channel sms --message "Hello!"');
+  console.error('  npm run dev -- --to <address> --channel rcs --message "Hello!"');
   console.error('  npm run dev -- --to <address> --channel voice [--welcome-greeting "Hi!"]');
   process.exit(1);
 }
 
-if (channel !== 'sms' && channel !== 'voice') {
-  console.error(`Invalid channel "${channel}". Must be "sms" or "voice".`);
+if (channel !== 'sms' && channel !== 'rcs' && channel !== 'voice') {
+  console.error(`Invalid channel "${channel}". Must be "sms", "rcs", or "voice".`);
   process.exit(1);
 }
 
-if (channel === 'sms' && !message) {
-  console.error('--message is required for SMS channel.');
+if ((channel === 'sms' || channel === 'rcs') && !message) {
+  console.error(`--message is required for ${channel.toUpperCase()} channel.`);
   process.exit(1);
 }
 
@@ -74,8 +77,14 @@ const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac);
 const smsChannel = new SMSChannel(tac);
 
+// Only construct RCS channel if rcsSenderId is configured
+const rcsChannel = tac.getConfig().rcsSenderId ? new RCSChannel(tac) : undefined;
+
 tac.registerChannel(voiceChannel);
 tac.registerChannel(smsChannel);
+if (rcsChannel) {
+  tac.registerChannel(rcsChannel);
+}
 
 // ---------------------------------------------------------------------------
 // Conversation state
@@ -206,6 +215,18 @@ server
         message: message!,
       });
       console.log(`SMS sent to ${to} (conversation: ${result.conversationId})`);
+      console.log(`[${result.conversationId}] Agent: ${message}`);
+      console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
+    } else if (channel === 'rcs') {
+      if (!rcsChannel) {
+        console.error('RCS requires TWILIO_RCS_SENDER_ID environment variable to be set.');
+        process.exit(1);
+      }
+      const result = await rcsChannel.initiateOutboundConversation({
+        to,
+        message: message!,
+      });
+      console.log(`RCS sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {
