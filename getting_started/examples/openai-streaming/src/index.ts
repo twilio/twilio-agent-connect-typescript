@@ -16,7 +16,11 @@ config({ path: '../.env' });
 
 const agent = new Agent({
   name: 'customer-service',
-  instructions: 'You are a helpful customer service agent.',
+  instructions:
+    'You are a voice assistant speaking with a user over the phone. ' +
+    'Keep responses short and conversational — a sentence or two. ' +
+    'Do not use markdown, asterisks, bullets, or emojis; your words ' +
+    'will be spoken aloud.',
   model: 'gpt-5.4-mini',
 });
 

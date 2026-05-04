@@ -54,7 +54,10 @@ tac.registerChannel(chatChannel);
 const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
 
 const BASE_SYSTEM_PROMPT =
-  "You're a helpful assistant chatting with a user through a web chat interface.";
+  "You're an assistant chatting with a user through a web chat interface. " +
+  'Keep responses short and conversational. Do not use markdown, asterisks, ' +
+  'bullets, or emojis — the chat UI renders messages as plain text, so markdown ' +
+  'syntax will appear as literal punctuation.';
 
 /**
  * Handle incoming messages from chat
