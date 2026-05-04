@@ -27,7 +27,7 @@ import { maskAddress } from '../util/log-redaction';
 const AGENT_TYPES = new Set<string>(['AGENT', 'AI_AGENT']);
 
 /**
- * Memora identifier type to use when looking up / creating a profile for a
+ * Memory identifier type to use when looking up / creating a profile for a
  * channel's customer address. Channels absent from this map skip profile
  * resolution during participant reconciliation.
  */
