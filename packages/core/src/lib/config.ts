@@ -85,7 +85,7 @@ export class TACConfig {
    *
    * Optional environment variables:
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
-   * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
+   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice WebSocket connections (domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
@@ -221,7 +221,7 @@ export class TACConfig {
       },
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
-      voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
+      voicePublicDomain: process.env[EnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN],
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],

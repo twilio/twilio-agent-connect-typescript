@@ -34,7 +34,14 @@ export const TACConfigSchema = z.object({
     .string()
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
     .optional(),
-  voicePublicDomain: z.string().url().optional(),
+  voicePublicDomain: z
+    .string()
+    .max(253, 'Hostname too long (max 253 characters)')
+    .regex(
+      /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+      'Invalid hostname format. Must be a hostname without protocol, port, or path (e.g., "abc123.ngrok.app", "localhost", or "192.168.1.100")'
+    )
+    .optional(),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
@@ -77,7 +84,7 @@ export const EnvironmentVariables = {
   TWILIO_MEMORY_COMMUNICATIONS_LIMIT: 'TWILIO_MEMORY_COMMUNICATIONS_LIMIT',
   TWILIO_MEMORY_RELEVANCE_THRESHOLD: 'TWILIO_MEMORY_RELEVANCE_THRESHOLD',
   TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
-  VOICE_PUBLIC_DOMAIN: 'VOICE_PUBLIC_DOMAIN',
+  TWILIO_VOICE_PUBLIC_DOMAIN: 'TWILIO_VOICE_PUBLIC_DOMAIN',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',
