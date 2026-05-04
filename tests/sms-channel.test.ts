@@ -73,6 +73,12 @@ describe('SMS Channel', () => {
       const neverChannel = new SMSChannel(tac, { memoryMode: 'never' });
       expect((neverChannel as any).memoryMode).toBe('never');
     });
+
+    it('should reject invalid memoryMode', () => {
+      expect(() => new SMSChannel(tac, { memoryMode: 'invalid' as any })).toThrow(
+        'Invalid memoryMode: "invalid". Must be "always" or "never".'
+      );
+    });
   });
 
   describe('webhook processing', () => {
@@ -847,11 +853,6 @@ describe('SMS Channel', () => {
   });
 
   describe('memory retrieval', () => {
-    beforeEach(() => {
-      // Clear the mock from the outer beforeEach
-      vi.restoreAllMocks();
-    });
-
     it('should NOT retrieve memory when memoryMode is "never" (default)', async () => {
       const channelNever = new SMSChannel(tac);
       const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);

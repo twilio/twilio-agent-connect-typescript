@@ -4,6 +4,7 @@ import {
   ConversationId,
   ProfileId,
   MemoryMode,
+  MemoryModeSchema,
 } from '../types/index';
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
@@ -55,7 +56,14 @@ export abstract class BaseChannel {
     this.conversationClient = tac.getConversationClient();
     this.activeConversations = new Map();
     this.callbacks = {};
-    this.memoryMode = options?.memoryMode ?? 'never';
+
+    // Validate memoryMode with runtime check for JS consumers
+    const providedMode = options?.memoryMode ?? 'never';
+    const parseResult = MemoryModeSchema.safeParse(providedMode);
+    if (!parseResult.success) {
+      throw new Error(`Invalid memoryMode: "${providedMode}". Must be "always" or "never".`);
+    }
+    this.memoryMode = parseResult.data;
   }
 
   /**
@@ -241,10 +249,6 @@ export abstract class BaseChannel {
     query?: string
   ): Promise<TACMemoryResponse | undefined> {
     if (this.memoryMode !== 'always') {
-      this.logger.debug(
-        { conversation_id: session.conversationId, memory_mode: this.memoryMode },
-        'Memory mode not set to "always", skipping memory retrieval'
-      );
       return undefined;
     }
 
@@ -256,9 +260,9 @@ export abstract class BaseChannel {
       );
       return memory;
     } catch (error) {
-      this.logger.error(
+      this.logger.warn(
         { err: error, conversation_id: session.conversationId },
-        'Failed to retrieve memory'
+        'Failed to retrieve memory, continuing without memory context'
       );
       // Continue without memory rather than failing entire message processing
       return undefined;
