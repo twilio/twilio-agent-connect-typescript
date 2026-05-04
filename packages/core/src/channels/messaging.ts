@@ -472,7 +472,10 @@ export abstract class MessagingChannel extends BaseChannel {
       //
       // Skip reconcile entirely when both sides are already stashed from a
       // prior turn — Maestro's state was written by us and doesn't drift.
-      if (!session.aiAgentInfo || !session.authorInfo?.participantId) {
+      // `authorInfo` is set from the webhook on every turn above; the gate
+      // reads `aiAgentInfo` (persistent across turns) as the signal that
+      // reconcile has already run.
+      if (!session.aiAgentInfo || !session.authorInfo) {
         const resolved = await this.reconcileParticipants(conversationId);
         if (!resolved) {
           this.logger.warn(

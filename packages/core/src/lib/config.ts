@@ -220,8 +220,10 @@ export class TACConfig {
           0.0,
           1.0
         ),
-        phoneTraitGroup: process.env[EnvironmentVariables.TWILIO_MEMORY_PHONE_TRAIT_GROUP],
-        phoneTraitField: process.env[EnvironmentVariables.TWILIO_MEMORY_PHONE_TRAIT_FIELD],
+        phoneTraitGroup:
+          process.env[EnvironmentVariables.TWILIO_MEMORY_PHONE_TRAIT_GROUP] || undefined,
+        phoneTraitField:
+          process.env[EnvironmentVariables.TWILIO_MEMORY_PHONE_TRAIT_FIELD] || undefined,
       },
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
