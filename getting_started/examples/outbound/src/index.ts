@@ -26,6 +26,7 @@ import {
   TACMemoryResponse,
   ConversationSession,
   TACServer,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // ---------------------------------------------------------------------------
@@ -113,46 +114,9 @@ function buildMemoryMessage(
   memoryResponse: TACMemoryResponse | null,
   context: ConversationSession
 ): OpenAI.Chat.ChatCompletionSystemMessageParam | null {
-  const sections: string[] = [];
-
-  if (context.profile?.traits) {
-    const traitLines: string[] = [];
-    for (const [key, value] of Object.entries(context.profile.traits)) {
-      if (value !== null && value !== undefined) {
-        traitLines.push(
-          `- ${key}: ${typeof value === 'object' ? JSON.stringify(value) : (value as string | number | boolean)}`
-        );
-      }
-    }
-    if (traitLines.length > 0) {
-      sections.push(
-        ['## Customer Profile', 'Information about this customer:', ...traitLines].join('\n')
-      );
-    }
-  }
-
-  if (memoryResponse && memoryResponse.observations.length > 0) {
-    const lines = ['## Key Observations'];
-    for (const obs of memoryResponse.observations) {
-      lines.push(`- ${obs.content}`);
-    }
-    sections.push(lines.join('\n'));
-  }
-
-  if (memoryResponse && memoryResponse.summaries.length > 0) {
-    const lines = ['## Past Conversation Summaries'];
-    for (const summary of memoryResponse.summaries) {
-      lines.push(`- ${summary.content}`);
-    }
-    sections.push(lines.join('\n'));
-  }
-
-  if (sections.length === 0) return null;
-
-  return {
-    role: 'system',
-    content: '# Customer Context\n\n' + sections.join('\n\n'),
-  };
+  const content = MemoryPromptBuilder.build(memoryResponse, context);
+  if (!content) return null;
+  return { role: 'system', content };
 }
 
 // ---------------------------------------------------------------------------

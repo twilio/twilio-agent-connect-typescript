@@ -31,6 +31,7 @@ import {
   ConversationId,
   ChannelType,
   ProfileId,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // Load environment variables from parent directory
@@ -52,10 +53,8 @@ tac.registerChannel(chatChannel);
 // Store conversation history per conversation
 const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
 
-const SYSTEM_MESSAGE: OpenAI.Chat.ChatCompletionSystemMessageParam = {
-  role: 'system',
-  content: "You're a helpful assistant chatting with a user through a web chat interface.",
-};
+const BASE_SYSTEM_PROMPT =
+  "You're a helpful assistant chatting with a user through a web chat interface.";
 
 /**
  * Handle incoming messages from chat
@@ -69,7 +68,7 @@ async function handleMessageReady(params: {
   session: ConversationSession;
   channel: ChannelType;
 }): Promise<string> {
-  const { conversationId, message, memory } = params;
+  const { conversationId, message, memory, session } = params;
   const convId = conversationId as string;
 
   console.log(`Processing chat message for conversation ${convId}`);
@@ -77,68 +76,28 @@ async function handleMessageReady(params: {
   try {
     // Initialize conversation history if needed
     if (!conversationMessages[convId]) {
-      conversationMessages[convId] = [SYSTEM_MESSAGE];
-    }
-
-    // Build user message with memory context
-    let userMessage = message;
-
-    // Add memory context if available
-    if (memory) {
-      const memoryContext: string[] = [];
-
-      // Add observations
-      if (memory.observations && memory.observations.length > 0) {
-        memoryContext.push('Context about the user:');
-        memory.observations.forEach(obs => {
-          memoryContext.push(`- ${obs.content}`);
-        });
-      }
-
-      // Add summaries
-      if (memory.summaries && memory.summaries.length > 0) {
-        memoryContext.push('Previous conversation summaries:');
-        memory.summaries.forEach(summary => {
-          memoryContext.push(`- ${summary.content}`);
-        });
-      }
-
-      // Add recent message history
-      if (memory.communications && memory.communications.length > 0) {
-        memoryContext.push('Recent message history:');
-        const recentComms = memory.communications.slice(-10);
-        for (const comm of recentComms) {
-          let role = 'Unknown';
-          if (comm.author?.type === 'CUSTOMER') {
-            role = 'User';
-          } else if (
-            comm.author?.type === 'AI_AGENT' ||
-            comm.author?.type === 'HUMAN_AGENT' ||
-            comm.author?.type === 'AGENT'
-          ) {
-            role = 'Assistant';
-          }
-          const content = comm.content?.text ?? '';
-          memoryContext.push(`${role}: ${content}`);
-        }
-      }
-
-      // Prepend memory context to user message
-      if (memoryContext.length > 0) {
-        userMessage = `${memoryContext.join('\n')}\n\nUser message: ${message}`;
-      }
+      conversationMessages[convId] = [];
     }
 
     // Add user message to history
     conversationMessages[convId].push({
       role: 'user',
-      content: userMessage,
+      content: message,
     });
+
+    // Build system prompt with memory context
+    const memoryContext = MemoryPromptBuilder.build(memory, session);
+    const systemContent = BASE_SYSTEM_PROMPT + (memoryContext && `\n\n${memoryContext}`);
+
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemContent },
+      ...conversationMessages[convId],
+    ];
 
     // Call OpenAI
     const response = await openai.chat.completions.create({
       model: 'gpt-5.4-mini',
-      messages: conversationMessages[convId],
+      messages,
     });
 
     const llmResponse = response.choices[0]?.message?.content ?? '';
