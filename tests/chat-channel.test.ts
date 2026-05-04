@@ -47,6 +47,21 @@ describe('Chat Channel', () => {
     it('should start with no active conversations', () => {
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
     });
+
+    it('should default memoryMode to "never"', () => {
+      const defaultChannel = new ChatChannel(tac);
+      expect((defaultChannel as any).memoryMode).toBe('never');
+    });
+
+    it('should accept memoryMode "always"', () => {
+      const alwaysChannel = new ChatChannel(tac, { memoryMode: 'always' });
+      expect((alwaysChannel as any).memoryMode).toBe('always');
+    });
+
+    it('should accept memoryMode with agentAddress', () => {
+      const channel = new ChatChannel(tac, { agentAddress: 'custom', memoryMode: 'always' });
+      expect((channel as any).memoryMode).toBe('always');
+    });
   });
 
   describe('webhook processing', () => {

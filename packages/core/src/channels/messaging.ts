@@ -8,6 +8,7 @@ import {
   SendMessageActionRequest,
   isConversationId,
   isProfileId,
+  MemoryMode,
 } from '../types/index';
 import { BaseChannel, BaseChannelEvents } from './base';
 import { ConversationClient } from '../clients/conversation';
@@ -56,6 +57,8 @@ export interface MessagingWebhookPayload {
 export interface MessagingChannelConfig {
   /** Maximum number of idempotency tokens to track for deduplication (default: 10,000) */
   dedupCapacity?: number;
+  /** Memory retrieval mode. Default is "never". Set to "always" to retrieve memory for every message. */
+  memoryMode?: MemoryMode;
 }
 
 const DEFAULT_DEDUP_CAPACITY = 10_000;
@@ -87,7 +90,7 @@ export abstract class MessagingChannel extends BaseChannel {
   private readonly maxTrackedTokens: number;
 
   constructor(tac: TAC, config?: MessagingChannelConfig) {
-    super(tac);
+    super(tac, config);
     if (!tac.isOrchestratorEnabled()) {
       throw new Error(
         'Messaging channels require conversationConfigurationId to be configured. ' +
@@ -505,26 +508,8 @@ export abstract class MessagingChannel extends BaseChannel {
       }
     }
 
-    // Retrieve user memory using tac.retrieveMemory, which handles profile lookup by address (e.g., phone number or email)
-    let userMemory;
-    if (session) {
-      this.logger.debug(
-        { conversation_id: conversationId, author: maskAddress(author) },
-        'Retrieving user memory'
-      );
-      try {
-        userMemory = await this.tac.retrieveMemory(session, message);
-        this.logger.debug(
-          { conversation_id: conversationId, profile_id: session.profileId },
-          'User memory retrieved'
-        );
-      } catch (error) {
-        this.logger.warn(
-          { err: error, conversation_id: conversationId },
-          'Failed to retrieve user memory'
-        );
-      }
-    }
+    // Retrieve user memory if enabled via memoryMode
+    const userMemory = session ? await this.retrieveMemoryIfEnabled(session, message) : undefined;
 
     // Invoke message received callback with memory context
     if (this.messagingCallbacks.onMessageReceived) {

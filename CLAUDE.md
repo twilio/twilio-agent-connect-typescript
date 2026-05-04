@@ -115,6 +115,18 @@ const server = new TACServer(tac, {
 
 All ConversationRelay attributes except `url` are supported (see `packages/core/src/types/crelay.ts`). The `url` field is automatically set by the server based on the request host and WebSocket path.
 
+## Memory Retrieval Control
+
+Channels support `memoryMode` to control automatic memory fetching:
+
+```typescript
+const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'never' }); // default
+```
+
+- **`"never"` (default)**: No automatic fetching. Use `tac.retrieveMemory()` in callbacks for conditional retrieval.
+- **`"always"`**: Automatically fetches memory for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
+
 ## Pull Requests
 
 When creating PRs, read and fill in `.github/PULL_REQUEST_TEMPLATE.md`.

@@ -84,10 +84,10 @@ config();
 
 const openai = new OpenAI();
 
-// Initialize TAC and channels
+// Initialize TAC and channels with automatic memory retrieval
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const voiceChannel = new VoiceChannel(tac);
-const smsChannel = new SMSChannel(tac);
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
+const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
 
 // Register channels
 tac.registerChannel(voiceChannel);
@@ -168,11 +168,11 @@ TAC simplifies building AI agents by handling the integration between Twilio's c
 
 1. **Webhook/Connection Received**: Twilio sends webhook (SMS) or WebSocket connection (Voice) to your server
 2. **Channel Processing**: Channel validates and processes the incoming event
-3. **Memory Retrieval**: TAC optionally retrieves user memories and profile from Memory
-4. **Callback Invoked**: Your `onMessageReady` callback receives user message, context, and optional memory response
+3. **Memory Retrieval** (optional): If `memoryMode: 'always'` is set, TAC automatically retrieves user memories and profile from Memory API
+4. **Callback Invoked**: Your `onMessageReady` callback receives user message, context, and memory response (if enabled)
 5. **LLM Integration**: Your code calls LLM with message and memories, sends response through the appropriate channel
 
-For detailed architecture and advanced usage, see [CLAUDE.md](.claude/CLAUDE.md).
+For detailed architecture and memory retrieval options, see [CLAUDE.md](CLAUDE.md).
 
 ## Learn More
 

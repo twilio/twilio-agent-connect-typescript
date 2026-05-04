@@ -29,7 +29,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
   describe('Memory Retrieval in handlePromptMessage', () => {
     it('should retrieve memory when Memory API enabled', async () => {
       tac = await createTestTACWithMemory(getTestConfig());
-      voiceChannel = new VoiceChannel(tac);
+      voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
       tac.registerChannel(voiceChannel);
 
       // Mock retrieveMemory to return test data
@@ -100,7 +100,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
     it('should handle memory retrieval errors gracefully', async () => {
       tac = await createTestTACWithMemory(getTestConfig());
-      voiceChannel = new VoiceChannel(tac);
+      voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
       tac.registerChannel(voiceChannel);
 
       // Mock retrieveMemory to throw error
@@ -154,7 +154,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
   describe('Integration with TAC onMessageReady', () => {
     it('should pass enriched memory to TAC.onMessageReady callback', async () => {
       tac = await createTestTACWithMemory(getTestConfig());
-      voiceChannel = new VoiceChannel(tac);
+      voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
       tac.registerChannel(voiceChannel);
 
       const mockMemory = {
@@ -212,7 +212,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
   describe('Backward Compatibility', () => {
     it('should work with callbacks that only use conversationId and transcript', async () => {
       tac = await createTestTACWithMemory(getTestConfig());
-      voiceChannel = new VoiceChannel(tac);
+      voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
       tac.registerChannel(voiceChannel);
 
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({

@@ -29,7 +29,7 @@ if (tac.isOrchestratorEnabled()) {
   );
 }
 
-const voiceChannel = new VoiceChannel(tac);
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
 
 tac.registerChannel(voiceChannel);
 

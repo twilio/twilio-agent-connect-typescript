@@ -18,7 +18,7 @@ import {
   InitiateVoiceConversationOptionsSchema,
 } from '../types/index';
 import type { InitiateVoiceConversationResult } from '../types/conversation';
-import { BaseChannel, BaseChannelEvents } from './base';
+import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
 import { maskAddress } from '../util/log-redaction';
@@ -70,8 +70,8 @@ export class VoiceChannel extends BaseChannel {
   private readonly MAX_INITIALIZATION_RETRIES = 3;
   private twilioClient: ReturnType<typeof Twilio> | undefined;
 
-  constructor(tac: TAC) {
-    super(tac);
+  constructor(tac: TAC, options?: BaseChannelOptions) {
+    super(tac, options);
     this.webSocketConnections = new Map();
     this.voiceCallbacks = {};
     this.streamTasks = new Map();
@@ -370,19 +370,10 @@ export class VoiceChannel extends BaseChannel {
     // Get session for memory retrieval
     const session = this.getConversationSession(conversationId);
 
-    // Automatic memory retrieval (matching passive voice behavior)
-    let userMemory: TACMemoryResponse | undefined;
-    if (session) {
-      try {
-        userMemory = await this.tac.retrieveMemory(session, transcript);
-        this.logger.debug({ conversation_id: conversationId }, 'Retrieved memory for active voice');
-      } catch (error) {
-        this.logger.warn(
-          { err: error, conversation_id: conversationId },
-          'Failed to retrieve memory for active voice'
-        );
-      }
-    }
+    // Retrieve memory if enabled via memoryMode
+    const userMemory = session
+      ? await this.retrieveMemoryIfEnabled(session, transcript)
+      : undefined;
 
     if (this.voiceCallbacks.onPrompt) {
       await this.voiceCallbacks.onPrompt({

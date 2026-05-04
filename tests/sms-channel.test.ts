@@ -58,6 +58,21 @@ describe('SMS Channel', () => {
         'dedupCapacity must be a positive integer'
       );
     });
+
+    it('should default memoryMode to "never"', () => {
+      const defaultChannel = new SMSChannel(tac);
+      expect((defaultChannel as any).memoryMode).toBe('never');
+    });
+
+    it('should accept memoryMode "always"', () => {
+      const alwaysChannel = new SMSChannel(tac, { memoryMode: 'always' });
+      expect((alwaysChannel as any).memoryMode).toBe('always');
+    });
+
+    it('should accept memoryMode "never"', () => {
+      const neverChannel = new SMSChannel(tac, { memoryMode: 'never' });
+      expect((neverChannel as any).memoryMode).toBe('never');
+    });
   });
 
   describe('webhook processing', () => {
@@ -828,6 +843,95 @@ describe('SMS Channel', () => {
       await vi.waitFor(() => {
         expect(sendResponseSpy).toHaveBeenCalledWith('CHtest123456789', 'Async auto-sent response');
       });
+    });
+  });
+
+  describe('memory retrieval', () => {
+    beforeEach(() => {
+      // Clear the mock from the outer beforeEach
+      vi.restoreAllMocks();
+    });
+
+    it('should NOT retrieve memory when memoryMode is "never" (default)', async () => {
+      const channelNever = new SMSChannel(tac);
+      const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
+
+      const webhookPayload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: '+15559876543',
+            channel: 'SMS',
+          },
+        },
+      };
+
+      await channelNever.processWebhook(webhookPayload);
+
+      // Memory should NOT be retrieved
+      expect(retrieveMemorySpy).not.toHaveBeenCalled();
+    });
+
+    it('should retrieve memory when memoryMode is "always"', async () => {
+      const channelAlways = new SMSChannel(tac, { memoryMode: 'always' });
+      const mockMemory = {
+        observations: [{ id: 'obs1', content: 'Test observation' }],
+        summaries: [],
+        communications: [],
+      };
+      const retrieveMemorySpy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(mockMemory as any);
+
+      const webhookPayload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: '+15559876543',
+            channel: 'SMS',
+          },
+        },
+      };
+
+      await channelAlways.processWebhook(webhookPayload);
+
+      // Memory should be retrieved
+      expect(retrieveMemorySpy).toHaveBeenCalled();
+    });
+
+    it('should handle memory retrieval errors gracefully when memoryMode is "always"', async () => {
+      const channelAlways = new SMSChannel(tac, { memoryMode: 'always' });
+      const retrieveMemorySpy = vi
+        .spyOn(tac, 'retrieveMemory')
+        .mockRejectedValue(new Error('Memory API error'));
+
+      const webhookPayload = {
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: {
+            type: 'TEXT',
+            text: 'Hello',
+          },
+          author: {
+            address: '+15559876543',
+            channel: 'SMS',
+          },
+        },
+      };
+
+      // Should not throw - error is handled gracefully
+      await expect(channelAlways.processWebhook(webhookPayload)).resolves.not.toThrow();
+
+      expect(retrieveMemorySpy).toHaveBeenCalled();
     });
   });
 });

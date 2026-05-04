@@ -21,8 +21,8 @@ const agent = new Agent({
 });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const voiceChannel = new VoiceChannel(tac);
-const smsChannel = new SMSChannel(tac);
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
+const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
 
 tac.registerChannel(voiceChannel);
 tac.registerChannel(smsChannel);
