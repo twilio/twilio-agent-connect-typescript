@@ -1,5 +1,6 @@
 import {
   ChannelType,
+  ConversationAddress,
   ConversationId,
   SendMessageActionRequest,
   InitiateMessagingConversationOptions,
@@ -7,7 +8,7 @@ import {
   InitiateConversationResult,
 } from '../types/index';
 import { MessagingChannel } from './messaging';
-import { maskAddress, maskPhone } from '../util/log-redaction';
+import { maskAddress } from '../util/log-redaction';
 
 /**
  * SMS Channel implementation for Twilio Conversations Service
@@ -24,8 +25,18 @@ export class SMSChannel extends MessagingChannel {
     return authorAddress === this.config.phoneNumber;
   }
 
+  protected getAgentAddress(_conversationId: ConversationId): ConversationAddress {
+    return { channel: 'SMS', address: this.config.phoneNumber };
+  }
+
   /**
    * Send SMS response using the Conversation Orchestrator Actions API (SEND_MESSAGE).
+   *
+   * Reads the agent and customer participant ids stashed on the session by
+   * inbound reconciliation or outbound initiation. Missing ids are a misuse —
+   * `sendResponse` is only expected to be called after an inbound webhook
+   * (COMMUNICATION_CREATED → reconcile) or after `initiateOutboundConversation`,
+   * both of which populate the session.
    */
   public async sendResponse(
     conversationId: ConversationId,
@@ -44,54 +55,20 @@ export class SMSChannel extends MessagingChannel {
     try {
       const session = this.getConversationSession(conversationId);
 
-      if (!session) {
-        throw new Error(`No active session found for conversation ${conversationId}`);
-      }
-
-      if (!session.authorInfo) {
+      if (!session || !session.authorInfo || !session.aiAgentInfo) {
         throw new Error(
-          `No author info found for conversation ${conversationId} - no inbound message received yet`
+          `Unable to send SMS: sendResponse called without a reconciled session for ` +
+            `conversation ${conversationId}. Wait for an inbound webhook or call ` +
+            `initiateOutboundConversation first.`
         );
       }
 
-      const recipientAddress = session.authorInfo.address;
-
-      // Fetch current participants from Conversation Orchestrator
-      const participants = await this.conversationClient.listParticipants(conversationId);
-
-      // Find the CUSTOMER participant by address on the SMS channel
-      let customerParticipantId: string | undefined;
-      for (const p of participants) {
-        if (p.type !== 'CUSTOMER' || !Array.isArray(p.addresses)) continue;
-        const smsAddress = p.addresses.find(
-          a => a.channel === 'SMS' && a.address === recipientAddress
-        );
-        if (smsAddress) {
-          customerParticipantId = p.id;
-          break;
-        }
-      }
-
-      // Use fromAddress from session metadata (set during outbound initiation),
-      // falling back to the configured phone number for inbound conversations
-      const agentAddress =
-        typeof session.metadata?.fromAddress === 'string'
-          ? session.metadata.fromAddress
-          : this.config.phoneNumber;
-
-      const agentParticipant = await this.ensureAgentParticipant(conversationId, participants, {
-        channel: 'SMS',
-        address: agentAddress,
-      });
-      if (!agentParticipant) {
+      const customerParticipantId = session.authorInfo.participantId;
+      const agentParticipantId = session.aiAgentInfo.participantId;
+      if (!customerParticipantId || !agentParticipantId) {
         throw new Error(
-          `Failed to resolve AI_AGENT participant for conversation ${conversationId}`
-        );
-      }
-
-      if (!customerParticipantId) {
-        throw new Error(
-          `Customer participant not found on SMS channel for conversation ${conversationId}`
+          `Unable to send SMS: session for conversation ${conversationId} is missing ` +
+            `participant ids.`
         );
       }
 
@@ -101,10 +78,9 @@ export class SMSChannel extends MessagingChannel {
       this.logger.debug(
         {
           conversation_id: conversationId,
-          recipient_address: maskAddress(recipientAddress),
+          recipient_address: maskAddress(session.authorInfo.address),
           recipient_participant_id: customerParticipantId,
-          agent_participant_id: agentParticipant.id,
-          from_number: maskPhone(agentAddress),
+          agent_participant_id: agentParticipantId,
         },
         'Sending SMS via Actions API'
       );
@@ -114,7 +90,7 @@ export class SMSChannel extends MessagingChannel {
         payload: {
           from: {
             channel: 'SMS',
-            participantId: agentParticipant.id,
+            participantId: agentParticipantId,
           },
           to: [
             {
@@ -130,7 +106,10 @@ export class SMSChannel extends MessagingChannel {
       await this.conversationClient.createAction(conversationId, actionRequest);
 
       this.logger.info(
-        { conversation_id: conversationId, recipient_address: maskAddress(recipientAddress) },
+        {
+          conversation_id: conversationId,
+          recipient_address: maskAddress(session.authorInfo.address),
+        },
         'SMS sent successfully via Actions API'
       );
     } catch (error) {
@@ -149,6 +128,7 @@ export class SMSChannel extends MessagingChannel {
    *
    * Creates a conversation via Conversation Orchestrator, adds customer and
    * agent participants, then sends the initial message via the Actions API.
+   * The sender is always `config.phoneNumber`.
    */
   public async initiateOutboundConversation(
     options: InitiateMessagingConversationOptions
@@ -163,7 +143,7 @@ export class SMSChannel extends MessagingChannel {
     return this.initiateOutboundMessagingConversation({
       channel: 'SMS',
       to: validated.to,
-      from: validated.from ?? this.config.phoneNumber,
+      from: this.config.phoneNumber,
       message: validated.message,
       ...(validated.metadata ? { metadata: validated.metadata } : {}),
     });

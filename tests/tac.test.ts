@@ -134,6 +134,23 @@ describe('TAC Core', () => {
       tac.registerChannel(channel);
 
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      // Short-circuit reconcile so the message-ready callback fires.
+      vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA111',
+          conversationId: 'CHtest',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: 'CHtest',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'SMS', address: '+15559876543' }],
+        },
+      ]);
       const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
       const warnSpy = vi.spyOn(tac.logger, 'warn');
 

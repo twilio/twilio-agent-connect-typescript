@@ -16,6 +16,13 @@ export const TwilioMemoryConfigSchema = z.object({
   // API default is 0 (no communications fetched). SDK defaults to 10 for a useful out-of-box experience.
   communicationsLimit: z.number().int().min(0).max(100).default(10),
   relevanceThreshold: z.number().min(0.0).max(1.0).default(0.0),
+  /**
+   * Trait group name that holds the phone identifier on newly created profiles.
+   * Must match the promoted-to-identifier configuration of the Memora store.
+   */
+  phoneTraitGroup: z.string().default('Contact'),
+  /** Trait field name within `phoneTraitGroup` that holds the phone identifier. */
+  phoneTraitField: z.string().default('phone'),
 });
 
 export type TwilioMemoryConfig = z.infer<typeof TwilioMemoryConfigSchema>;
@@ -76,6 +83,8 @@ export const EnvironmentVariables = {
   TWILIO_MEMORY_SUMMARIES_LIMIT: 'TWILIO_MEMORY_SUMMARIES_LIMIT',
   TWILIO_MEMORY_COMMUNICATIONS_LIMIT: 'TWILIO_MEMORY_COMMUNICATIONS_LIMIT',
   TWILIO_MEMORY_RELEVANCE_THRESHOLD: 'TWILIO_MEMORY_RELEVANCE_THRESHOLD',
+  TWILIO_MEMORY_PHONE_TRAIT_GROUP: 'TWILIO_MEMORY_PHONE_TRAIT_GROUP',
+  TWILIO_MEMORY_PHONE_TRAIT_FIELD: 'TWILIO_MEMORY_PHONE_TRAIT_FIELD',
   TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
   VOICE_PUBLIC_DOMAIN: 'VOICE_PUBLIC_DOMAIN',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',

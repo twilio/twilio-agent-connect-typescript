@@ -225,6 +225,12 @@ export const ConversationSessionSchema = z.object({
   channel: ChannelTypeSchema,
   startedAt: z.date(),
   authorInfo: AuthorInfoSchema.optional(),
+  /**
+   * Agent-side participant info stashed by inbound reconciliation or outbound
+   * initiation. `sendResponse` reads this to avoid re-listing participants at
+   * send time. Missing means reconciliation did not resolve an AI_AGENT.
+   */
+  aiAgentInfo: AuthorInfoSchema.optional(),
   profile: z.custom<Profile>().optional(),
   metadata: z.record(z.unknown()).optional().default({}),
   /**
@@ -428,11 +434,14 @@ export type ConversationConfiguration = z.infer<typeof ConversationConfiguration
 // =========================================================================
 
 /**
- * Options for initiating an outbound SMS conversation
+ * Options for initiating an outbound SMS conversation.
+ *
+ * The sender is always TAC's configured `config.phoneNumber`. Multi-sender
+ * deployments should run one TAC instance per sender so inbound webhook
+ * routing, memory scoping, and configuration stay in sync.
  */
 export const InitiateMessagingConversationOptionsSchema = z.object({
   to: z.string().min(1, 'Recipient address is required'),
-  from: z.string().optional(),
   message: z.string().min(1, 'Initial message is required'),
   metadata: z.record(z.unknown()).optional(),
 });

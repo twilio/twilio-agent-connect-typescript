@@ -111,6 +111,50 @@ describe('MemoryClient', () => {
     });
   });
 
+  describe('createProfile()', () => {
+    it('should POST traits to /Profiles and return the id', async () => {
+      mockAdapter
+        .onPost('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles')
+        .reply(202, { id: 'mem_profile_00000000000000000000000001' });
+
+      const result = await memoryClient.createProfile(
+        'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
+        { Contact: { phone: '+13175551234' } }
+      );
+
+      expect(result).toBe('mem_profile_00000000000000000000000001');
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body).toEqual({
+        traits: { Contact: { phone: '+13175551234' } },
+      });
+    });
+
+    it('should throw when response body has no id field', async () => {
+      mockAdapter
+        .onPost('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles')
+        .reply(202, { foo: 'bar' });
+
+      await expect(
+        memoryClient.createProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', {
+          Contact: { phone: '+13175551234' },
+        })
+      ).rejects.toThrow(/CreateProfile response missing 'id' field/);
+    });
+
+    it('should surface HTTP errors', async () => {
+      mockAdapter
+        .onPost('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles')
+        .reply(500);
+
+      await expect(
+        memoryClient.createProfile('mem_service_01kbjqhhdpft0tbp21jt4ktbxg', {
+          Contact: { phone: '+13175551234' },
+        })
+      ).rejects.toThrow(/Failed to create profile/);
+    });
+  });
+
   describe('region support', () => {
     it('should use region in base URL when configured', () => {
       const config = new TACConfig({ ...getTestConfig(), region: 'test-region' });

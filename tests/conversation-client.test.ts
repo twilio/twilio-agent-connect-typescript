@@ -158,6 +158,110 @@ describe('ConversationClient', () => {
     });
   });
 
+  describe('updateParticipant()', () => {
+    it('should PUT participant with type and addresses', async () => {
+      const mockResponse = {
+        id: 'part_123',
+        conversationId: 'CH123',
+        accountId: 'AC123456',
+        type: 'AI_AGENT',
+        addresses: [{ channel: 'SMS', address: '+12025551234' }],
+      };
+
+      mockAdapter
+        .onPut('/v2/Conversations/CH123/Participants/part_123')
+        .reply(200, mockResponse);
+
+      const result = await conversationClient.updateParticipant(
+        'CH123',
+        'part_123',
+        'AI_AGENT',
+        [{ channel: 'SMS', address: '+12025551234' }]
+      );
+
+      expect(result.id).toBe('part_123');
+      expect(result.type).toBe('AI_AGENT');
+
+      const body = JSON.parse(mockAdapter.history.put[0]!.data);
+      expect(body).toMatchObject({
+        type: 'AI_AGENT',
+        addresses: [{ channel: 'SMS', address: '+12025551234' }],
+      });
+      expect(body).not.toHaveProperty('name');
+      expect(body).not.toHaveProperty('profileId');
+    });
+
+    it('should include optional name and profileId when provided', async () => {
+      const mockResponse = {
+        id: 'part_123',
+        conversationId: 'CH123',
+        accountId: 'AC123456',
+        type: 'CUSTOMER',
+        addresses: [{ channel: 'SMS', address: '+12025551234' }],
+        name: 'Jane Customer',
+        profileId: 'mem_profile_00000000000000000000000001',
+      };
+
+      mockAdapter
+        .onPut('/v2/Conversations/CH123/Participants/part_123')
+        .reply(200, mockResponse);
+
+      await conversationClient.updateParticipant(
+        'CH123',
+        'part_123',
+        'CUSTOMER',
+        [{ channel: 'SMS', address: '+12025551234' }],
+        { name: 'Jane Customer', profileId: 'mem_profile_00000000000000000000000001' }
+      );
+
+      const body = JSON.parse(mockAdapter.history.put[0]!.data);
+      expect(body).toMatchObject({
+        type: 'CUSTOMER',
+        addresses: [{ channel: 'SMS', address: '+12025551234' }],
+        name: 'Jane Customer',
+        profileId: 'mem_profile_00000000000000000000000001',
+      });
+    });
+
+    it('should include participantId in URL path', async () => {
+      mockAdapter
+        .onPut('/v2/Conversations/CH123/Participants/part_xyz789')
+        .reply(200, {
+          id: 'part_xyz789',
+          conversationId: 'CH123',
+          accountId: 'AC123456',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+12025551234' }],
+        });
+
+      await conversationClient.updateParticipant(
+        'CH123',
+        'part_xyz789',
+        'AI_AGENT',
+        [{ channel: 'SMS', address: '+12025551234' }]
+      );
+
+      expect(mockAdapter.history.put[0]!.url).toBe(
+        '/v2/Conversations/CH123/Participants/part_xyz789'
+      );
+    });
+
+    it('should surface HTTP errors', async () => {
+      mockAdapter
+        .onPut('/v2/Conversations/CH123/Participants/part_123')
+        .reply(500);
+
+      await expect(
+        conversationClient.updateParticipant(
+          'CH123',
+          'part_123',
+          'AI_AGENT',
+          [{ channel: 'SMS', address: '+12025551234' }]
+        )
+      ).rejects.toThrow(/Failed to update participant/);
+    });
+  });
+
   describe('listConversations()', () => {
     it('should list conversations by channelId', async () => {
       const mockResponse = {

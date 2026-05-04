@@ -9,10 +9,21 @@ import {
   isConversationId,
   isProfileId,
 } from '../types/index';
+import axios from 'axios';
 import { BaseChannel, BaseChannelEvents } from './base';
 import { ConversationClient } from '../clients/conversation';
 import type { TAC } from '../lib/tac';
 import { maskAddress } from '../util/log-redaction';
+
+/**
+ * Participant types that represent TAC itself at TAC's (channel, address).
+ *
+ * `AI_AGENT` is the canonical type; `AGENT` is the legacy Maestro form. A
+ * participant typed either way at TAC's address is recognized as TAC and not
+ * overwritten; anything else (HUMAN_AGENT, CUSTOMER, …) is someone else's
+ * assignment.
+ */
+const AGENT_TYPES = new Set<string>(['AGENT', 'AI_AGENT']);
 
 /**
  * Messaging webhook event types from Twilio Conversations Service
@@ -79,12 +90,29 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
  *
  * Provides shared webhook processing logic for messaging channels
  * (SMS and Chat) that use the Conversations Service webhooks.
+ *
+ * Subclasses must implement:
+ * - `isDefaultAgentAddress`: fast-path check for the channel's default agent address
+ * - `getAgentAddress`: return the agent's `ConversationAddress` for a conversation
+ * - `sendResponse`: send messages back through the channel
+ *
+ * Subclass flags:
+ * - `reconcileCustomerType`: if `true` (default), reconciliation will also
+ *   promote a channel-matching UNKNOWN participant (not owning the agent
+ *   address) to CUSTOMER. Set `false` for channels where the customer is
+ *   identified author-driven (e.g. chat).
  */
 export abstract class MessagingChannel extends BaseChannel {
   protected override readonly conversationClient: ConversationClient;
   protected readonly messagingCallbacks: MessagingChannelEvents;
   private readonly processedTokens = new Set<string>();
   private readonly maxTrackedTokens: number;
+
+  /**
+   * Controls whether reconciliation promotes an UNKNOWN customer-side
+   * participant to CUSTOMER. Subclasses override to opt out (e.g. chat).
+   */
+  protected reconcileCustomerType: boolean = true;
 
   constructor(tac: TAC, config?: MessagingChannelConfig) {
     super(tac);
@@ -131,34 +159,30 @@ export abstract class MessagingChannel extends BaseChannel {
   protected abstract isDefaultAgentAddress(authorAddress: string): boolean;
 
   /**
-   * Check if a message is from the bot itself.
+   * Return the agent-side ConversationAddress for this conversation.
+   *
+   * Used by `reconcileParticipants` to identify which participant (by channel
+   * + address) represents the agent. May read from session state (e.g. chat's
+   * per-conversation channelId) to build the address.
+   */
+  protected abstract getAgentAddress(conversationId: ConversationId): ConversationAddress;
+
+  /**
+   * Check if a message is from the bot itself (2-tier).
    *
    * 1. Default agent address (stateless, no API call)
-   * 2. Session metadata fromAddress (works same-process for custom `from`)
-   * 3. API lookup: resolve participantId → participant type (works cross-process
-   *    for custom `from` when session is missing, e.g., after restart or on
-   *    another worker)
+   * 2. API fallback via listParticipants (cross-process / multi-worker)
+   *
+   * `HUMAN_AGENT` is deliberately NOT treated as TAC — a real human is a
+   * separate participant and their messages must reach the callback.
    */
   private async isOwnMessage(
     authorAddress: string,
     conversationId: ConversationId,
     authorParticipantId: string | undefined
   ): Promise<boolean> {
-    // Fast path: default agent address
     if (this.isDefaultAgentAddress(authorAddress)) return true;
 
-    // Session path: custom fromAddress stored during outbound initiation
-    const session = this.activeConversations.get(conversationId);
-    if (session?.metadata?.fromAddress === authorAddress) return true;
-
-    // If we have a local session and neither fromAddress nor authorInfo
-    // matches, this is a normal inbound customer message — no API call needed.
-    // The fallback below is only for when there's no session (e.g., webhook
-    // arrived on a different process or after restart for a custom-from
-    // outbound conversation).
-    if (session) return false;
-
-    // Fallback: no local session — look up participant type via API.
     if (authorParticipantId) {
       try {
         const participants = await this.conversationClient.listParticipants(conversationId);
@@ -170,11 +194,7 @@ export abstract class MessagingChannel extends BaseChannel {
               'Participant type is undefined — cannot determine if this is an agent message'
             );
           }
-          if (
-            authorParticipant.type === 'AI_AGENT' ||
-            authorParticipant.type === 'HUMAN_AGENT' ||
-            authorParticipant.type === 'AGENT'
-          ) {
+          if (authorParticipant.type && AGENT_TYPES.has(authorParticipant.type)) {
             return true;
           }
         }
@@ -277,14 +297,6 @@ export abstract class MessagingChannel extends BaseChannel {
           this.handleConversationCreated(webhookData);
           break;
 
-        case 'PARTICIPANT_ADDED':
-          this.logger.debug(
-            { conversation_id: conversationId, profile_id: webhookData.data?.profileId },
-            'Handling PARTICIPANT_ADDED'
-          );
-          this.handleParticipantAdded(webhookData);
-          break;
-
         case 'COMMUNICATION_CREATED':
           this.logger.debug({ conversation_id: conversationId }, 'Handling COMMUNICATION_CREATED');
           await this.handleCommunicationCreated(webhookData);
@@ -339,59 +351,6 @@ export abstract class MessagingChannel extends BaseChannel {
     }
 
     this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
-  }
-
-  /**
-   * Handle participant added event
-   */
-  private handleParticipantAdded(payload: MessagingWebhookPayload): void {
-    const conversationId = this.extractConversationId(payload);
-    const profileId = this.extractProfileId(payload);
-
-    if (!conversationId) {
-      this.logger.warn(
-        { operation: 'handle_participant_added' },
-        'Missing conversation ID in participant.added event'
-      );
-      throw new Error('Missing conversation ID in participant.added event');
-    }
-
-    // Update conversation with profile ID if conversation exists
-    if (this.isConversationActive(conversationId)) {
-      const session = this.getConversationSession(conversationId);
-      if (session) {
-        if (profileId) {
-          this.logger.debug(
-            {
-              conversation_id: conversationId,
-              old_profile_id: session.profileId,
-              new_profile_id: profileId,
-            },
-            'Updating conversation profile ID from participant.added'
-          );
-          session.profileId = profileId;
-        }
-
-        if (payload.data?.serviceId && session.serviceId !== payload.data.serviceId) {
-          this.logger.debug(
-            {
-              conversation_id: conversationId,
-              old_service_id: session.serviceId,
-              new_service_id: payload.data.serviceId,
-            },
-            'Updating conversation configuration ID from participant.added'
-          );
-          session.serviceId = payload.data.serviceId;
-        }
-      }
-    } else {
-      // Auto-initialize conversation if not already started
-      this.logger.debug(
-        { conversation_id: conversationId, profile_id: profileId },
-        'Auto-starting conversation from participant.added'
-      );
-      this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
-    }
   }
 
   /**
@@ -503,6 +462,43 @@ export abstract class MessagingChannel extends BaseChannel {
         }
         session.metadata.lastCommunicationId = communicationId;
       }
+
+      // Reconcile participant types pre-LLM so v1-bridge's UNKNOWN gets
+      // promoted to CUSTOMER (with a Memora profile attached when possible)
+      // and to stash both participant ids on the session for sendResponse.
+      // If reconciliation can't identify both sides, any eventual reply would
+      // fail too — skip the callback so the LLM doesn't waste a turn on an
+      // un-replyable conversation.
+      //
+      // Skip reconcile entirely when both sides are already stashed from a
+      // prior turn — Maestro's state was written by us and doesn't drift.
+      if (!session.aiAgentInfo || !session.authorInfo?.participantId) {
+        const resolved = await this.reconcileParticipants(conversationId);
+        if (!resolved) {
+          this.logger.warn(
+            { conversation_id: conversationId },
+            'Reconciliation failed; skipping callback for this inbound'
+          );
+          return;
+        }
+
+        const [agentParticipant, customerParticipant] = resolved;
+        const agentAddress = this.getAgentAddress(conversationId);
+        session.aiAgentInfo = {
+          address: agentAddress.address,
+          participantId: agentParticipant.id,
+        };
+        // When reconcile resolved a customer (SMS path — chat disables customer
+        // reconciliation and uses the author_info captured from the webhook
+        // above), use its authoritative participant id and lift any resolved
+        // profile.
+        if (customerParticipant && session.authorInfo) {
+          session.authorInfo.participantId = customerParticipant.id;
+          if (customerParticipant.profileId && !session.profileId) {
+            session.profileId = customerParticipant.profileId;
+          }
+        }
+      }
     }
 
     // Retrieve user memory using tac.retrieveMemory, which handles profile lookup by address (e.g., phone number or email)
@@ -612,85 +608,302 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Return the conversation's AI_AGENT participant, creating one if absent.
+   * Reconcile Maestro's participants to the types TAC needs for sending.
    *
-   * Returns the first participant in `existingParticipants` whose type is
-   * AI_AGENT / HUMAN_AGENT / AGENT and owns `agentAddress`. If none match,
-   * creates an AI_AGENT with that address. On failure from another worker
-   * creating it concurrently (typically 409), re-lists and re-matches.
+   * v1-bridge capture can leave TAC's agent participant as `UNKNOWN` (wrong
+   * type at our address), or omit it entirely (customer-only conversation).
+   * This pass fixes those cases; it refuses to rewrite anything else at our
+   * address. Decision matrix:
    *
-   * Returns undefined if match-then-create-then-retry all fail. The caller
-   * should log and bail on undefined.
+   *     | Agent side           | Customer side       | Action                        |
+   *     |----------------------|---------------------|-------------------------------|
+   *     | AGENT / AI_AGENT     | CUSTOMER            | Use as-is (no profile work).  |
+   *     | AGENT / AI_AGENT     | UNKNOWN, no CUST    | Resolve profile, PUT → CUST.  |
+   *     | UNKNOWN at our addr  | CUSTOMER            | PUT agent → AI_AGENT.         |
+   *     | UNKNOWN at our addr  | UNKNOWN, no CUST    | PUT agent; resolve, PUT CUST. |
+   *     | other at our addr    | any                 | Return null (log ERROR).      |
+   *     | none at our addr     | CUSTOMER or UNKNOWN | POST AI_AGENT, then proceed.  |
+   *     | any                  | no resolvable cust  | Return null (caller WARNs).   |
+   *
+   * TAC recognizes both `AGENT` and `AI_AGENT` at its address as itself.
+   * `HUMAN_AGENT` is NOT treated as TAC (a real human is a separate
+   * participant — TAC must not speak on their behalf); it falls into the
+   * "other at our addr" row and causes the reconcile to bail.
+   *
+   * Customer-side reconciliation is gated by `reconcileCustomerType`. Chat
+   * sets it to `false` because chat identifies the customer author-driven
+   * (via `session.authorInfo.participantId`), so promoting some other
+   * `UNKNOWN` CHAT participant could pick the wrong recipient.
+   *
+   * @returns `[agent, customerOrNull]` on success. `customer` is `null` when
+   * `reconcileCustomerType` is `false`. `null` overall when either the agent
+   * or the customer cannot be resolved — the caller treats `null` as a hard
+   * stop and skips the message-ready callback.
    */
-  protected async ensureAgentParticipant(
-    conversationId: ConversationId,
-    existingParticipants: ConversationParticipant[],
-    agentAddress: ConversationAddress
-  ): Promise<ConversationParticipant | undefined> {
-    const matches = (p: ConversationParticipant): boolean =>
-      (p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT' || p.type === 'AGENT') &&
-      Array.isArray(p.addresses) &&
-      p.addresses.some(
-        a => a.channel === agentAddress.channel && a.address === agentAddress.address
-      );
+  protected async reconcileParticipants(
+    conversationId: ConversationId
+  ): Promise<[ConversationParticipant, ConversationParticipant | null] | null> {
+    const agentAddress = this.getAgentAddress(conversationId);
 
-    const existing = existingParticipants.find(matches);
-    if (existing) {
-      return existing;
+    let participants: ConversationParticipant[];
+    try {
+      participants = await this.conversationClient.listParticipants(conversationId);
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        'Failed to list participants for reconciliation'
+      );
+      return null;
     }
 
-    this.logger.debug(
-      {
-        conversation_id: conversationId,
-        channel: agentAddress.channel,
-        address: maskAddress(agentAddress.address),
-      },
-      'No agent participant found, creating AI_AGENT'
+    const channel = agentAddress.channel;
+
+    const ownsAgentAddress = (p: ConversationParticipant): boolean =>
+      Array.isArray(p.addresses) &&
+      p.addresses.some(a => a.channel === channel && a.address === agentAddress.address);
+
+    const matchesChannel = (p: ConversationParticipant): boolean =>
+      Array.isArray(p.addresses) && p.addresses.some(a => a.channel === channel);
+
+    let agentCandidate = participants.find(ownsAgentAddress);
+    if (!agentCandidate) {
+      const created = await this.addAgentParticipant(conversationId, agentAddress);
+      if (!created) return null;
+      agentCandidate = created;
+    } else if (agentCandidate.type === 'UNKNOWN') {
+      // Only promote UNKNOWN — an already-typed participant at TAC's address
+      // that isn't AGENT/AI_AGENT (e.g., CUSTOMER, HUMAN_AGENT) is someone
+      // else's assignment and must not be overwritten.
+      const promoted = await this.promoteParticipant(conversationId, agentCandidate, 'AI_AGENT');
+      if (!promoted) return null;
+      agentCandidate = promoted;
+    } else if (!agentCandidate.type || !AGENT_TYPES.has(agentCandidate.type)) {
+      this.logger.error(
+        {
+          conversation_id: conversationId,
+          participant_id: agentCandidate.id,
+          participant_type: agentCandidate.type,
+        },
+        "Participant at TAC's address has a conflicting type; refusing to overwrite. " +
+          'Check Maestro participant state — a non-agent participant is holding ' +
+          "TAC's (channel, address)."
+      );
+      return null;
+    }
+
+    if (!this.reconcileCustomerType) {
+      return [agentCandidate, null];
+    }
+
+    const customer = participants.find(
+      p => p.type === 'CUSTOMER' && matchesChannel(p) && !ownsAgentAddress(p)
     );
+    if (customer) {
+      return [agentCandidate, customer];
+    }
+
+    const customerUnknown = participants.find(
+      p => p.type === 'UNKNOWN' && matchesChannel(p) && !ownsAgentAddress(p)
+    );
+    if (customerUnknown) {
+      const profileId = await this.resolveCustomerProfile(customerUnknown, channel);
+      const promotedCustomer = await this.promoteParticipant(
+        conversationId,
+        customerUnknown,
+        'CUSTOMER',
+        profileId
+      );
+      if (promotedCustomer) {
+        return [agentCandidate, promotedCustomer];
+      }
+    }
+
+    this.logger.warn(
+      { conversation_id: conversationId, channel },
+      'No customer participant resolvable; skipping webhook'
+    );
+    return null;
+  }
+
+  /**
+   * Find or mint a Memora profile for a customer being promoted from UNKNOWN.
+   *
+   * Only resolves for phone-based channels (SMS, VOICE). Looks up by phone
+   * identifier first; on miss, creates a new profile using the configured
+   * phone trait group/field. Returns undefined on any failure — the caller
+   * still promotes the participant, just without a `profileId` attached.
+   */
+  private async resolveCustomerProfile(
+    customer: ConversationParticipant,
+    channel: string
+  ): Promise<string | undefined> {
+    if (channel !== 'SMS' && channel !== 'VOICE') return undefined;
+
+    const memoryClient = this.tac.getMemoryClient();
+    if (!memoryClient || !this.tac.getMemoryStoreId()) return undefined;
+
+    const phoneAddress = Array.isArray(customer.addresses)
+      ? (customer.addresses.find(a => a.channel === channel && !!a.address)?.address ?? undefined)
+      : undefined;
+    if (!phoneAddress) return undefined;
 
     try {
-      const agent = await this.conversationClient.addParticipant(
+      const lookup = await memoryClient.lookupProfile('phone', phoneAddress);
+      if (lookup.profiles && lookup.profiles.length > 0) {
+        return lookup.profiles[0];
+      }
+    } catch (error) {
+      this.logger.warn(
+        { err: error, conversation_id: customer.conversationId },
+        'Profile lookup failed during reconciliation; falling back to create'
+      );
+    }
+
+    const memoryConfig = this.config.memoryConfig;
+    const traitGroup = memoryConfig.phoneTraitGroup;
+    const traitField = memoryConfig.phoneTraitField;
+
+    try {
+      return await memoryClient.createProfile({
+        [traitGroup]: { [traitField]: phoneAddress },
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, conversation_id: customer.conversationId },
+        'Profile creation failed during reconciliation; promoting without profile'
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * PUT a participant to `newType`.
+   *
+   * Maestro's PUT is a full-resource replacement, so we pass the existing
+   * `name` and `addresses` back unchanged to avoid wiping them. `profileId`
+   * defaults to the participant's current value; pass a non-undefined override
+   * to attach a newly resolved profile during CUSTOMER reconciliation.
+   *
+   * Returns undefined on any error (including 409). A 409 from Maestro here
+   * means the promotion is structurally blocked — stop and surface it; don't
+   * retry.
+   */
+  private async promoteParticipant(
+    conversationId: ConversationId,
+    participant: ConversationParticipant,
+    newType: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT' | 'AGENT',
+    profileId?: string
+  ): Promise<ConversationParticipant | undefined> {
+    const effectiveProfileId = profileId !== undefined ? profileId : participant.profileId;
+    const updateOptions: { name?: string; profileId?: string } = {};
+    if (participant.name !== undefined) updateOptions.name = participant.name;
+    if (effectiveProfileId !== null && effectiveProfileId !== undefined) {
+      updateOptions.profileId = effectiveProfileId;
+    }
+
+    try {
+      const updated = await this.conversationClient.updateParticipant(
+        conversationId,
+        participant.id,
+        newType,
+        participant.addresses,
+        updateOptions
+      );
+      this.logger.debug(
+        {
+          conversation_id: conversationId,
+          participant_id: participant.id,
+          from_type: participant.type,
+          to_type: newType,
+        },
+        'Promoted participant'
+      );
+      return updated;
+    } catch (error) {
+      if (this.isConflictError(error)) {
+        this.logger.warn(
+          {
+            conversation_id: conversationId,
+            participant_id: participant.id,
+            target_type: newType,
+            conflicting_resource_id: this.extractConflictingResourceId(error),
+          },
+          'Maestro returned 409 on participant promotion; skipping — likely a ' +
+            'conflicting conversation or grouping constraint. Check Maestro for ' +
+            'duplicate active conversations.'
+        );
+        return undefined;
+      }
+      this.logger.error(
+        {
+          err: error,
+          conversation_id: conversationId,
+          participant_id: participant.id,
+          target_type: newType,
+        },
+        'Failed to promote participant'
+      );
+      return undefined;
+    }
+  }
+
+  /**
+   * POST an `AI_AGENT` participant owning `agentAddress`.
+   *
+   * Returns undefined on any error (including 409). A 409 here means the
+   * address is already owned or the conversation's participant set can't
+   * accept a new AI_AGENT — stop and surface it; don't retry.
+   */
+  private async addAgentParticipant(
+    conversationId: ConversationId,
+    agentAddress: ConversationAddress
+  ): Promise<ConversationParticipant | undefined> {
+    try {
+      const created = await this.conversationClient.addParticipant(
         conversationId,
         [agentAddress],
         'AI_AGENT'
       );
       this.logger.debug(
-        {
-          conversation_id: conversationId,
-          participant_id: agent.id,
-        },
-        'Created AI_AGENT participant'
+        { conversation_id: conversationId, participant_id: created.id },
+        'Added AI_AGENT participant'
       );
-      return agent;
+      return created;
     } catch (error) {
-      // Most likely a 409 race (another worker just created the agent), but
-      // we catch broadly here — log the original error so a real 5xx isn't
-      // hidden by the generic "failed to create or find" log below.
-      this.logger.warn(
-        { err: error, conversation_id: conversationId },
-        'Failed to create AI_AGENT, retrying participant list'
-      );
-    }
-
-    let retried: ConversationParticipant[];
-    try {
-      retried = await this.conversationClient.listParticipants(conversationId);
-    } catch (error) {
+      if (this.isConflictError(error)) {
+        this.logger.warn(
+          {
+            conversation_id: conversationId,
+            conflicting_resource_id: this.extractConflictingResourceId(error),
+          },
+          'Maestro returned 409 on AI_AGENT participant add; skipping — address is ' +
+            "already owned or the conversation can't accept a new AI_AGENT. Check " +
+            'Maestro participant state.'
+        );
+        return undefined;
+      }
       this.logger.error(
         { err: error, conversation_id: conversationId },
-        'Failed to retry listing participants'
+        'Failed to add AI_AGENT participant'
       );
       return undefined;
     }
+  }
 
-    const agent = retried.find(matches);
-    if (!agent) {
-      this.logger.error(
-        { conversation_id: conversationId },
-        'Failed to create or find AI_AGENT participant'
-      );
-    }
-    return agent;
+  /**
+   * Unwrap the axios cause from a client-wrapped Error and check for 409.
+   */
+  private isConflictError(error: unknown): boolean {
+    const cause = error instanceof Error ? (error.cause ?? error) : error;
+    return axios.isAxiosError(cause) && cause.response?.status === 409;
+  }
+
+  private extractConflictingResourceId(error: unknown): string | undefined {
+    const cause = error instanceof Error ? (error.cause ?? error) : error;
+    if (!axios.isAxiosError(cause)) return undefined;
+    const headers = cause.response?.headers as Record<string, string> | undefined;
+    const id = headers?.['x-conflicting-resource-id'];
+    return typeof id === 'string' && id.length > 0 ? id : undefined;
   }
 
   /**
@@ -763,7 +976,8 @@ export abstract class MessagingChannel extends BaseChannel {
 
       const agentParticipant = participants.find(
         p =>
-          (p.type === 'AI_AGENT' || p.type === 'HUMAN_AGENT' || p.type === 'AGENT') &&
+          p.type !== undefined &&
+          AGENT_TYPES.has(p.type) &&
           Array.isArray(p.addresses) &&
           p.addresses.some(
             a =>
@@ -785,11 +999,14 @@ export abstract class MessagingChannel extends BaseChannel {
         address: to,
         participantId: customerParticipant.id,
       };
+      session.aiAgentInfo = {
+        address: fromAddress,
+        participantId: agentParticipant.id,
+      };
       session.metadata = {
         ...session.metadata,
         ...(metadata ?? {}),
         direction: 'outbound',
-        fromAddress,
         ...(channelId ? { channelId } : {}),
       };
 

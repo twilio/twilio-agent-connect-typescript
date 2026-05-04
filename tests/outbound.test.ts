@@ -147,27 +147,18 @@ describe('Outbound Conversations', () => {
       ).rejects.toThrow();
     });
 
-    it('should use custom from number when provided', async () => {
-      mockSmsOutbound(mockAdapter, 'CHfrom123', { fromAddress: '+15550009999' });
-
-      const result = await channel.initiateOutboundConversation({
-        to: '+15559876543',
-        from: '+15550009999',
-        message: 'Hello from a different number',
-      });
-
-      expect(result.session.metadata?.fromAddress).toBe('+15550009999');
-    });
-
-    it('should store default fromAddress in session metadata', async () => {
-      mockSmsOutbound(mockAdapter, 'CHdefault123');
+    it('should stash aiAgentInfo on the session after outbound initiation', async () => {
+      // The outbound path now populates session.aiAgentInfo alongside
+      // authorInfo so subsequent sendResponse calls can skip reconcile.
+      mockSmsOutbound(mockAdapter, 'CHoutbound_aiinfo', { agentParticipantId: 'PAagent_ai' });
 
       const result = await channel.initiateOutboundConversation({
         to: '+15559876543',
         message: 'Hello',
       });
 
-      expect(result.session.metadata?.fromAddress).toBe('+15551234567');
+      expect(result.session.aiAgentInfo?.address).toBe('+15551234567');
+      expect(result.session.aiAgentInfo?.participantId).toBe('PAagent_ai');
     });
 
     it('should validate options', async () => {
@@ -368,71 +359,6 @@ describe('Outbound Conversations', () => {
       });
     });
 
-    it('should use fromAddress from session metadata for agent participant lookup', async () => {
-      // Set up mocks for initiateOutboundConversation with custom from
-      mockAdapter.onPost(/\/v2\/Conversations$/).reply(200, {
-        id: 'CHsr002',
-        accountId: 'ACtest123456789',
-        status: 'ACTIVE',
-      });
-
-      mockAdapter.onGet(/\/CHsr002\/Participants$/).reply(200, {
-        participants: [
-          {
-            id: 'PAsr_cust2',
-            conversationId: 'CHsr002',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'SMS', address: '+15559876543' }],
-          },
-          {
-            id: 'PAsr_agent2',
-            conversationId: 'CHsr002',
-            accountId: 'ACtest123456789',
-            type: 'AI_AGENT',
-            addresses: [{ channel: 'SMS', address: '+15550009999' }],
-          },
-        ],
-      });
-
-      mockAdapter.onPost(/\/CHsr002\/Actions$/).replyOnce(202, {
-        id: 'ACTsr_init2',
-        type: 'SEND_MESSAGE',
-        status: 'PENDING',
-        conversationId: 'CHsr002',
-        createdAt: '2024-01-01T00:00:00Z',
-      });
-
-      await channel.initiateOutboundConversation({
-        to: '+15559876543',
-        from: '+15550009999',
-        message: 'First message with custom from',
-      });
-
-      let capturedBody: unknown;
-      mockAdapter.onPost(/\/CHsr002\/Actions$/).reply(config => {
-        capturedBody = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-        return [202, {
-          id: 'ACTsr_reply2',
-          type: 'SEND_MESSAGE',
-          status: 'PENDING',
-          conversationId: 'CHsr002',
-          createdAt: '2024-01-01T00:00:00Z',
-        }];
-      });
-
-      await channel.sendResponse('CHsr002', 'Reply using custom from');
-
-      // The agent participant should be resolved by the custom fromAddress (+15550009999)
-      expect(capturedBody).toMatchObject({
-        type: 'SEND_MESSAGE',
-        payload: {
-          from: { channel: 'SMS', participantId: 'PAsr_agent2' },
-          to: [{ channel: 'SMS', participantId: 'PAsr_cust2' }],
-          content: { text: 'Reply using custom from' },
-        },
-      });
-    });
   });
 
   describe('ChatChannel.initiateOutboundConversation', () => {
@@ -496,50 +422,6 @@ describe('Outbound Conversations', () => {
       expect(result.session.channel).toBe('chat');
       expect(result.session.metadata?.direction).toBe('outbound');
       expect(result.session.metadata?.channelId).toBe('CHSIDabc');
-    });
-
-    it('should use custom from address when provided', async () => {
-      mockAdapter.onPost(/\/v2\/Conversations$/).reply(200, {
-        id: 'CHchatfrom1',
-        accountId: 'ACtest123456789',
-        status: 'ACTIVE',
-      });
-
-      mockAdapter.onGet(/\/Participants$/).reply(200, {
-        participants: [
-          {
-            id: 'PAchatcust2',
-            conversationId: 'CHchatfrom1',
-            accountId: 'ACtest123456789',
-            type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com', channelId: 'CHSIDabc' }],
-          },
-          {
-            id: 'PAchatagent2',
-            conversationId: 'CHchatfrom1',
-            accountId: 'ACtest123456789',
-            type: 'AI_AGENT',
-            addresses: [{ channel: 'CHAT', address: 'custom-agent@example.com', channelId: 'CHSIDabc' }],
-          },
-        ],
-      });
-
-      mockAdapter.onPost(/\/Actions$/).reply(202, {
-        id: 'ACTchat2',
-        type: 'SEND_MESSAGE',
-        status: 'PENDING',
-        conversationId: 'CHchatfrom1',
-        createdAt: '2024-01-01T00:00:00Z',
-      });
-
-      const result = await channel.initiateOutboundConversation({
-        to: 'customer@example.com',
-        from: 'custom-agent@example.com',
-        channelId: 'CHSIDabc',
-        message: 'Hello from custom agent',
-      });
-
-      expect(result.session.metadata?.fromAddress).toBe('custom-agent@example.com');
     });
 
     it('should reuse existing conversation on 409 (group-by dedup)', async () => {
@@ -811,24 +693,6 @@ describe('Outbound Conversations', () => {
           conversationRelayConfig: { url: 'wss://example.com/ws' },
         })
       ).rejects.toThrow('Call placement failed');
-    });
-
-    it('should use custom from number when provided', async () => {
-      mockCallCreate.mockResolvedValue({ sid: 'CA456outbound' });
-
-      await channel.initiateOutboundConversation({
-        to: '+15559876543',
-        from: '+15550001111',
-        conversationRelayConfig: {
-          url: 'wss://example.com/ws',
-        },
-      });
-
-      expect(mockCallCreate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          from: '+15550001111',
-        })
-      );
     });
 
     it('should validate required options', async () => {

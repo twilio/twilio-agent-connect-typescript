@@ -82,6 +82,26 @@ describe('Integration Tests', () => {
       communications: [],
     } as never);
     vi.spyOn(tac.getConversationClient(), 'listCommunications').mockResolvedValue([]);
+    // reconcileParticipants uses axios under the hood — short-circuit it so
+    // inbound webhook processing reaches the message-ready callback.
+    vi.spyOn(channel as any, 'reconcileParticipants').mockImplementation(
+      async (convId: unknown) => [
+        {
+          id: 'PA111',
+          conversationId: convId,
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+15551234567' }],
+        },
+        {
+          id: 'PA222',
+          conversationId: convId,
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'SMS', address: '+15559876543' }],
+        },
+      ]
+    );
   });
 
   afterEach(() => {
