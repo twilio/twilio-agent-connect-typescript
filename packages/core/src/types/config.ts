@@ -36,7 +36,13 @@ export const TACConfigSchema = z.object({
   apiKey: z.string().min(1, 'Twilio API Key is required'),
   apiSecret: z.string().min(1, 'Twilio API Secret is required'),
   phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
-  rcsSenderId: z.string().optional(),
+  rcsSenderId: z
+    .string()
+    .regex(
+      /^rcs:.+$/,
+      'RCS sender ID must be in format: rcs:<sender-id-or-phone> (e.g., rcs:brand_acme_agent or rcs:+1234567890)'
+    )
+    .optional(),
   whatsappNumber: z
     .string()
     .regex(/^whatsapp:\+\d+$/, 'WhatsApp number must be in format: whatsapp:+1234567890')

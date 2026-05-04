@@ -70,6 +70,13 @@ if (channel === 'whatsapp' && !to.startsWith('whatsapp:')) {
   process.exit(1);
 }
 
+if (channel === 'rcs' && !to.startsWith('rcs:')) {
+  console.error(
+    'Invalid RCS destination. --to must include the "rcs:" prefix, e.g. "rcs:+16505551234".'
+  );
+  process.exit(1);
+}
+
 if ((channel === 'sms' || channel === 'rcs' || channel === 'whatsapp') && !message) {
   console.error(`--message is required for ${channel.toUpperCase()} channel.`);
   process.exit(1);
