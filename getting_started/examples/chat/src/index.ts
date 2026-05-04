@@ -44,7 +44,7 @@ const openai = new OpenAI({
 });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY, memoryMode: 'always' });
+const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
 
 // Register channel
 tac.registerChannel(chatChannel);

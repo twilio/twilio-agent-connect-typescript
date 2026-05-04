@@ -28,7 +28,7 @@ export interface BaseChannelOptions {
   /**
    * Memory retrieval mode for this channel. Default is "never".
    *
-   * - "never": Memory is not automatically retrieved. Use `tac.retrieveMemory()` in callbacks for conditional retrieval.
+   * - "never": Memory is not automatically retrieved. Use the memory TAC tool or manually call `tac.retrieveMemory()` in callbacks for conditional retrieval.
    * - "always": Memory is automatically retrieved for every inbound message and available in `onMessageReady` callback.
    */
   memoryMode?: MemoryMode;
