@@ -267,10 +267,9 @@ describe('Reconcile participants', () => {
     expect(result).not.toBeNull();
     expect(stubLookupProfile).toHaveBeenCalledTimes(1);
     expect(stubCreateProfile).toHaveBeenCalledTimes(1);
-    expect(stubCreateProfile).toHaveBeenCalledWith(
-      expect.any(String),
-      { Contact: { phone: CUSTOMER_ADDR } }
-    );
+    expect(stubCreateProfile).toHaveBeenCalledWith({
+      Contact: { phone: CUSTOMER_ADDR },
+    });
     const putBody = JSON.parse(mockAdapter.history.put[0]!.data);
     expect(putBody.profileId).toBe('mem_profile_01new');
   });

@@ -469,7 +469,7 @@ export abstract class MessagingChannel extends BaseChannel {
       // Gate on `aiAgentInfo` (persistent across turns) — `authorInfo` is
       // overwritten from every webhook so it's not a reliable "already
       // reconciled" signal.
-      if (!session.aiAgentInfo || !session.authorInfo) {
+      if (!session.aiAgentInfo) {
         const resolved = await this.reconcileParticipants(conversationId);
         if (!resolved) {
           this.logger.warn(

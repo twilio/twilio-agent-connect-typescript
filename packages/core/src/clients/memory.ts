@@ -173,9 +173,7 @@ export class MemoryClient extends BaseClient {
    * @returns Canonical profile ID (`mem_profile_…`)
    * @throws Error if the API request fails or the response is missing an `id` field
    */
-  public async createProfile(
-    traits: Record<string, Record<string, unknown>>
-  ): Promise<string> {
+  public async createProfile(traits: Record<string, Record<string, unknown>>): Promise<string> {
     const url = `/v1/Stores/${this.storeId}/Profiles`;
     const requestBody = { traits };
 
