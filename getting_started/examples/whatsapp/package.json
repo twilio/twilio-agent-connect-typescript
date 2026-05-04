@@ -9,9 +9,9 @@
     "start": "tsx watch src/index.ts | pino-pretty"
   },
   "dependencies": {
-    "twilio-agent-connect": "file:../../../..",
+    "twilio-agent-connect": "file:../../..",
     "dotenv": "^16.4.5",
-    "openai": "^4.73.0"
+    "@openai/agents": "^0.8.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

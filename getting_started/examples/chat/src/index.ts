@@ -16,7 +16,7 @@
  */
 
 import { config } from 'dotenv';
-import OpenAI from 'openai';
+import { Agent, AgentInputItem, run, setTracingDisabled } from '@openai/agents';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
@@ -36,13 +36,9 @@ import {
 
 // Load environment variables from parent directory
 config({ path: '../.env' });
+setTracingDisabled(true);
 
 const CHAT_IDENTITY = 'ai-agent';
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
@@ -50,8 +46,7 @@ const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
 // Register channel
 tac.registerChannel(chatChannel);
 
-// Store conversation history per conversation
-const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
+const conversationHistory: Record<string, AgentInputItem[]> = {};
 
 const BASE_SYSTEM_PROMPT =
   "You're an assistant chatting with a user through a web chat interface. " +
@@ -70,52 +65,28 @@ async function handleMessageReady(params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<string> {
+}): Promise<string | undefined> {
   const { conversationId, message, memory, session } = params;
   const convId = conversationId as string;
 
   console.log(`Processing chat message for conversation ${convId}`);
 
-  try {
-    // Initialize conversation history if needed
-    if (!conversationMessages[convId]) {
-      conversationMessages[convId] = [];
-    }
+  const memoryContext = MemoryPromptBuilder.build(memory, session);
+  const instructions = BASE_SYSTEM_PROMPT + (memoryContext && `\n\n${memoryContext}`);
 
-    // Add user message to history
-    conversationMessages[convId].push({
-      role: 'user',
-      content: message,
-    });
+  const agent = new Agent({
+    name: 'Chat Assistant',
+    instructions,
+    model: 'gpt-5.4-mini',
+  });
 
-    // Build system prompt with memory context
-    const memoryContext = MemoryPromptBuilder.build(memory, session);
-    const systemContent = BASE_SYSTEM_PROMPT + (memoryContext && `\n\n${memoryContext}`);
+  const history = conversationHistory[convId] ?? [];
+  const agentInput: AgentInputItem[] = [...history, { role: 'user', content: message }];
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemContent },
-      ...conversationMessages[convId],
-    ];
+  const result = await run(agent, agentInput);
 
-    // Call OpenAI
-    const response = await openai.chat.completions.create({
-      model: 'gpt-5.4-mini',
-      messages,
-    });
-
-    const llmResponse = response.choices[0]?.message?.content ?? '';
-
-    // Add assistant response to history
-    conversationMessages[convId].push({
-      role: 'assistant',
-      content: llmResponse,
-    });
-
-    return llmResponse;
-  } catch (error) {
-    console.error(`Error processing message for conversation ${convId}:`, error);
-    return 'Sorry, I encountered an error processing your message.';
-  }
+  conversationHistory[convId] = result.history;
+  return result.finalOutput;
 }
 
 // Register message handler
@@ -124,7 +95,7 @@ tac.onMessageReady(handleMessageReady);
 // Register conversation ended handler
 tac.onConversationEnded(({ session }) => {
   console.log(`Chat conversation ${session.conversationId} ended`);
-  delete conversationMessages[session.conversationId];
+  delete conversationHistory[session.conversationId];
 });
 
 // Get __dirname equivalent for ESM

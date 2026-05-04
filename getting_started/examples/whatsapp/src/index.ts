@@ -13,7 +13,7 @@
  */
 
 import { config } from 'dotenv';
-import OpenAI from 'openai';
+import { Agent, AgentInputItem, run, setTracingDisabled } from '@openai/agents';
 import {
   TAC,
   TACConfig,
@@ -21,15 +21,15 @@ import {
   ConversationId,
   ProfileId,
   TACServer,
+  TACMemoryResponse,
+  ConversationSession,
+  ChannelType,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // Load environment variables from parent directory
 config({ path: '../.env' });
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+setTracingDisabled(true);
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
@@ -38,8 +38,7 @@ const whatsappChannel = new WhatsAppChannel(tac);
 // Register channel
 tac.registerChannel(whatsappChannel);
 
-// Store conversation history per conversation
-const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
+const conversationHistory: Record<string, AgentInputItem[]> = {};
 
 const SYSTEM_INSTRUCTIONS =
   'You are a friendly, helpful AI customer service agent. ' +
@@ -51,49 +50,33 @@ async function handleMessageReady(params: {
   profileId: ProfileId | undefined;
   message: string;
   author: string;
-}): Promise<string> {
-  const { conversationId, message } = params;
+  memory: TACMemoryResponse | undefined;
+  session: ConversationSession;
+  channel: ChannelType;
+}): Promise<string | undefined> {
+  const { conversationId, message, memory, session } = params;
   const convId = conversationId as string;
 
-  try {
-    // Initialize conversation history if needed
-    if (!conversationMessages[convId]) {
-      conversationMessages[convId] = [];
-    }
+  const memoryContext = MemoryPromptBuilder.build(memory, session);
+  const instructions = SYSTEM_INSTRUCTIONS + (memoryContext && `\n\n${memoryContext}`);
 
-    // Add user message to history
-    conversationMessages[convId].push({
-      role: 'user',
-      content: message,
-    });
+  const agent = new Agent({
+    name: 'WhatsApp Customer Service Agent',
+    instructions,
+    model: 'gpt-5.4-mini',
+  });
 
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_INSTRUCTIONS },
-      ...conversationMessages[convId],
-    ];
+  const history = conversationHistory[convId] ?? [];
+  const agentInput: AgentInputItem[] = [...history, { role: 'user', content: message }];
 
-    // Call OpenAI
-    const response = await openai.chat.completions.create({
-      model: 'gpt-5.4-mini',
-      messages,
-    });
+  const result = await run(agent, agentInput);
 
-    const llmResponse = response.choices[0]?.message?.content ?? '';
+  conversationHistory[convId] = result.history;
 
-    // Add assistant response to history
-    conversationMessages[convId].push({
-      role: 'assistant',
-      content: llmResponse,
-    });
+  console.log(`[${convId}] Customer: ${message}`);
+  console.log(`[${convId}] Agent: ${result.finalOutput ?? ''}`);
 
-    console.log(`[${convId}] Customer: ${message}`);
-    console.log(`[${convId}] Agent: ${llmResponse}`);
-
-    return llmResponse;
-  } catch (error) {
-    console.error(`Error processing WhatsApp message for conversation ${convId}:`, error);
-    return 'Sorry, I encountered an error processing your message.';
-  }
+  return result.finalOutput;
 }
 
 // Register message handler
