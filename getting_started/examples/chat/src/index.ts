@@ -16,7 +16,7 @@
  */
 
 import { config } from 'dotenv';
-import OpenAI from 'openai';
+import { Agent, AgentInputItem, run, setTracingDisabled } from '@openai/agents';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
@@ -31,17 +31,14 @@ import {
   ConversationId,
   ChannelType,
   ProfileId,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // Load environment variables from parent directory
 config({ path: '../.env' });
+setTracingDisabled(true);
 
 const CHAT_IDENTITY = 'ai-agent';
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
@@ -49,13 +46,13 @@ const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
 // Register channel
 tac.registerChannel(chatChannel);
 
-// Store conversation history per conversation
-const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
+const conversationHistory: Record<string, AgentInputItem[]> = {};
 
-const SYSTEM_MESSAGE: OpenAI.Chat.ChatCompletionSystemMessageParam = {
-  role: 'system',
-  content: "You're a helpful assistant chatting with a user through a web chat interface.",
-};
+const BASE_SYSTEM_PROMPT =
+  "You're an assistant chatting with a user through a web chat interface. " +
+  'Keep responses short and conversational. Do not use markdown, asterisks, ' +
+  'bullets, or emojis — the chat UI renders messages as plain text, so markdown ' +
+  'syntax will appear as literal punctuation.';
 
 /**
  * Handle incoming messages from chat
@@ -68,92 +65,28 @@ async function handleMessageReady(params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<string> {
-  const { conversationId, message, memory } = params;
+}): Promise<string | undefined> {
+  const { conversationId, message, memory, session } = params;
   const convId = conversationId as string;
 
   console.log(`Processing chat message for conversation ${convId}`);
 
-  try {
-    // Initialize conversation history if needed
-    if (!conversationMessages[convId]) {
-      conversationMessages[convId] = [SYSTEM_MESSAGE];
-    }
+  const memoryContext = MemoryPromptBuilder.build(memory, session);
+  const instructions = BASE_SYSTEM_PROMPT + (memoryContext && `\n\n${memoryContext}`);
 
-    // Build user message with memory context
-    let userMessage = message;
+  const agent = new Agent({
+    name: 'Chat Assistant',
+    instructions,
+    model: 'gpt-5.4-mini',
+  });
 
-    // Add memory context if available
-    if (memory) {
-      const memoryContext: string[] = [];
+  const history = conversationHistory[convId] ?? [];
+  const agentInput: AgentInputItem[] = [...history, { role: 'user', content: message }];
 
-      // Add observations
-      if (memory.observations && memory.observations.length > 0) {
-        memoryContext.push('Context about the user:');
-        memory.observations.forEach(obs => {
-          memoryContext.push(`- ${obs.content}`);
-        });
-      }
+  const result = await run(agent, agentInput);
 
-      // Add summaries
-      if (memory.summaries && memory.summaries.length > 0) {
-        memoryContext.push('Previous conversation summaries:');
-        memory.summaries.forEach(summary => {
-          memoryContext.push(`- ${summary.content}`);
-        });
-      }
-
-      // Add recent message history
-      if (memory.communications && memory.communications.length > 0) {
-        memoryContext.push('Recent message history:');
-        const recentComms = memory.communications.slice(-10);
-        for (const comm of recentComms) {
-          let role = 'Unknown';
-          if (comm.author?.type === 'CUSTOMER') {
-            role = 'User';
-          } else if (
-            comm.author?.type === 'AI_AGENT' ||
-            comm.author?.type === 'HUMAN_AGENT' ||
-            comm.author?.type === 'AGENT'
-          ) {
-            role = 'Assistant';
-          }
-          const content = comm.content?.text ?? '';
-          memoryContext.push(`${role}: ${content}`);
-        }
-      }
-
-      // Prepend memory context to user message
-      if (memoryContext.length > 0) {
-        userMessage = `${memoryContext.join('\n')}\n\nUser message: ${message}`;
-      }
-    }
-
-    // Add user message to history
-    conversationMessages[convId].push({
-      role: 'user',
-      content: userMessage,
-    });
-
-    // Call OpenAI
-    const response = await openai.chat.completions.create({
-      model: 'gpt-5.4-mini',
-      messages: conversationMessages[convId],
-    });
-
-    const llmResponse = response.choices[0]?.message?.content ?? '';
-
-    // Add assistant response to history
-    conversationMessages[convId].push({
-      role: 'assistant',
-      content: llmResponse,
-    });
-
-    return llmResponse;
-  } catch (error) {
-    console.error(`Error processing message for conversation ${convId}:`, error);
-    return 'Sorry, I encountered an error processing your message.';
-  }
+  conversationHistory[convId] = result.history;
+  return result.finalOutput;
 }
 
 // Register message handler
@@ -162,7 +95,7 @@ tac.onMessageReady(handleMessageReady);
 // Register conversation ended handler
 tac.onConversationEnded(({ session }) => {
   console.log(`Chat conversation ${session.conversationId} ended`);
-  delete conversationMessages[session.conversationId];
+  delete conversationHistory[session.conversationId];
 });
 
 // Get __dirname equivalent for ESM

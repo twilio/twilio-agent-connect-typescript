@@ -14,7 +14,7 @@
 
 import { parseArgs } from 'node:util';
 import { config } from 'dotenv';
-import OpenAI from 'openai';
+import { Agent, AgentInputItem, run, setTracingDisabled } from '@openai/agents';
 import {
   TAC,
   TACConfig,
@@ -28,6 +28,7 @@ import {
   TACMemoryResponse,
   ConversationSession,
   TACServer,
+  MemoryPromptBuilder,
 } from 'twilio-agent-connect';
 
 // ---------------------------------------------------------------------------
@@ -87,8 +88,7 @@ if ((channel === 'sms' || channel === 'rcs' || channel === 'whatsapp') && !messa
 // ---------------------------------------------------------------------------
 
 config({ path: '../.env' });
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+setTracingDisabled(true);
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac);
@@ -112,65 +112,16 @@ if (whatsappChannel) {
 // Conversation state
 // ---------------------------------------------------------------------------
 
-const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
+const conversationHistory: Record<string, AgentInputItem[]> = {};
 
-const SYSTEM_MESSAGE: OpenAI.Chat.ChatCompletionSystemMessageParam = {
-  role: 'system',
-  content:
-    'You are a friendly, helpful AI assistant. You initiated this outbound ' +
-    'conversation by reaching out to the customer. When the customer first ' +
-    'speaks (e.g., "hello?"), introduce yourself and explain why you are ' +
-    'calling — for example: "Hi! This is an AI assistant calling on behalf ' +
-    'of Acme Corp about your recent order." Be conversational and helpful. ' +
-    'You do not have the ability to transfer calls or connect to human agents. ' +
-    'Only offer capabilities you actually have.',
-};
-
-function buildMemoryMessage(
-  memoryResponse: TACMemoryResponse | null,
-  context: ConversationSession
-): OpenAI.Chat.ChatCompletionSystemMessageParam | null {
-  const sections: string[] = [];
-
-  if (context.profile?.traits) {
-    const traitLines: string[] = [];
-    for (const [key, value] of Object.entries(context.profile.traits)) {
-      if (value !== null && value !== undefined) {
-        traitLines.push(
-          `- ${key}: ${typeof value === 'object' ? JSON.stringify(value) : (value as string | number | boolean)}`
-        );
-      }
-    }
-    if (traitLines.length > 0) {
-      sections.push(
-        ['## Customer Profile', 'Information about this customer:', ...traitLines].join('\n')
-      );
-    }
-  }
-
-  if (memoryResponse && memoryResponse.observations.length > 0) {
-    const lines = ['## Key Observations'];
-    for (const obs of memoryResponse.observations) {
-      lines.push(`- ${obs.content}`);
-    }
-    sections.push(lines.join('\n'));
-  }
-
-  if (memoryResponse && memoryResponse.summaries.length > 0) {
-    const lines = ['## Past Conversation Summaries'];
-    for (const summary of memoryResponse.summaries) {
-      lines.push(`- ${summary.content}`);
-    }
-    sections.push(lines.join('\n'));
-  }
-
-  if (sections.length === 0) return null;
-
-  return {
-    role: 'system',
-    content: '# Customer Context\n\n' + sections.join('\n\n'),
-  };
-}
+const SYSTEM_INSTRUCTIONS =
+  'You are a friendly, helpful AI assistant. You initiated this outbound ' +
+  'conversation by reaching out to the customer. When the customer first ' +
+  "speaks (e.g., 'hello?'), introduce yourself and explain why you are " +
+  "calling -- for example: 'Hi! This is an AI assistant calling on behalf " +
+  "of Acme Corp about your recent order.' Be conversational and helpful. " +
+  'You do not have the ability to transfer calls or connect to human agents. ' +
+  'Only offer capabilities you actually have.';
 
 // ---------------------------------------------------------------------------
 // Message handler — called when the customer replies
@@ -184,34 +135,28 @@ async function handleMessageReady(params: {
   memory: TACMemoryResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
-}): Promise<string> {
+}): Promise<string | undefined> {
   const convId = params.conversationId as string;
-
-  if (!conversationMessages[convId]) {
-    conversationMessages[convId] = [];
-  }
-
-  conversationMessages[convId].push({ role: 'user', content: params.message });
   console.log(`[${convId}] Customer: ${params.message}`);
 
-  const memoryMessage = buildMemoryMessage(params.memory ?? null, params.session);
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    SYSTEM_MESSAGE,
-    ...(memoryMessage ? [memoryMessage] : []),
-    ...conversationMessages[convId],
-  ];
+  const memoryContext = MemoryPromptBuilder.build(params.memory, params.session);
+  const instructions = SYSTEM_INSTRUCTIONS + (memoryContext && `\n\n${memoryContext}`);
 
-  const response = await openai.chat.completions.create({
+  const agent = new Agent({
+    name: 'Outbound Agent',
+    instructions,
     model: 'gpt-5.4-mini',
-    messages,
   });
 
-  const llmResponse = response.choices[0]?.message?.content ?? '';
+  const history = conversationHistory[convId] ?? [];
+  const agentInput: AgentInputItem[] = [...history, { role: 'user', content: params.message }];
 
-  conversationMessages[convId].push({ role: 'assistant', content: llmResponse });
-  console.log(`[${convId}] Agent: ${llmResponse}`);
+  const result = await run(agent, agentInput);
 
-  return llmResponse;
+  conversationHistory[convId] = result.history;
+  console.log(`[${convId}] Agent: ${result.finalOutput ?? ''}`);
+
+  return result.finalOutput;
 }
 
 tac.onMessageReady(handleMessageReady);
@@ -220,9 +165,7 @@ tac.onMessageReady(handleMessageReady);
 // Server startup & outbound initiation
 // ---------------------------------------------------------------------------
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
-});
+const server = new TACServer(tac);
 
 server
   .start()

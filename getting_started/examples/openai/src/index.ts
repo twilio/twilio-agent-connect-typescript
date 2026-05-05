@@ -62,7 +62,11 @@ async function handleMessageReady(params: {
       content: message,
     });
 
-    const basePrompt = 'You are a helpful customer service agent.';
+    const basePrompt =
+      'You are a customer service agent speaking with a user over voice or SMS. ' +
+      'Keep responses short and conversational — a sentence or two. ' +
+      'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
+      'spoken aloud or sent as plain text.';
     const memoryContext = MemoryPromptBuilder.build(memoryResponse, context);
     const systemContent = basePrompt + (memoryContext && `\n\n${memoryContext}`);
 
@@ -94,12 +98,7 @@ async function handleMessageReady(params: {
 tac.onMessageReady(handleMessageReady);
 
 // Create and start server
-const server = new TACServer(tac, {
-  voice: {
-    host: '0.0.0.0',
-    port: 8000,
-  },
-});
+const server = new TACServer(tac);
 
 server
   .start()

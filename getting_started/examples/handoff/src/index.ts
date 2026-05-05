@@ -25,7 +25,7 @@ import {
   createStudioHandoffTool,
 } from 'twilio-agent-connect';
 
-config({ path: '../../.env' });
+config({ path: '../.env' });
 setTracingDisabled(true);
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
@@ -36,9 +36,12 @@ tac.registerChannel(voiceChannel);
 tac.registerChannel(smsChannel);
 
 const SYSTEM_INSTRUCTIONS =
-  'You are a helpful customer service agent. ' +
-  'If the user asks to speak with a human, or if you cannot resolve ' +
-  'their issue, use the handoff tool to transfer them to a human agent.';
+  'You are a customer service agent speaking with a user over voice or SMS. ' +
+  'Keep responses short and conversational — a sentence or two. ' +
+  'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
+  'spoken aloud or sent as plain text. ' +
+  'If the user asks to speak with a human, or if you cannot resolve their issue, ' +
+  'use the handoff tool to transfer them to a human agent.';
 
 // Example app-defined routing metadata attached to every handoff. Keys and
 // values are arbitrary — pick whatever your downstream system expects. For
@@ -84,9 +87,7 @@ async function handleMessageReady(params: {
 
 tac.onMessageReady(handleMessageReady);
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
-});
+const server = new TACServer(tac);
 
 server
   .start()

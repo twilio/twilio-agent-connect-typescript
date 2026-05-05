@@ -16,7 +16,11 @@ config({ path: '../.env' });
 
 const agent = new Agent({
   name: 'customer-service',
-  instructions: 'You are a helpful customer service agent.',
+  instructions:
+    'You are a customer service agent speaking with a user over voice or SMS. ' +
+    'Keep responses short and conversational — a sentence or two. ' +
+    'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
+    'spoken aloud or sent as plain text.',
   model: 'gpt-5.4-mini',
 });
 
@@ -109,12 +113,7 @@ tac.onInterrupt(({ conversationId, utteranceUntilInterrupt }) => {
   }
 });
 
-const server = new TACServer(tac, {
-  voice: {
-    host: '0.0.0.0',
-    port: 8000,
-  },
-});
+const server = new TACServer(tac);
 
 server
   .start()
