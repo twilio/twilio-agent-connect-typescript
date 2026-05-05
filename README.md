@@ -193,7 +193,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](CLAUDE.md).
 **Examples & Guides:**
 - **[Getting Started Guide](getting_started/)** - Examples and comprehensive documentation
 - **[OpenAI SDK Example](getting_started/examples/openai/)** - Complete multi-channel example with Voice, SMS, and Chat
-- **[WhatsApp Example](getting_started/examples/features/whatsapp/)** - WhatsApp channel with memory integration
+- **[WhatsApp Example](getting_started/examples/whatsapp/)** - WhatsApp channel with memory integration
 - **[Chat Example](getting_started/examples/chat/)** - Web chat integration example
 - **[ConversationRelay-Only Mode](getting_started/examples/relay-only/)** - Get started with voice using just ConversationRelay
 - **[Outbound Conversations](getting_started/examples/outbound/)** - Agent-initiated conversations example

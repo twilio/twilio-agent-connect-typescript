@@ -85,7 +85,8 @@ The `TACServer` class (`packages/server/src/lib/server.ts`) provides a productio
 
 ```typescript
 {
-  voice: { host: '0.0.0.0', port: 3000 },
+  host: '0.0.0.0',
+  port: 8000,
   webhookPaths: {
     sms: '/webhook',
     twiml: '/twiml',
