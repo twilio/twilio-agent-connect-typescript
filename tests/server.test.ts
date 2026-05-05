@@ -506,7 +506,7 @@ describe('TACServer messaging channel auto-discovery', () => {
 
     server = new TACServer(tac, {
       development: true,
-      voice: { port: currentPort },
+      port: currentPort,
     });
 
     await server.start();
