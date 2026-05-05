@@ -93,11 +93,16 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 - `TWILIO_REGION`: Twilio region subdomain for API routing
 
+### Optional (RCS Channel)
+
+- `TWILIO_RCS_SENDER_ID`: RCS Sender ID (required for the `rcs/` example and RCS outbound, e.g., `rcs:your_sender_id`)
+
 ## Other Examples
 
 - **[WhatsApp Example](examples/features/whatsapp/)** - WhatsApp channel with memory integration
 - **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel
-- **[Outbound Example](examples/outbound/)** - Agent-initiated SMS, WhatsApp, and Voice conversations
+- **[RCS Example](examples/rcs/)** - RCS (Rich Communication Services) channel using the OpenAI Agents SDK
+- **[Outbound Example](examples/outbound/)** - Agent-initiated outbound conversations via SMS, RCS, WhatsApp, or Voice
 
 ## Next Steps
 

@@ -11,6 +11,7 @@ describe('package exports', () => {
   it('exports channel classes', () => {
     expect(tac.VoiceChannel).toBeDefined();
     expect(tac.SMSChannel).toBeDefined();
+    expect(tac.RCSChannel).toBeDefined();
     expect(tac.ChatChannel).toBeDefined();
     expect(tac.MessagingChannel).toBeDefined();
     expect(tac.BaseChannel).toBeDefined();

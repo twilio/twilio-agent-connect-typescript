@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestTAC } from './helpers/tac';
-import { TAC, TACConfig, SMSChannel, VoiceChannel } from '@twilio/tac-core';
+import { TAC, TACConfig, SMSChannel, RCSChannel, VoiceChannel } from '@twilio/tac-core';
 import { TACServer } from '@twilio/tac-server';
 import WebSocket from 'ws';
 
@@ -459,6 +459,74 @@ describe('TACServer idempotency token', () => {
         expect.objectContaining({ eventType: 'COMMUNICATION_CREATED' }),
         undefined
       );
+    });
+  });
+});
+
+describe('TACServer messaging channel auto-discovery', () => {
+  const getTestConfig = () => ({
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    rcsSenderId: 'rcs:test_agent',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  let tac: TAC;
+  let server: TACServer;
+  let currentPort: number;
+
+  beforeEach(async () => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+    mockValidateRequest.mockReturnValue(true);
+    currentPort = getNextPort();
+
+    const config = new TACConfig(getTestConfig());
+    tac = await createTestTAC(config);
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  it('fans a webhook out to a registered RCS channel when messagingChannels is omitted', async () => {
+    const smsChannel = new SMSChannel(tac);
+    const rcsChannel = new RCSChannel(tac);
+    tac.registerChannel(smsChannel);
+    tac.registerChannel(rcsChannel);
+
+    const rcsSpy = vi.spyOn(rcsChannel, 'processWebhook');
+    const smsSpy = vi.spyOn(smsChannel, 'processWebhook');
+
+    server = new TACServer(tac, {
+      development: true,
+      voice: { port: currentPort },
+    });
+
+    await server.start();
+
+    await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          author: { channel: 'RCS', address: 'rcs:+15551234567' },
+          content: { type: 'TEXT', text: 'hi' },
+        },
+      }),
+    });
+
+    await vi.waitFor(() => {
+      expect(rcsSpy).toHaveBeenCalled();
+      expect(smsSpy).toHaveBeenCalled();
     });
   });
 });

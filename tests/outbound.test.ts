@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SMSChannel, ChatChannel, VoiceChannel, TAC } from '@twilio/tac-core';
+import { SMSChannel, RCSChannel, ChatChannel, VoiceChannel, TAC } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import { createTestTAC } from './helpers/tac';
 
@@ -702,6 +702,152 @@ describe('Outbound Conversations', () => {
           conversationRelayConfig: { url: 'wss://example.com/ws' },
         })
       ).rejects.toThrow();
+    });
+  });
+
+  // =============================================================================
+  // RCS outbound
+  // =============================================================================
+
+  describe('RCSChannel.initiateOutboundConversation', () => {
+    const getRcsConfig = () => ({
+      ...getTestConfig(),
+      rcsSenderId: 'rcs:my_agent',
+    });
+
+    const mockRcsOutbound = (
+      adapter: MockAdapter,
+      convId: string,
+      opts?: {
+        toAddress?: string;
+        fromAddress?: string;
+        customerParticipantId?: string;
+        agentParticipantId?: string;
+      }
+    ) => {
+      const to = opts?.toAddress ?? 'rcs:+15559876543';
+      const from = opts?.fromAddress ?? 'rcs:my_agent';
+      const custId = opts?.customerParticipantId ?? 'PArcs_cust';
+      const agentId = opts?.agentParticipantId ?? 'PArcs_agent';
+
+      adapter.onPost(/\/v2\/Conversations$/).reply(200, {
+        id: convId,
+        accountId: 'ACtest123456789',
+        status: 'ACTIVE',
+      });
+
+      adapter.onGet(/\/Participants$/).reply(200, {
+        participants: [
+          {
+            id: custId,
+            conversationId: convId,
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'RCS', address: to }],
+          },
+          {
+            id: agentId,
+            conversationId: convId,
+            accountId: 'ACtest123456789',
+            type: 'AI_AGENT',
+            addresses: [{ channel: 'RCS', address: from }],
+          },
+        ],
+      });
+
+      adapter.onPost(/\/Actions$/).reply(202, {
+        id: `ACT_${convId}`,
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
+        conversationId: convId,
+        createdAt: '2024-01-01T00:00:00Z',
+      });
+    };
+
+    let tac: TAC;
+    let channel: RCSChannel;
+    let mockAdapter: MockAdapter;
+
+    beforeEach(async () => {
+      tac = await createTestTAC(getRcsConfig());
+      channel = new RCSChannel(tac);
+      mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+    });
+
+    afterEach(() => {
+      mockAdapter?.restore();
+    });
+
+    it('should create conversation and send initial RCS message', async () => {
+      mockRcsOutbound(mockAdapter, 'CHrcs_out');
+
+      const result = await channel.initiateOutboundConversation({
+        to: 'rcs:+15559876543',
+        message: 'Hello from RCS!',
+      });
+
+      expect(result.conversationId).toBe('CHrcs_out');
+      expect(result.session.channel).toBe('rcs');
+      expect(result.session.metadata?.direction).toBe('outbound');
+      expect(result.session.authorInfo?.address).toBe('rcs:+15559876543');
+      expect(result.session.aiAgentInfo?.address).toBe('rcs:my_agent');
+      expect(result.session.aiAgentInfo?.participantId).toBe('PArcs_agent');
+    });
+
+    it('should pass RCS participants in createConversation body', async () => {
+      let capturedBody: unknown;
+      mockAdapter.onPost(/\/v2\/Conversations$/).reply(config => {
+        capturedBody = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+        return [200, { id: 'CHrcs_inline', accountId: 'ACtest123456789', status: 'ACTIVE' }];
+      });
+
+      mockAdapter.onGet(/\/Participants$/).reply(200, {
+        participants: [
+          {
+            id: 'PArcs_cust_inline',
+            conversationId: 'CHrcs_inline',
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'RCS', address: 'rcs:+15559876543' }],
+          },
+          {
+            id: 'PArcs_agent_inline',
+            conversationId: 'CHrcs_inline',
+            accountId: 'ACtest123456789',
+            type: 'AI_AGENT',
+            addresses: [{ channel: 'RCS', address: 'rcs:my_agent' }],
+          },
+        ],
+      });
+
+      mockAdapter.onPost(/\/Actions$/).reply(202, {
+        id: 'ACT_rcs_inline',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
+        conversationId: 'CHrcs_inline',
+        createdAt: '2024-01-01T00:00:00Z',
+      });
+
+      await channel.initiateOutboundConversation({
+        to: 'rcs:+15559876543',
+        message: 'Test RCS participants',
+      });
+
+      expect(capturedBody).toMatchObject({
+        participants: [
+          { type: 'CUSTOMER', addresses: [{ channel: 'RCS', address: 'rcs:+15559876543' }] },
+          { type: 'AI_AGENT', addresses: [{ channel: 'RCS', address: 'rcs:my_agent' }] },
+        ],
+      });
+    });
+
+    it('should throw if rcsSenderId is not configured', async () => {
+      // Construct a TAC without rcsSenderId
+      const { rcsSenderId: _omitted, ...configWithoutSender } = getRcsConfig();
+      const tacWithoutSender = await createTestTAC(configWithoutSender);
+
+      // Instantiating RCSChannel itself throws — which is what we want users to see
+      expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId is required/);
     });
   });
 });

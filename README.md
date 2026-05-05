@@ -31,9 +31,9 @@ Seamlessly integrate with Twilio's Memory Store and Conversation Orchestrator to
 
 ## Key Features
 
-- **Messaging Channel Support**: Built-in webhook handling for SMS, WhatsApp, and Chat conversations
+- **Messaging Channel Support**: Built-in webhook handling for SMS, RCS, WhatsApp, and Chat conversations
 - **Voice Channel Support**: WebSocket protocol handling for Twilio Voice with ConversationRelay
-- **Outbound Conversations**: Agent-initiated conversations via SMS, WhatsApp, Chat, and Voice channels
+- **Outbound Conversations**: Agent-initiated conversations via SMS, RCS, WhatsApp, Chat, and Voice channels
 - **ConversationRelay-Only Mode**: Get started quickly with TAC's voice plumbing (TwiML, WebSocket, callbacks) before adding Conversation Orchestrator
 - **Memory Management**: Automatic integration with Twilio Memory for persistent user context
 - **Conversation Lifecycle**: Automatic tracking of conversation sessions and state
