@@ -43,24 +43,10 @@ Seamlessly integrate with Twilio's Memory Store and Conversation Orchestrator to
 
 ## Get Started
 
-To get started, set up your Node.js environment (Node.js 22.13.0 or newer required), and then install TAC SDK package.
-
-> [!IMPORTANT]
-> TAC packages are not yet published to npm. We recommend building your agent directly in this repository.
-
-### Build in This Repository
-
-Clone this repository and work within it:
+To get started, set up your Node.js environment (Node.js 22.13.0 or newer required), and then install the [TAC SDK package](https://www.npmjs.com/package/twilio-agent-connect):
 
 ```bash
-git clone https://github.com/twilio/twilio-agent-connect-typescript.git
-cd twilio-agent-connect-typescript
-
-# Install dependencies
-npm install
-
-# Build packages
-npm run build
+npm install twilio-agent-connect
 ```
 
 ## Quick Examples
@@ -87,15 +73,15 @@ After completing setup, here's a minimal example to get started:
 
 Use the OpenAI SDK to build an AI agent that works across Voice and SMS channels with conversation memory and user context.
 
-First, install the required dependencies in the repository:
+First, install the required dependencies:
 
 ```bash
-npm install openai dotenv
+npm install twilio-agent-connect openai dotenv
 ```
 
 > **Note**: `dotenv` is optional — TAC works with environment variables from any source (`.env` files, Docker, Kubernetes, CI/CD, shell exports, etc.).
 
-Then create your application (e.g., in `getting_started/examples/` or your own directory):
+Then create your application:
 
 ```typescript
 import { config } from 'dotenv';
