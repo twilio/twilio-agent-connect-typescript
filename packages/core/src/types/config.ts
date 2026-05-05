@@ -105,4 +105,3 @@ export const EnvironmentVariables = {
   TWILIO_REGION: 'TWILIO_REGION',
   TWILIO_STUDIO_HANDOFF_FLOW_SID: 'TWILIO_STUDIO_HANDOFF_FLOW_SID',
 } as const;
-
