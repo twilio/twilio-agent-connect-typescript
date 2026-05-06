@@ -276,13 +276,11 @@ ls -la getting_started/examples/openai/node_modules/@twilio/
 6. **Run linting and formatting before commits**
 7. **Write tests for new features**
 
-## Publishing (Future)
+## Publishing
 
-When ready to publish:
+The SDK is published to npm as `twilio-agent-connect`.
 
-1. **Update versions** in package.json files
-2. **Build all packages**: `npm run build`
+1. **Update the version** in the root `package.json`
+2. **Build** from the repository root: `npm run build`
 3. **Run tests**: `npm test`
-4. **Publish**: `npm publish --workspaces`
-
-Examples will continue to work with published versions by changing `*` to actual version numbers.
+4. **Publish** from the repository root: `npm publish`
