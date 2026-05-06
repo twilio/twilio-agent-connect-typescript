@@ -13,7 +13,7 @@ This guide will walk you through setting up and running your first TAC applicati
 
 You need to create Twilio Conversation and Memory services before using TAC.
 
-Follow the [TAC Quickstart](https://www.twilio.com/docs/platform/tac/quickstart) for step-by-step instructions on creating these services via the [Twilio Console](https://1console.twilio.com/).
+Follow the [TAC Quickstart](https://www.twilio.com/docs/conversations/agent-connect/quickstart) for step-by-step instructions on creating these services via the [Twilio Console](https://1console.twilio.com/).
 
 **Required Services:**
 
