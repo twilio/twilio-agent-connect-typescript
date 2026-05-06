@@ -14,11 +14,11 @@
   <div align="center">
     <a href="https://github.com/twilio/twilio-agent-connect-typescript"><img alt="Node.js" src="https://img.shields.io/badge/Node.js-22.13+-339933.svg"/></a>
     <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
-    <a href="https://www.twilio.com/docs/platform/tac/quickstart"><img alt="Getting Started" src="https://img.shields.io/badge/Getting%20Started-Quickstart-F22F46.svg"/></a>
+    <a href="https://www.twilio.com/docs/conversations/agent-connect/quickstart"><img alt="Getting Started" src="https://img.shields.io/badge/Getting%20Started-Quickstart-F22F46.svg"/></a>
   </div>
   
   <p>
-    <a href="https://www.twilio.com/docs/platform/tac/overview">Documentation</a>
+    <a href="https://www.twilio.com/docs/conversations/agent-connect">Documentation</a>
     ◆ <a href="https://github.com/twilio/twilio-agent-connect-python">Python SDK</a>
     ◆ <a href="https://github.com/twilio/twilio-agent-connect-typescript">TypeScript SDK</a>
     ◆ <a href="getting_started/examples">Examples</a>
@@ -79,7 +79,7 @@ make setup  # Open http://localhost:8080
 
 **Option 2: Manual Setup**
 
-You can also create a Memory Store and Conversation Configuration manually through the [Twilio Console](https://1console.twilio.com). For a full walkthrough — credentials, Console navigation, and webhook configuration — see the [TAC Quickstart](https://www.twilio.com/docs/platform/tac/quickstart).
+You can also create a Memory Store and Conversation Configuration manually through the [Twilio Console](https://1console.twilio.com). For a full walkthrough — credentials, Console navigation, and webhook configuration — see the [TAC Quickstart](https://www.twilio.com/docs/conversations/agent-connect/quickstart).
 
 ---
 
