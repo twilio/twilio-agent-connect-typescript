@@ -57,6 +57,7 @@ Examples use `*` for TAC dependencies:
 ```
 
 This means:
+
 - ✅ Examples always use your local workspace packages
 - ✅ No need to publish during development
 - ✅ Changes are reflected immediately after rebuild
@@ -112,12 +113,14 @@ npm run example:getting-started  # OpenAI example (SMS + Voice)
 ### 5. Adding New Packages
 
 1. **Create package directory**:
+
    ```bash
    mkdir packages/my-new-package
    cd packages/my-new-package
    ```
 
 2. **Create package.json**:
+
    ```json
    {
      "name": "@twilio/tac-my-new-package",
@@ -136,6 +139,7 @@ npm run example:getting-started  # OpenAI example (SMS + Voice)
    ```
 
 3. **Create tsconfig.json**:
+
    ```json
    {
      "extends": "../../tsconfig.json",
@@ -143,9 +147,7 @@ npm run example:getting-started  # OpenAI example (SMS + Voice)
        "outDir": "./dist",
        "rootDir": "./src"
      },
-     "references": [
-       { "path": "../types" }
-     ]
+     "references": [{ "path": "../types" }]
    }
    ```
 
@@ -158,12 +160,14 @@ npm run example:getting-started  # OpenAI example (SMS + Voice)
 ### 6. Adding New Examples
 
 1. **Create example directory**:
+
    ```bash
    mkdir getting_started/examples/my-example
    cd getting_started/examples/my-example
    ```
 
 2. **Create package.json with local dependencies**:
+
    ```json
    {
      "name": "my-example",
@@ -219,6 +223,7 @@ npm run example:sms  # Uses your changes!
 ## TypeScript Project References
 
 We use TypeScript project references for:
+
 - **Fast builds**: Only rebuild changed packages
 - **Type checking**: Cross-package type safety
 - **IDE support**: Go-to-definition across packages
@@ -235,6 +240,7 @@ getting_started/examples/openai → packages/server → packages/core
 ### "Cannot find module '@twilio/tac-core'"
 
 **Solution**: Build packages first
+
 ```bash
 npm run build
 ```
@@ -242,6 +248,7 @@ npm run build
 ### "Type errors in examples"
 
 **Solution**: Ensure TypeScript references are correct
+
 ```bash
 npm run typecheck
 ```
@@ -249,6 +256,7 @@ npm run typecheck
 ### "Changes not reflected in examples"
 
 **Solution**: Rebuild and restart
+
 ```bash
 npm run build
 # Restart your example
@@ -257,6 +265,7 @@ npm run build
 ### "Examples won't start"
 
 **Solution**: Check workspace setup
+
 ```bash
 # From root
 npm install
@@ -278,9 +287,12 @@ ls -la getting_started/examples/openai/node_modules/@twilio/
 
 ## Publishing
 
-The SDK is published to npm as `twilio-agent-connect`.
+The SDK is published to npm as `twilio-agent-connect` via CI when a GitHub Release is created.
 
-1. **Update the version** in the root `package.json`
-2. **Build** from the repository root: `npm run build`
-3. **Run tests**: `npm test`
-4. **Publish** from the repository root: `npm publish`
+1. Bump the version with `npm version <major|minor|patch>` and open a PR
+2. After merging, go to [Releases](https://github.com/twilio/twilio-agent-connect-typescript/releases/new)
+3. Create a new tag matching the version (e.g. `v1.2.3`)
+4. Click "Generate release notes" for a changelog
+5. Publish the release
+6. The workflow runs tests (Node 22/24), then waits for `npm` environment approval
+7. After approval, the package is published to npm with provenance
