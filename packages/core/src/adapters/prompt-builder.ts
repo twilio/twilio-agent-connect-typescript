@@ -101,11 +101,11 @@ export class MemoryPromptBuilder {
    * Appends memory to systemPrompt if available. Always returns a string.
    * Eliminates the need for manual if/else checks when combining prompts.
    *
-   * **Note:** Empty strings (`''`) are treated as "no system prompt" (same as null/undefined).
-   * This matches the behavior of the manual if/else pattern and Python SDK implementation.
+   * **Note:** Empty strings and whitespace-only strings are treated as "no system prompt"
+   * (same as null/undefined). Whitespace is automatically trimmed from systemPrompt.
    *
-   * @param systemPrompt - Base system prompt for the LLM. Empty string, null, and undefined
-   *                       are all treated as "no system prompt". Optional.
+   * @param systemPrompt - Base system prompt for the LLM. Empty string, whitespace-only,
+   *                       null, and undefined are all treated as "no system prompt". Optional.
    * @param memoryResponse - Memory data from TAC.retrieveMemory(). Optional.
    * @param context - Conversation session containing profile data. Optional.
    * @param options - Configuration options for filtering profile traits. Optional.
@@ -121,9 +121,10 @@ export class MemoryPromptBuilder {
    * // After (compose handles it)
    * const systemPrompt = MemoryPromptBuilder.compose(basePrompt, memoryResponse, context);
    *
-   * // Empty strings are treated as "no prompt"
-   * compose('', memory, context);  // Returns just memory content (no prefix)
-   * compose('   ', memory, context);  // Returns '   \n\nmemory' (whitespace preserved)
+   * // Empty strings and whitespace are treated as "no prompt"
+   * MemoryPromptBuilder.compose('', memoryResponse, context);      // Returns just memory
+   * MemoryPromptBuilder.compose('   ', memoryResponse, context);   // Returns just memory (trimmed)
+   * MemoryPromptBuilder.compose(null, memoryResponse, context);    // Returns just memory
    * ```
    */
   static compose(
@@ -133,20 +134,21 @@ export class MemoryPromptBuilder {
     options?: AdapterOptions
   ): string {
     const memoryContent = this.build(memoryResponse, context, options);
+    const trimmedPrompt = systemPrompt?.trim() || null;
 
-    if (!systemPrompt && !memoryContent) {
+    if (!trimmedPrompt && !memoryContent) {
       return '';
     }
 
-    if (!systemPrompt) {
+    if (!trimmedPrompt) {
       return memoryContent;
     }
 
     if (!memoryContent) {
-      return systemPrompt;
+      return trimmedPrompt;
     }
 
-    return `${systemPrompt}\n\n${memoryContent}`;
+    return `${trimmedPrompt}\n\n${memoryContent}`;
   }
 
   private static assemblePrompt(sections: string[]): string {

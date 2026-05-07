@@ -293,16 +293,17 @@ Do not use markdown.`;
       expect(resultNull).toContain('# Customer Context');
     });
 
-    it('should handle whitespace-only base prompt by preserving it', () => {
+    it('should handle whitespace-only base prompt by trimming it', () => {
       const memory = createSampleMemoryResponse();
 
-      // Whitespace is preserved (matches Python behavior)
+      // Whitespace is trimmed and treated as "no prompt"
       const result = MemoryPromptBuilder.compose('   ', memory, null);
 
-      expect(result).toContain('   \n\n# Customer Context');
+      expect(result).toContain('# Customer Context');
       expect(result).toContain('Customer prefers email communication');
-      // Verify whitespace is at the start
-      expect(result.indexOf('   ')).toBe(0);
+      // Should start with memory content (no whitespace prefix)
+      expect(result).toMatch(/^# Customer Context/);
+      expect(result).not.toContain('   \n\n');
     });
   });
 });
