@@ -139,8 +139,11 @@ async function handleMessageReady(params: {
   const convId = params.conversationId as string;
   console.log(`[${convId}] Customer: ${params.message}`);
 
-  const memoryContext = MemoryPromptBuilder.build(params.memory, params.session);
-  const instructions = SYSTEM_INSTRUCTIONS + (memoryContext && `\n\n${memoryContext}`);
+  const instructions = MemoryPromptBuilder.compose(
+    SYSTEM_INSTRUCTIONS,
+    params.memory,
+    params.session
+  );
 
   const agent = new Agent({
     name: 'Outbound Agent',

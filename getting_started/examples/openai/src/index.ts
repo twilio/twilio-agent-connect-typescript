@@ -67,8 +67,7 @@ async function handleMessageReady(params: {
       'Keep responses short and conversational — a sentence or two. ' +
       'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
       'spoken aloud or sent as plain text.';
-    const memoryContext = MemoryPromptBuilder.build(memoryResponse, context);
-    const systemContent = basePrompt + (memoryContext && `\n\n${memoryContext}`);
+    const systemContent = MemoryPromptBuilder.compose(basePrompt, memoryResponse, context);
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemContent },

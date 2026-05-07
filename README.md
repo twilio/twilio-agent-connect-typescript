@@ -128,9 +128,8 @@ tac.onMessageReady(async ({ conversationId, message, memory, session }) => {
     conversationHistory[convId] = [];
   }
 
-  // Build system prompt with memory context
-  const memoryContext = MemoryPromptBuilder.build(memory, session);
-  const systemPrompt = SYSTEM_INSTRUCTIONS + (memoryContext ? `\n\n${memoryContext}` : '');
+  // Build system prompt with memory context using compose()
+  const systemPrompt = MemoryPromptBuilder.compose(SYSTEM_INSTRUCTIONS, memory, session);
 
   conversationHistory[convId].push({ role: 'user', content: message });
 
