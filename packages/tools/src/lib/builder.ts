@@ -74,7 +74,7 @@ export class TACTool<TParams = any, TResult = any> {
       const cause = err instanceof Error ? err.message : String(err);
       throw new Error(
         'toOpenAIAgentsSDKTool() failed to load @openai/agents. ' +
-          'Install with: npm install @openai/agents (requires zod ^4.0.0). ' +
+          'Install with: npm install @openai/agents. ' +
           `Underlying error: ${cause}`,
         { cause: err }
       );
