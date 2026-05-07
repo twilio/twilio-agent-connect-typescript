@@ -41,9 +41,8 @@ setTracingDisabled(true);
 const CHAT_IDENTITY = 'ai-agent';
 
 // Example-level setup check (not required by the SDK): the V1 Chat backend behind
-// this example needs a classic Conversations service attached to the CO
-// configuration. Enable it in Console → Conversation Orchestrator →
-// Conversation Configuration → Channel traffic → "+ Add messaging & chat traffic".
+// this example needs a classic Conversations service — with Chat enabled on it —
+// attached to the CO configuration.
 const configurationId = process.env.TWILIO_CONVERSATION_CONFIGURATION_ID!;
 const auth = Buffer.from(`${process.env.TWILIO_API_KEY}:${process.env.TWILIO_API_SECRET}`).toString('base64');
 const coConfig = await (
@@ -54,8 +53,8 @@ const coConfig = await (
 if (!coConfig.conversationsV1Bridge?.serviceId) {
   console.error(
     `Configuration '${configurationId}' has no classic Conversations service attached. ` +
-      'Enable it in Console → Conversation Orchestrator → Conversation Configuration → ' +
-      'Channel traffic → "+ Add messaging & chat traffic".'
+      'Attach one (with Chat enabled) via Console → Conversation Orchestrator → ' +
+      'Conversation Configuration → Channel traffic → "+ Add messaging & chat traffic".'
   );
   process.exit(1);
 }
