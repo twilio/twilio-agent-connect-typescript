@@ -17,14 +17,15 @@
 
 import { config } from 'dotenv';
 import { Agent, AgentInputItem, run, setTracingDisabled } from '@openai/agents';
-import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Twilio from 'twilio';
 import {
   TAC,
   TACConfig,
+  TACServer,
   ChatChannel,
   ConversationSession,
   TACMemoryResponse,
@@ -116,27 +117,17 @@ tac.onConversationEnded(({ session }) => {
   delete conversationHistory[session.conversationId];
 });
 
-// Get __dirname equivalent for ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const server = new TACServer(tac);
 
-// Create Fastify server
-const app = Fastify({
-  logger: {
-    level: 'info',
-  },
-});
-
-// Serve static files
-await app.register(fastifyStatic, {
+// Layer the chat UI routes onto the same Fastify instance TAC provides.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+await server.fastify.register(fastifyStatic, {
   root: path.join(__dirname, '..', 'public'),
   prefix: '/',
 });
 
-// Token endpoint for Conversations SDK
-app.post('/token', async (request, reply) => {
+server.fastify.post('/token', async (request: FastifyRequest, reply: FastifyReply) => {
   const { identity } = request.body as { identity: string };
-
   if (!identity) {
     await reply.code(400).send({ error: 'Identity is required' });
     return;
@@ -146,55 +137,14 @@ app.post('/token', async (request, reply) => {
   const apiKey = process.env.TWILIO_API_KEY;
   const apiSecret = process.env.TWILIO_API_SECRET;
   const serviceSid = process.env.TWILIO_CONVERSATIONS_SERVICE_SID;
-
   if (!accountSid || !apiKey || !apiSecret || !serviceSid) {
-    app.log.error('Missing required credentials for token generation');
     await reply.code(500).send({ error: 'Missing Twilio credentials' });
     return;
   }
 
-  const AccessToken = Twilio.jwt.AccessToken;
-  const ChatGrant = AccessToken.ChatGrant;
-
-  const token = new AccessToken(accountSid, apiKey, apiSecret, { identity, ttl: 3600 });
-  const chatGrant = new ChatGrant({ serviceSid });
-  token.addGrant(chatGrant);
-
+  const token = new Twilio.jwt.AccessToken(accountSid, apiKey, apiSecret, { identity, ttl: 3600 });
+  token.addGrant(new Twilio.jwt.AccessToken.ChatGrant({ serviceSid }));
   await reply.send({ token: token.toJwt() });
 });
 
-// Conversation Orchestrator webhook handler
-app.post('/webhook', async (request, reply) => {
-  try {
-    const payload = request.body as Record<string, unknown> | undefined;
-    const data = payload?.data as Record<string, unknown> | undefined;
-    app.log.info(
-      {
-        eventType: payload?.eventType,
-        conversationId: data?.conversationId,
-        author: data?.author,
-      },
-      '/webhook received'
-    );
-    // Fire-and-forget webhook processing
-    chatChannel.processWebhook(request.body).catch((err: unknown) => {
-      app.log.error({ err }, 'Error processing chat webhook');
-    });
-    await reply.send({ status: 'ok' });
-  } catch (error) {
-    app.log.error({ error }, 'Error handling chat webhook');
-    await reply.code(400).send({ status: 'error', message: String(error) });
-  }
-});
-
-// Start the server
-app
-  .listen({ host: '0.0.0.0', port: 8000 })
-  .then(() => {
-    console.log('TAC Chat Server started on http://0.0.0.0:8000');
-    console.log('Open http://localhost:8000 in your browser to test chat');
-  })
-  .catch(error => {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  });
+await server.start();
