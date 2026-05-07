@@ -42,7 +42,7 @@ export type LanguageAttributes = z.infer<typeof LanguageAttributesSchema>;
  */
 export const ConversationRelayAttributesSchema = z.object({
   /** WebSocket URL for ConversationRelay (required) */
-  url: z.string().url(),
+  url: z.url(),
 
   // Welcome greeting settings
   /** Initial greeting to play when call connects */
@@ -124,7 +124,7 @@ export type _SDKDriftGuards = {
  * Custom parameters passed via TwiML
  * Can contain any key-value pairs with unknown values
  */
-export const CustomParametersSchema = z.record(z.unknown());
+export const CustomParametersSchema = z.record(z.string(), z.unknown());
 
 export type CustomParameters = z.infer<typeof CustomParametersSchema>;
 
@@ -144,7 +144,7 @@ export const SetupMessageSchema = z.object({
   callType: z.string(),
   callStatus: z.string(),
   accountSid: z.string(),
-  customParameters: z.record(z.unknown()).optional(),
+  customParameters: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type SetupMessage = z.infer<typeof SetupMessageSchema>;
@@ -297,5 +297,5 @@ export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConv
   z.object({
     to: z.string().min(1, 'Recipient phone number is required'),
     conversationRelayConfig: ConversationRelayConfigSchema,
-    actionUrl: z.string().url().optional(),
+    actionUrl: z.url().optional(),
   });

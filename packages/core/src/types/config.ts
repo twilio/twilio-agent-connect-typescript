@@ -47,7 +47,7 @@ export const TACConfigSchema = z.object({
     .string()
     .regex(/^whatsapp:\+\d+$/, 'WhatsApp number must be in format: whatsapp:+1234567890')
     .optional(),
-  memoryConfig: TwilioMemoryConfigSchema.default({}),
+  memoryConfig: TwilioMemoryConfigSchema.prefault({}),
   conversationConfigurationId: z
     .string()
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')

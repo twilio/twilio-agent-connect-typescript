@@ -5,7 +5,7 @@ import { z } from 'zod';
  */
 export const JSONSchemaSchema = z.object({
   type: z.enum(['object', 'string', 'number', 'boolean', 'array']),
-  properties: z.record(z.any()).optional(),
+  properties: z.record(z.string(), z.any()).optional(),
   required: z.array(z.string()).optional(),
   items: z.any().optional(),
   enum: z.array(z.any()).optional(),
@@ -62,7 +62,7 @@ export const ToolExecutionResultSchema = z.object({
   success: z.boolean(),
   data: z.any().optional(),
   error: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type ToolExecutionResult = z.infer<typeof ToolExecutionResultSchema>;

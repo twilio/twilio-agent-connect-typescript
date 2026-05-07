@@ -144,15 +144,13 @@ export type ActionTextContent = z.infer<typeof ActionTextContentSchema>;
  * `messagingServiceSid`, `statusCallback`, `Attributes`) can be set by callers and
  * will be forwarded as-is.
  */
-export const ActionChannelSettingsSchema = z
-  .object({
-    channelId: z.string().optional(),
-    // TODO(conv-orch): Drop `chatService` once the Actions API resolves the V1 Chat
-    // service SID server-side. Confirmed this should not be required client-side;
-    // keep the field until the server-side fix ships.
-    chatService: z.string().optional(),
-  })
-  .passthrough();
+export const ActionChannelSettingsSchema = z.looseObject({
+  channelId: z.string().optional(),
+  // TODO(conv-orch): Drop `chatService` once the Actions API resolves the V1 Chat
+  // service SID server-side. Confirmed this should not be required client-side;
+  // keep the field until the server-side fix ships.
+  chatService: z.string().optional(),
+});
 
 export type ActionChannelSettings = z.infer<typeof ActionChannelSettingsSchema>;
 
@@ -232,7 +230,7 @@ export const ConversationSessionSchema = z.object({
    */
   aiAgentInfo: AuthorInfoSchema.optional(),
   profile: z.custom<Profile>().optional(),
-  metadata: z.record(z.unknown()).optional().default({}),
+  metadata: z.record(z.string(), z.unknown()).optional().default({}),
   /**
    * Pending handoff payload set by the handoff tool. Voice channel sends
    * this as a WS "end" message after the LLM's final response.
@@ -341,7 +339,7 @@ export type StatusTimeouts = z.infer<typeof StatusTimeoutsSchema>;
 export const CaptureRuleSchema = z.object({
   from: z.string(),
   to: z.string(),
-  metadata: z.record(z.string()).nullable().optional(),
+  metadata: z.record(z.string(), z.string()).nullable().optional(),
 });
 
 export type CaptureRule = z.infer<typeof CaptureRuleSchema>;
@@ -360,7 +358,7 @@ export type ChannelSettings = z.infer<typeof ChannelSettingsSchema>;
  * Webhook configuration for status callbacks
  */
 export const StatusCallbackSchema = z.object({
-  url: z.string().url(),
+  url: z.url(),
   method: z.enum(['POST', 'GET', 'PUT', 'DELETE', 'PATCH']).optional().default('POST'),
 });
 
@@ -416,7 +414,7 @@ export const ConversationConfigurationSchema = z.object({
   memoryStoreId: z
     .string()
     .regex(/^mem_(store|service)_[0-7][0-9a-z]{25}$/, 'Invalid Memory Store ID format'),
-  channelSettings: z.record(ChannelSettingsSchema).nullable().optional(),
+  channelSettings: z.record(z.string(), ChannelSettingsSchema).nullable().optional(),
   statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
   intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),
   // TODO(conv-orch): Drop this field once the Actions API resolves the V1 Chat
@@ -443,7 +441,7 @@ export type ConversationConfiguration = z.infer<typeof ConversationConfiguration
 export const InitiateMessagingConversationOptionsSchema = z.object({
   to: z.string().min(1, 'Recipient address is required'),
   message: z.string().min(1, 'Initial message is required'),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type InitiateMessagingConversationOptions = z.infer<

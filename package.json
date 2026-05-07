@@ -69,7 +69,15 @@
     "pino": "^9.0.0",
     "twilio": "^5.10.7",
     "ws": "^8.19.0",
-    "zod": "^3.22.0"
+    "zod": "^4.0.0"
+  },
+  "peerDependencies": {
+    "@openai/agents": "^0.8.0"
+  },
+  "peerDependenciesMeta": {
+    "@openai/agents": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=22.13.0",

@@ -316,7 +316,7 @@ export class TACServer {
 
           if (!parseResult.success) {
             this.fastify.log.error(
-              { errors: parseResult.error.errors },
+              { errors: parseResult.error.issues },
               'Invalid ConversationRelay callback payload'
             );
             await reply.code(400).send({ error: 'Invalid payload' });
