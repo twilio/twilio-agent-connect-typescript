@@ -71,8 +71,7 @@ async function handleMessageReady(params: {
 
   console.log(`Processing chat message for conversation ${convId}`);
 
-  const memoryContext = MemoryPromptBuilder.build(memory, session);
-  const instructions = BASE_SYSTEM_PROMPT + (memoryContext && `\n\n${memoryContext}`);
+  const instructions = MemoryPromptBuilder.compose(BASE_SYSTEM_PROMPT, memory, session);
 
   const agent = new Agent({
     name: 'Chat Assistant',

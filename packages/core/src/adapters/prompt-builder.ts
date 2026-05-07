@@ -11,12 +11,16 @@ import { AdapterOptions, getProfileTraits } from './options';
  *
  * @example
  * ```typescript
- * // Basic usage - includes all available data
- * const memoryPrompt = MemoryPromptBuilder.build(memoryResponse, session);
- * const systemPrompt = 'You are a helpful assistant.' + (memoryPrompt && `\n\n${memoryPrompt}`);
+ * // Simple usage with compose() - no if/else needed
+ * const systemPrompt = MemoryPromptBuilder.compose(
+ *   'You are a helpful assistant.',
+ *   memoryResponse,
+ *   session
+ * );
  *
- * // With trait filtering - only include specific profile trait groups
- * const memoryPrompt = MemoryPromptBuilder.build(
+ * // Advanced usage with trait filtering
+ * const systemPrompt = MemoryPromptBuilder.compose(
+ *   'You are a helpful assistant.',
  *   memoryResponse,
  *   session,
  *   { profileTraits: ['Contact', 'Preferences'] }
@@ -26,6 +30,10 @@ import { AdapterOptions, getProfileTraits } from './options';
 export class MemoryPromptBuilder {
   /**
    * Build a formatted memory prompt from available memory and profile data.
+   *
+   * **Note:** Most users should use `compose()` instead, which automatically handles
+   * combining memory with your system prompt. Use `build()` only if you need the raw
+   * memory content without a system prompt.
    *
    * Generates a structured prompt with up to four sections:
    * - **Customer Profile**: Profile traits (filtered by options if provided)
@@ -43,6 +51,18 @@ export class MemoryPromptBuilder {
    *                  empty array is provided, profile section is omitted. Optional.
    * @returns Formatted markdown prompt string ready for injection into LLM system messages.
    *          Returns empty string if no memory or profile data is available.
+   *
+   * @example
+   * ```typescript
+   * // Recommended: Use compose() for most cases
+   * const prompt = MemoryPromptBuilder.compose(basePrompt, memory, session);
+   *
+   * // Advanced: Use build() only if you need raw memory content
+   * const rawMemory = MemoryPromptBuilder.build(memory, session);
+   * if (rawMemory) {
+   *   // Custom handling of memory content
+   * }
+   * ```
    */
   static build(
     memoryResponse?: TACMemoryResponse | null,
@@ -73,6 +93,62 @@ export class MemoryPromptBuilder {
     }
 
     return this.assemblePrompt(sections);
+  }
+
+  /**
+   * Compose system prompt with memory context.
+   *
+   * Appends memory to systemPrompt if available. Always returns a string.
+   * Eliminates the need for manual if/else checks when combining prompts.
+   *
+   * **Note:** Empty strings and whitespace-only strings are treated as "no system prompt"
+   * (same as null/undefined). Whitespace is automatically trimmed from systemPrompt.
+   *
+   * @param systemPrompt - Base system prompt for the LLM. Empty string, whitespace-only,
+   *                       null, and undefined are all treated as "no system prompt". Optional.
+   * @param memoryResponse - Memory data from TAC.retrieveMemory(). Optional.
+   * @param context - Conversation session containing profile data. Optional.
+   * @param options - Configuration options for filtering profile traits. Optional.
+   * @returns Composed prompt with memory appended to systemPrompt. Returns empty string
+   *          if both systemPrompt and memory are empty/null/undefined.
+   *
+   * @example
+   * ```typescript
+   * // Before (manual if/else)
+   * const memoryContext = MemoryPromptBuilder.build(memoryResponse, context);
+   * const systemPrompt = basePrompt + (memoryContext ? `\n\n${memoryContext}` : '');
+   *
+   * // After (compose handles it)
+   * const systemPrompt = MemoryPromptBuilder.compose(basePrompt, memoryResponse, context);
+   *
+   * // Empty strings and whitespace are treated as "no prompt"
+   * MemoryPromptBuilder.compose('', memoryResponse, context);      // Returns just memory
+   * MemoryPromptBuilder.compose('   ', memoryResponse, context);   // Returns just memory (trimmed)
+   * MemoryPromptBuilder.compose(null, memoryResponse, context);    // Returns just memory
+   * ```
+   */
+  static compose(
+    systemPrompt?: string | null,
+    memoryResponse?: TACMemoryResponse | null,
+    context?: ConversationSession | null,
+    options?: AdapterOptions
+  ): string {
+    const memoryContent = this.build(memoryResponse, context, options);
+    const trimmedPrompt = systemPrompt?.trim() || null;
+
+    if (!trimmedPrompt && !memoryContent) {
+      return '';
+    }
+
+    if (!trimmedPrompt) {
+      return memoryContent;
+    }
+
+    if (!memoryContent) {
+      return trimmedPrompt;
+    }
+
+    return `${trimmedPrompt}\n\n${memoryContent}`;
   }
 
   private static assemblePrompt(sections: string[]): string {

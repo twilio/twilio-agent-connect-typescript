@@ -51,8 +51,7 @@ async function handleMessageReady(params: {
   const { conversationId, message, memory, session } = params;
   const convId = conversationId as string;
 
-  const memoryContext = MemoryPromptBuilder.build(memory, session);
-  const instructions = SYSTEM_INSTRUCTIONS + (memoryContext ? `\n\n${memoryContext}` : '');
+  const instructions = MemoryPromptBuilder.compose(SYSTEM_INSTRUCTIONS, memory, session);
 
   const agent = new Agent({
     name: 'RCS Customer Service Agent',

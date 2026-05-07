@@ -135,6 +135,177 @@ describe('MemoryPromptBuilder', () => {
       expect(prompt).toBe('');
     });
   });
+
+  describe('compose', () => {
+    it('should compose system prompt with memory appended', () => {
+      const memory = createSampleMemoryResponse();
+      const context = createSampleContext();
+      const basePrompt = 'You are a helpful assistant.';
+
+      const result = MemoryPromptBuilder.compose(basePrompt, memory, context);
+
+      expect(result).toContain(basePrompt);
+      expect(result).toContain('\n\n# Customer Context');
+      expect(result).toContain('Customer prefers email communication');
+      expect(result).toContain('john@example.com');
+      // Verify ordering: base prompt should come before memory
+      const basePromptIndex = result.indexOf(basePrompt);
+      const memoryIndex = result.indexOf('# Customer Context');
+      expect(basePromptIndex).toBeLessThan(memoryIndex);
+    });
+
+    it('should return base prompt unchanged when no memory is available', () => {
+      const basePrompt = 'You are a helpful assistant.';
+      const result = MemoryPromptBuilder.compose(basePrompt, null, null);
+
+      expect(result).toBe(basePrompt);
+      expect(result).not.toContain('# Customer Context');
+    });
+
+    it('should return base prompt unchanged when memory is empty', () => {
+      const basePrompt = 'You are a helpful assistant.';
+      const emptyMemory = new TACMemoryResponse({
+        observations: [],
+        summaries: [],
+        communications: [],
+      });
+
+      const result = MemoryPromptBuilder.compose(basePrompt, emptyMemory, null);
+
+      expect(result).toBe(basePrompt);
+      expect(result).not.toContain('# Customer Context');
+    });
+
+    it('should return just memory when systemPrompt is null but memory exists', () => {
+      const memory = createSampleMemoryResponse();
+
+      const result = MemoryPromptBuilder.compose(null, memory, null);
+
+      expect(typeof result).toBe('string');
+      expect(result.length).toBeGreaterThan(0);
+      expect(result).toContain('# Customer Context');
+      expect(result).toContain('Customer prefers email communication');
+    });
+
+    it('should return empty string when both systemPrompt and memory are null', () => {
+      const result = MemoryPromptBuilder.compose(null, null, null);
+
+      expect(result).toBe('');
+      expect(typeof result).toBe('string');
+    });
+
+    it('should return systemPrompt unchanged when no memory exists', () => {
+      const basePrompt = 'You are a helpful assistant.';
+      const result = MemoryPromptBuilder.compose(basePrompt, null, null);
+
+      expect(result).toBe(basePrompt);
+    });
+
+    it('should handle all null/undefined/value combinations correctly', () => {
+      const memory = createSampleMemoryResponse();
+      const basePrompt = 'You are a helpful assistant.';
+
+      // Case 1: Both null → empty string
+      const result1 = MemoryPromptBuilder.compose(null, null, null);
+      expect(result1).toBe('');
+      expect(typeof result1).toBe('string');
+
+      // Case 2: Only systemPrompt → systemPrompt
+      const result2 = MemoryPromptBuilder.compose(basePrompt, null, null);
+      expect(result2).toBe(basePrompt);
+
+      // Case 3: Only memory → memory
+      const result3 = MemoryPromptBuilder.compose(null, memory, null);
+      expect(typeof result3).toBe('string');
+      expect(result3.length).toBeGreaterThan(0);
+      expect(result3).toContain('Customer prefers email communication');
+
+      // Case 4: Both → composed
+      const result4 = MemoryPromptBuilder.compose(basePrompt, memory, null);
+      expect(typeof result4).toBe('string');
+      expect(result4).toContain(basePrompt);
+      expect(result4).toContain('Customer prefers email communication');
+    });
+
+    it('should handle multiline base prompts correctly', () => {
+      const memory = createSampleMemoryResponse();
+      const basePrompt = `You are a helpful assistant.
+Keep responses short and conversational.
+Do not use markdown.`;
+
+      const result = MemoryPromptBuilder.compose(basePrompt, memory, null);
+
+      expect(result).toContain(basePrompt);
+      expect(result).toContain('\n\n# Customer Context');
+      expect(result).toContain('Customer prefers email communication');
+      // Verify base prompt comes first
+      expect(result.indexOf(basePrompt)).toBe(0);
+    });
+
+    it('should eliminate if/else pattern - before/after comparison', () => {
+      const memory = createSampleMemoryResponse();
+      const basePrompt = 'You are a helpful assistant.';
+
+      // Old pattern (what users had to write before)
+      const memoryContext = MemoryPromptBuilder.build(memory, null);
+      const oldResult = basePrompt + (memoryContext ? `\n\n${memoryContext}` : '');
+
+      // New pattern (what users write now)
+      const newResult = MemoryPromptBuilder.compose(basePrompt, memory, null);
+
+      // Both should produce the same output
+      expect(newResult).toBe(oldResult);
+    });
+
+    it('should handle empty base prompt by returning memory', () => {
+      const memory = createSampleMemoryResponse();
+
+      const result = MemoryPromptBuilder.compose('', memory, null);
+
+      // Empty string is falsy, so compose() returns memory content directly
+      expect(result).toContain('# Customer Context');
+      expect(result).toContain('Customer prefers email communication');
+      // Should start with memory content (no prefix)
+      expect(result).toMatch(/^# Customer Context/);
+    });
+
+    it('should respect profile trait filtering options', () => {
+      const memory = createSampleMemoryResponse();
+      const context = createSampleContext();
+      const basePrompt = 'You are a helpful assistant.';
+      const options = { profileTraits: ['Contact'] };
+
+      const result = MemoryPromptBuilder.compose(basePrompt, memory, context, options);
+
+      expect(result).toContain(basePrompt);
+      expect(result).toContain('Contact');
+      expect(result).toContain('John Doe');
+      expect(result).not.toContain('Preferences');
+    });
+
+    it('should handle undefined vs null systemPrompt consistently', () => {
+      const memory = createSampleMemoryResponse();
+
+      const resultNull = MemoryPromptBuilder.compose(null, memory, null);
+      const resultUndefined = MemoryPromptBuilder.compose(undefined, memory, null);
+
+      expect(resultNull).toBe(resultUndefined);
+      expect(resultNull).toContain('# Customer Context');
+    });
+
+    it('should handle whitespace-only base prompt by trimming it', () => {
+      const memory = createSampleMemoryResponse();
+
+      // Whitespace is trimmed and treated as "no prompt"
+      const result = MemoryPromptBuilder.compose('   ', memory, null);
+
+      expect(result).toContain('# Customer Context');
+      expect(result).toContain('Customer prefers email communication');
+      // Should start with memory content (no whitespace prefix)
+      expect(result).toMatch(/^# Customer Context/);
+      expect(result).not.toContain('   \n\n');
+    });
+  });
 });
 
 describe('buildProfilePrompt', () => {
