@@ -185,15 +185,16 @@ export class TACServer {
   }
 
   /**
-   * Validate the Twilio signature on an HTTP request. Returns `true` if valid;
-   * on failure sends a 403 reply and returns `false`. Scoped to TAC-registered
+   * Validate the Twilio signature on an HTTP request. On failure, sends a 403
+   * reply (Fastify halts the request once `reply.send` is called in a
+   * `preHandler`, so the route handler won't run). Scoped to TAC-registered
    * webhook routes — does not run on user-added routes registered on
    * `server.fastify`.
    */
   private async validateRequestSignature(
     request: FastifyRequest,
     reply: FastifyReply
-  ): Promise<boolean> {
+  ): Promise<void> {
     const signature = request.headers['x-twilio-signature'] as string;
     const url = this.getWebhookUrl(request);
     const authToken = this.tac.getConfig().authToken;
@@ -210,9 +211,7 @@ export class TACServer {
     if (!isValid) {
       this.fastify.log.warn({ url, hasSignature: !!signature }, 'Invalid Twilio webhook signature');
       await reply.code(403).send({ error: 'Invalid webhook signature' });
-      return false;
     }
-    return true;
   }
 
   /**
