@@ -45,12 +45,17 @@ const CHAT_IDENTITY = 'ai-agent';
 // this example needs a classic Conversations service — with Chat enabled on it —
 // attached to the CO configuration.
 const configurationId = process.env.TWILIO_CONVERSATION_CONFIGURATION_ID!;
-const auth = Buffer.from(`${process.env.TWILIO_API_KEY}:${process.env.TWILIO_API_SECRET}`).toString('base64');
-const coConfig = await (
-  await fetch(`https://conversations.twilio.com/v2/ControlPlane/Configurations/${configurationId}`, {
-    headers: { Authorization: `Basic ${auth}` },
-  })
-).json() as { conversationsV1Bridge?: { serviceId?: string } | null };
+const auth = Buffer.from(`${process.env.TWILIO_API_KEY}:${process.env.TWILIO_API_SECRET}`).toString(
+  'base64'
+);
+const coConfig = (await (
+  await fetch(
+    `https://conversations.twilio.com/v2/ControlPlane/Configurations/${configurationId}`,
+    {
+      headers: { Authorization: `Basic ${auth}` },
+    }
+  )
+).json()) as { conversationsV1Bridge?: { serviceId?: string } | null };
 if (!coConfig.conversationsV1Bridge?.serviceId) {
   console.error(
     `Configuration '${configurationId}' has no classic Conversations service attached. ` +

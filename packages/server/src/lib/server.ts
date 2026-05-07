@@ -208,10 +208,7 @@ export class TACServer {
     }
 
     if (!isValid) {
-      this.fastify.log.warn(
-        { url, hasSignature: !!signature },
-        'Invalid Twilio webhook signature'
-      );
+      this.fastify.log.warn({ url, hasSignature: !!signature }, 'Invalid Twilio webhook signature');
       await reply.code(403).send({ error: 'Invalid webhook signature' });
       return false;
     }
