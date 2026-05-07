@@ -133,14 +133,8 @@ export class ChatChannel extends MessagingChannel {
         );
       }
 
-      // TODO(conv-orch): Drop `chatService` here once the Actions API resolves
-      // the V1 Chat service SID server-side. Confirmed this should not be
-      // required client-side; keep the workaround until the server-side fix
-      // ships. `channelId` stays — it's a permanent per-conversation requirement.
-      const chatServiceSid = this.tac.conversationsV1ServiceSid;
       const channelSettings: ActionChannelSettings = {
         channelId: chatChannelSid,
-        ...(chatServiceSid ? { chatService: chatServiceSid } : {}),
       };
 
       this.logger.debug(
@@ -205,8 +199,6 @@ export class ChatChannel extends MessagingChannel {
       'Initiating outbound chat conversation'
     );
 
-    const chatServiceSid = this.tac.conversationsV1ServiceSid;
-
     return this.initiateOutboundMessagingConversation({
       channel: 'CHAT',
       to: validated.to,
@@ -216,7 +208,6 @@ export class ChatChannel extends MessagingChannel {
       channelId: validated.channelId,
       channelSettings: {
         channelId: validated.channelId,
-        ...(chatServiceSid ? { chatService: chatServiceSid } : {}),
       },
     });
   }
