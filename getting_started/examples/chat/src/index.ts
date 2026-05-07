@@ -40,61 +40,25 @@ setTracingDisabled(true);
 
 const CHAT_IDENTITY = 'ai-agent';
 
-/**
- * Fail fast if the Conversation Orchestrator configuration has no classic
- * Conversations (V1) service attached.
- *
- * This check is example-level setup validation, not part of the chat
- * integration. The TAC SDK does not require this — but the V1 Chat backend
- * this example uses does, and misconfiguration surfaces as cryptic failures
- * on the first inbound message. Enable it in the Twilio Console under
- * Conversation Orchestrator -> Conversation Configuration -> Channel traffic
- * -> "+ Add messaging & chat traffic", which attaches a classic Conversations
- * service to the configuration.
- */
-async function assertChatTrafficConfigured(): Promise<void> {
-  const configurationId = process.env.TWILIO_CONVERSATION_CONFIGURATION_ID;
-  const apiKey = process.env.TWILIO_API_KEY;
-  const apiSecret = process.env.TWILIO_API_SECRET;
-  if (!configurationId || !apiKey || !apiSecret) {
-    return; // Let TAC's own credential checks surface the error.
-  }
-
-  const url = `https://conversations.twilio.com/v2/ControlPlane/Configurations/${configurationId}`;
-  const authHeader = 'Basic ' + Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
-
-  let configJson: Record<string, unknown>;
-  try {
-    const response = await fetch(url, { headers: { Authorization: authHeader } });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    configJson = (await response.json()) as Record<string, unknown>;
-  } catch (err) {
-    console.warn(
-      'Could not verify CO configuration has classic Conversations attached; ' +
-        'skipping chat-traffic check:',
-      err
-    );
-    return;
-  }
-
-  const v1Bridge = (configJson.conversationsV1Bridge ?? {}) as { serviceId?: string };
-  if (!v1Bridge.serviceId) {
-    console.error(
-      `\nError: Conversation Orchestrator configuration '${configurationId}' ` +
-        'has no classic Conversations (V1) service attached — the chat example ' +
-        'requires one.\n\n' +
-        'To enable it: Twilio Console -> Conversation Orchestrator -> ' +
-        'Conversation Configuration -> Channel traffic -> ' +
-        '"+ Add messaging & chat traffic". Attach a classic Conversations ' +
-        'service that has Chat enabled.\n'
-    );
-    process.exit(1);
-  }
+// Example-level setup check (not required by the SDK): the V1 Chat backend behind
+// this example needs a classic Conversations service attached to the CO
+// configuration. Enable it in Console → Conversation Orchestrator →
+// Conversation Configuration → Channel traffic → "+ Add messaging & chat traffic".
+const configurationId = process.env.TWILIO_CONVERSATION_CONFIGURATION_ID!;
+const auth = Buffer.from(`${process.env.TWILIO_API_KEY}:${process.env.TWILIO_API_SECRET}`).toString('base64');
+const coConfig = await (
+  await fetch(`https://conversations.twilio.com/v2/ControlPlane/Configurations/${configurationId}`, {
+    headers: { Authorization: `Basic ${auth}` },
+  })
+).json() as { conversationsV1Bridge?: { serviceId?: string } | null };
+if (!coConfig.conversationsV1Bridge?.serviceId) {
+  console.error(
+    `Configuration '${configurationId}' has no classic Conversations service attached. ` +
+      'Enable it in Console → Conversation Orchestrator → Conversation Configuration → ' +
+      'Channel traffic → "+ Add messaging & chat traffic".'
+  );
+  process.exit(1);
 }
-
-await assertChatTrafficConfigured();
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
