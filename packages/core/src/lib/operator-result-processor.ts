@@ -131,7 +131,7 @@ export class OperatorResultProcessor {
 
     if (!parseResult.success) {
       this.logger.warn(
-        { validation_errors: parseResult.error.errors },
+        { validation_errors: parseResult.error.issues },
         'Invalid operator result event payload'
       );
       return {

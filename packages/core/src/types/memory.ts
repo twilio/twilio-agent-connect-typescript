@@ -104,7 +104,7 @@ export const SessionMessageSchema = z.object({
   from_address: z.string().optional(),
   to_address: z.string().optional(),
   content: z.string(),
-  timestamp: z.string().datetime(),
+  timestamp: z.iso.datetime(),
 });
 
 export type SessionMessage = z.infer<typeof SessionMessageSchema>;
@@ -114,8 +114,8 @@ export type SessionMessage = z.infer<typeof SessionMessageSchema>;
  */
 export const SessionInfoSchema = z.object({
   session_id: z.string(),
-  started_at: z.string().datetime(),
-  ended_at: z.string().datetime().optional(),
+  started_at: z.iso.datetime(),
+  ended_at: z.iso.datetime().optional(),
   channel: z.string(),
   messages: z.array(SessionMessageSchema),
 });
@@ -128,9 +128,9 @@ export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 export const ObservationInfoSchema = z.object({
   id: z.string(),
   content: z.string(),
-  createdAt: z.string().datetime(),
-  occurredAt: z.string().datetime().optional(),
-  updatedAt: z.string().datetime().optional(),
+  createdAt: z.iso.datetime(),
+  occurredAt: z.iso.datetime().optional(),
+  updatedAt: z.iso.datetime().optional(),
   conversationIds: z.array(z.string()).nullable().optional(),
   source: z.string().optional(),
 });
@@ -143,8 +143,8 @@ export type ObservationInfo = z.infer<typeof ObservationInfoSchema>;
 export const SummaryInfoSchema = z.object({
   id: z.string(),
   content: z.string(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime().optional(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime().optional(),
   conversationIds: z.array(z.string()).optional(),
 });
 
@@ -160,8 +160,8 @@ export type SummaryInfo = z.infer<typeof SummaryInfoSchema>;
 export const MemoryRetrievalRequestSchema = z.object({
   conversationId: z.string().optional(),
   query: z.string().optional(),
-  beginDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  beginDate: z.iso.datetime().optional(),
+  endDate: z.iso.datetime().optional(),
   observationsLimit: z.number().int().min(0).max(100).optional(),
   summariesLimit: z.number().int().min(0).max(100).optional(),
   communicationsLimit: z.number().int().min(0).max(100).optional(),
@@ -208,7 +208,7 @@ export type ProfileLookupResponse = z.infer<typeof ProfileLookupResponseSchema>;
 export const ProfileResponseSchema = z.object({
   id: z.string(),
   createdAt: z.string(),
-  traits: z.record(z.unknown()),
+  traits: z.record(z.string(), z.unknown()),
 });
 
 export type ProfileResponse = z.infer<typeof ProfileResponseSchema>;

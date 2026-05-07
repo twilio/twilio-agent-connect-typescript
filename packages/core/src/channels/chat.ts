@@ -21,7 +21,7 @@ export const InitiateChatConversationOptionsSchema = z.object({
   to: z.string().min(1, 'Recipient identity is required'),
   channelId: z.string().min(1, 'Chat Channel SID is required'),
   message: z.string().min(1, 'Initial message is required'),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type InitiateChatConversationOptions = z.infer<typeof InitiateChatConversationOptionsSchema>;

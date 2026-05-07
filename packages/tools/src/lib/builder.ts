@@ -70,10 +70,13 @@ export class TACTool<TParams = any, TResult = any> {
       const moduleSpec = '@openai/agents';
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- Dynamic optional-dep import
       agentsModule = await import(/* @vite-ignore */ moduleSpec);
-    } catch {
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
       throw new Error(
-        'toOpenAIAgentsSDKTool() requires the @openai/agents package. ' +
-          'Install with: npm install @openai/agents'
+        'toOpenAIAgentsSDKTool() failed to load @openai/agents. ' +
+          'Install with: npm install @openai/agents (requires zod ^4.0.0). ' +
+          `Underlying error: ${cause}`,
+        { cause: err }
       );
     }
 

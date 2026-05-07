@@ -99,7 +99,7 @@ export class MemoryClient extends BaseClient {
           {
             profile_id: profileId,
             memory_store_id: this.storeId,
-            validation_errors: validatedResponse.error.errors,
+            validation_errors: validatedResponse.error.issues,
           },
           'Invalid memory response format'
         );

@@ -13,7 +13,7 @@ export const HandoffPayloadSchema = z.object({
   conversationId: z.string(),
   storeId: z.string(),
   profileId: z.string(),
-  attributes: z.record(z.unknown()).default({}),
+  attributes: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type HandoffPayload = z.infer<typeof HandoffPayloadSchema>;

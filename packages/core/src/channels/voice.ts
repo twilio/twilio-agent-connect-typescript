@@ -155,9 +155,9 @@ export class VoiceChannel extends BaseChannel {
           if (!result.success) {
             this.logger.debug(
               {
-                validation_errors: result.error.errors.map(error => ({
-                  path: error.path.join('.'),
-                  message: error.message,
+                validation_errors: result.error.issues.map(issue => ({
+                  path: issue.path.join('.'),
+                  message: issue.message,
                 })),
               },
               'Invalid or unrecognized WebSocket message, skipping'
