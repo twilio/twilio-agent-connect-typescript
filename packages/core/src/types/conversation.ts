@@ -465,3 +465,39 @@ export interface InitiateConversationResult {
 export interface InitiateVoiceConversationResult {
   callSid: string;
 }
+
+/**
+ * Webhook payload structure from Twilio Conversation Orchestrator.
+ * This structure is used by all channels (messaging and voice) for webhook events.
+ */
+export interface ConversationWebhookPayload {
+  eventType: string;
+  timestamp?: string;
+  data?: {
+    id?: string;
+    conversationId?: string;
+    accountId?: string;
+    serviceId?: string;
+    status?: string;
+    participantType?: string;
+    profileId?: string;
+    channelId?: string;
+    author?: {
+      address?: string;
+      channel?: string;
+      participantId?: string;
+    };
+    content?: {
+      type?: string;
+      text?: string;
+    };
+    recipients?: Array<{
+      address?: string;
+      channel?: string;
+      participantId?: string;
+      deliveryStatus?: string;
+    }>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
