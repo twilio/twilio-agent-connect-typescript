@@ -116,6 +116,33 @@ describe('TACServer Webhook Validation', () => {
     expect(response.status).not.toBe(403);
   });
 
+  it('should not validate signatures on user-added routes', async () => {
+    // Regression test: signature validation should be scoped to TAC-registered
+    // webhook routes and not apply to custom routes registered on
+    // `server.fastify`. Previously a global preHandler 403'd any non-webhook
+    // POST route that lacked an X-Twilio-Signature header.
+    mockValidateRequest.mockReturnValue(false);
+
+    server = new TACServer(tac, {
+      development: true,
+      port: currentPort,
+    });
+
+    server.fastify.post('/custom', async () => ({ hello: 'world' }));
+
+    await server.start();
+
+    const response = await fetch(`http://localhost:${currentPort}/custom`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anything: 'at all' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ hello: 'world' });
+    expect(mockValidateRequest).not.toHaveBeenCalled();
+  });
+
   it('should call validateRequest with correct parameters', async () => {
     mockValidateRequest.mockReturnValue(true);
 

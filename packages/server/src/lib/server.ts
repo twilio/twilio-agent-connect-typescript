@@ -185,54 +185,50 @@ export class TACServer {
   }
 
   /**
-   * Register global Twilio webhook signature validation hook
+   * Validate the Twilio signature on an HTTP request. On failure, sends a 403
+   * reply (Fastify halts the request once `reply.send` is called in a
+   * `preHandler`, so the route handler won't run). Scoped to TAC-registered
+   * webhook routes — does not run on user-added routes registered on
+   * `server.fastify`.
    */
-  private registerWebhookValidation(): void {
-    this.fastify.addHook('preHandler', (request, reply, done): void => {
-      // Skip GET requests — WebSocket upgrades are validated in the route handler
-      if (request.method === 'GET') {
-        done();
-        return;
-      }
+  private async validateRequestSignature(
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<void> {
+    const signature = request.headers['x-twilio-signature'] as string;
+    const url = this.getWebhookUrl(request);
+    const authToken = this.tac.getConfig().authToken;
 
-      const signature = request.headers['x-twilio-signature'] as string;
-      const url = this.getWebhookUrl(request);
-      const authToken = this.tac.getConfig().authToken;
+    let isValid: boolean;
+    if (request.url.includes('bodySHA256=')) {
+      const body = (request as FastifyRequest & { rawBody?: string }).rawBody ?? '';
+      isValid = twilio.validateRequestWithBody(authToken, signature, url, body);
+    } else {
+      const params = (request.body as Record<string, string>) || {};
+      isValid = twilio.validateRequest(authToken, signature, url, params);
+    }
 
-      let isValid: boolean;
-
-      // Check if this is a JSON body webhook (has bodySHA256 in query string)
-      if (request.url.includes('bodySHA256=')) {
-        const body = (request as FastifyRequest & { rawBody?: string }).rawBody ?? '';
-        isValid = twilio.validateRequestWithBody(authToken, signature, url, body);
-      } else {
-        // Form-encoded validation - use parsed params
-        const params = (request.body as Record<string, string>) || {};
-        isValid = twilio.validateRequest(authToken, signature, url, params);
-      }
-
-      if (!isValid) {
-        this.fastify.log.warn(
-          { url, hasSignature: !!signature },
-          'Invalid Twilio webhook signature'
-        );
-        void reply.code(403).send({ error: 'Invalid webhook signature' });
-        done();
-        return;
-      }
-
-      done();
-    });
+    if (!isValid) {
+      this.fastify.log.warn({ url, hasSignature: !!signature }, 'Invalid Twilio webhook signature');
+      await reply.code(403).send({ error: 'Invalid webhook signature' });
+    }
   }
 
   /**
    * Setup routes
    */
   private async setupRoutes(): Promise<void> {
+    const validateSignature = {
+      preHandler: async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+        await this.validateRequestSignature(request, reply);
+      },
+    };
+
     // Messaging webhook — fan out to all enabled messaging channels (each self-filters)
     if (this.messagingChannels.length > 0) {
       this.fastify.post(
         this.config.webhookPaths.messaging || '/webhook',
+        validateSignature,
         async (request: FastifyRequest, reply: FastifyReply) => {
           const rawHeader = request.headers['i-twilio-idempotency-token'];
           const idempotencyToken = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
@@ -252,6 +248,7 @@ export class TACServer {
     // Voice webhook (POST - Twilio calls this when an incoming call arrives)
     this.fastify.post(
       this.config.webhookPaths.twiml || '/twiml',
+      validateSignature,
       async (request: FastifyRequest, reply: FastifyReply) => {
         try {
           if (!this.voiceChannel) {
@@ -301,6 +298,7 @@ export class TACServer {
     // ConversationRelay callback endpoint
     this.fastify.post(
       this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback',
+      validateSignature,
       async (request: FastifyRequest, reply: FastifyReply) => {
         try {
           if (!this.voiceChannel) {
@@ -387,6 +385,7 @@ export class TACServer {
     if (this.config.webhookPaths.cintel) {
       this.fastify.post(
         this.config.webhookPaths.cintel,
+        validateSignature,
         async (request: FastifyRequest, reply: FastifyReply) => {
           if (!this.tac.isCintelEnabled()) {
             await reply.code(400).send({
@@ -461,10 +460,10 @@ export class TACServer {
         }
       );
 
-      // Register webhook signature validation (must be after formbody for body access)
-      this.registerWebhookValidation();
-
       // Set up routes (must be after plugin registration)
+      // Signature validation is applied per-route as a `preHandler` so it only
+      // runs on TAC-registered webhook routes, not on user-added routes on
+      // `server.fastify`.
       await this.setupRoutes();
 
       // Configure graceful shutdown to wait for WebSocket connections

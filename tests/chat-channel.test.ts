@@ -333,25 +333,6 @@ describe('Chat Channel', () => {
       );
     });
 
-    it('should forward chatService from TAC.conversationsV1ServiceSid when set', async () => {
-      // TODO(conv-orch): Drop this test when the chatService workaround is removed.
-      tac.conversationsV1ServiceSid = 'ISabcdef1234567890abcdef1234567890';
-
-      seedReconciledSession('CHtest123456789', {
-        channelId: 'CH00000000000000000000000000000000',
-      });
-
-      await channel.sendResponse('CHtest123456789', 'Hello');
-
-      const body = JSON.parse(mockAdapter.history.post[0]!.data);
-      expect(body.payload.channelSettings.chatService).toBe(
-        'ISabcdef1234567890abcdef1234567890'
-      );
-      expect(body.payload.channelSettings.channelId).toBe(
-        'CH00000000000000000000000000000000'
-      );
-    });
-
     it('should throw when channelId missing from session metadata', async () => {
       // Seed a reconciled session but without channelId
       seedReconciledSession('CHtest123456789');

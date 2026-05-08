@@ -146,10 +146,6 @@ export type ActionTextContent = z.infer<typeof ActionTextContentSchema>;
  */
 export const ActionChannelSettingsSchema = z.looseObject({
   channelId: z.string().optional(),
-  // TODO(conv-orch): Drop `chatService` once the Actions API resolves the V1 Chat
-  // service SID server-side. Confirmed this should not be required client-side;
-  // keep the field until the server-side fix ships.
-  chatService: z.string().optional(),
 });
 
 export type ActionChannelSettings = z.infer<typeof ActionChannelSettingsSchema>;
@@ -385,20 +381,6 @@ export const ConversationGroupingTypeSchema = z.enum([
 export type ConversationGroupingType = z.infer<typeof ConversationGroupingTypeSchema>;
 
 /**
- * Conversations V1 bridge settings on a ConversationConfiguration.
- *
- * TODO(conv-orch): Remove this schema once the Actions API resolves the V1 Chat
- * service SID server-side. Currently used to extract `conversationsV1Bridge.serviceId`
- * from the Configuration so the chat channel can forward it as
- * channelSettings.chatService — drop together with the other TODO(conv-orch) sites.
- */
-export const ConversationsV1BridgeSchema = z.object({
-  serviceId: z.string(),
-});
-
-export type ConversationsV1Bridge = z.infer<typeof ConversationsV1BridgeSchema>;
-
-/**
  * Configuration settings for a conversation
  */
 export const ConversationConfigurationSchema = z.object({
@@ -417,9 +399,6 @@ export const ConversationConfigurationSchema = z.object({
   channelSettings: z.record(z.string(), ChannelSettingsSchema).nullable().optional(),
   statusCallbacks: z.array(StatusCallbackSchema).max(20).nullable().optional(),
   intelligenceConfigurationIds: z.array(z.string()).max(5).nullable().optional(),
-  // TODO(conv-orch): Drop this field once the Actions API resolves the V1 Chat
-  // service SID server-side — see ConversationsV1BridgeSchema above.
-  conversationsV1Bridge: ConversationsV1BridgeSchema.nullish(),
   createdAt: z.string().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
   version: z.number().int().nullable().optional(),
