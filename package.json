@@ -1,6 +1,6 @@
 {
   "name": "twilio-agent-connect",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Twilio Agent Connect - A TypeScript framework for building intelligent agents",
   "type": "module",
   "main": "./dist/index.js",
