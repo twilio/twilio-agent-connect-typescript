@@ -358,7 +358,7 @@ describe('Memory Functionality', () => {
     });
 
     it('should return undefined when memory not configured', async () => {
-      const tac = await createTestTAC(getTestConfigWithoutMemory(), undefined);
+      const tac = await createTestTAC(getTestConfigWithoutMemory(), null);
 
       const result = await tac.fetchProfile('profile_123');
 
