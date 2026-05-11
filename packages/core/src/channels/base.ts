@@ -2,6 +2,7 @@ import {
   ConversationSession,
   ChannelType,
   ConversationId,
+  ConversationWebhookPayload,
   ProfileId,
   MemoryMode,
   MemoryModeSchema,
@@ -32,13 +33,25 @@ export interface BaseChannelOptions {
    * - "always": Memory is automatically retrieved for every inbound message and available in `onMessageReady` callback.
    */
   memoryMode?: MemoryMode;
+
+  /**
+   * Maximum number of idempotency tokens to track for webhook deduplication.
+   * Default is 10000. Must be a positive integer.
+   */
+  dedupCapacity?: number;
 }
 
 /**
  * Abstract base class for all channel implementations
  *
- * Provides common functionality for conversation lifecycle management,
- * session tracking, and shared utilities across different channel types.
+ * Provides common functionality for:
+ * - Conversation lifecycle management and session tracking
+ * - Webhook deduplication using Twilio idempotency tokens
+ * - Event filtering to prevent cross-channel fanout
+ * - Memory retrieval integration
+ * - Error handling and logging
+ *
+ * Subclasses must implement channel-specific webhook processing and message sending.
  */
 export abstract class BaseChannel {
   protected readonly tac: TAC;
@@ -48,6 +61,8 @@ export abstract class BaseChannel {
   protected readonly activeConversations: Map<ConversationId, ConversationSession>;
   protected readonly callbacks: BaseChannelEvents;
   protected readonly memoryMode: MemoryMode;
+  private readonly processedWebhookTokens: Set<string>;
+  private readonly maxTrackedTokens: number;
 
   constructor(tac: TAC, options?: BaseChannelOptions) {
     this.tac = tac;
@@ -65,6 +80,14 @@ export abstract class BaseChannel {
       throw new Error(`Invalid memoryMode: "${modeToValidate}". Must be "always" or "never".`);
     }
     this.memoryMode = parseResult.data;
+
+    // Validate and set deduplication capacity
+    const capacity = options?.dedupCapacity ?? 10000;
+    if (capacity < 1 || !Number.isInteger(capacity)) {
+      throw new Error('dedupCapacity must be a positive integer');
+    }
+    this.maxTrackedTokens = capacity;
+    this.processedWebhookTokens = new Set();
   }
 
   /**
@@ -219,6 +242,66 @@ export abstract class BaseChannel {
         this.callbacks.onError({ error });
       }
     }
+  }
+
+  /**
+   * Check if a webhook has already been processed using Twilio's idempotency token.
+   * Uses a sliding window with fixed capacity to track tokens (FIFO eviction).
+   *
+   * This is intentionally a single synchronous check-and-record to prevent race conditions
+   * where a duplicate arrives while the first request is still awaiting async work.
+   */
+  protected isDuplicateWebhook(idempotencyToken: string): boolean {
+    if (this.processedWebhookTokens.has(idempotencyToken)) {
+      return true;
+    }
+
+    if (this.processedWebhookTokens.size >= this.maxTrackedTokens) {
+      const oldest = this.processedWebhookTokens.values().next().value!;
+      this.processedWebhookTokens.delete(oldest);
+    }
+
+    this.processedWebhookTokens.add(idempotencyToken);
+    return false;
+  }
+
+  /**
+   * Remove an idempotency token from the deduplication cache.
+   * Used when webhook processing fails and retries should not be blocked.
+   */
+  protected removeWebhookToken(idempotencyToken: string): void {
+    this.processedWebhookTokens.delete(idempotencyToken);
+  }
+
+  /**
+   * Self-filtering: check if webhook event belongs to this channel.
+   *
+   * - COMMUNICATION_CREATED: require author.channel matches this channel type
+   * - CONVERSATION_UPDATED: only process if conversation is tracked locally
+   * - Other events: pass through
+   */
+  protected isEventForThisChannel(webhookData: ConversationWebhookPayload): boolean {
+    const eventType = webhookData.eventType;
+    const authorChannel = webhookData.data?.author?.channel;
+
+    // COMMUNICATION_CREATED: require author.channel for safe filtering
+    // Reject events without channel to prevent fanout crosstalk
+    if (eventType === 'COMMUNICATION_CREATED') {
+      if (!authorChannel) {
+        return false;
+      }
+      return authorChannel === this.channelType.toUpperCase();
+    }
+
+    // CONVERSATION_UPDATED: only process if this channel tracks the conversation
+    if (eventType === 'CONVERSATION_UPDATED') {
+      const conversationId = this.extractConversationId(webhookData);
+      if (conversationId && !this.activeConversations.has(conversationId)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**
