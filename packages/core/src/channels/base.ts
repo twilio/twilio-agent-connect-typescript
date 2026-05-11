@@ -351,15 +351,6 @@ export abstract class BaseChannel {
       return null;
     }
 
-    this.logger.debug(
-      {
-        event_type: eventType,
-        raw_event_type: webhookData.eventType,
-        conversation_id: conversationId,
-      },
-      'Processing webhook event'
-    );
-
     return { webhookData, eventType, conversationId };
   }
 
