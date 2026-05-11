@@ -169,39 +169,13 @@ export abstract class MessagingChannel extends BaseChannel {
    * Process messaging channel webhook from Conversation Orchestrator
    */
   public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
-    this.logger.debug({ operation: 'webhook_processing' }, 'Processing webhook');
-
     try {
-      if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
-        this.logger.debug({ idempotency_token: idempotencyToken }, 'Skipping duplicate webhook');
+      const result = this.preprocessWebhook(payload, idempotencyToken);
+      if (!result) {
         return;
       }
 
-      if (!this.validateWebhookPayload(payload)) {
-        throw new Error('Invalid webhook payload');
-      }
-
-      const webhookData = payload as ConversationWebhookPayload;
-      const eventType = webhookData.eventType;
-      const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
-
-      // Self-filter: ignore events meant for other channel types
-      if (!this.isEventForThisChannel(webhookData)) {
-        this.logger.debug(
-          { event_type: eventType, channel: this.channelType, conversation_id: conversationId },
-          'Ignoring event for different channel type'
-        );
-        return;
-      }
-
-      this.logger.info(
-        {
-          event_type: eventType,
-          raw_event_type: webhookData.eventType,
-          conversation_id: conversationId,
-        },
-        'Processing webhook event'
-      );
+      const { webhookData, eventType, conversationId } = result;
 
       switch (eventType) {
         case 'CONVERSATION_CREATED':
@@ -242,10 +216,6 @@ export abstract class MessagingChannel extends BaseChannel {
       if (idempotencyToken) {
         this.removeWebhookToken(idempotencyToken);
       }
-      this.logger.error(
-        { err: error, operation: 'webhook_processing' },
-        'Webhook processing error'
-      );
       this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
     }
   }
@@ -444,7 +414,7 @@ export abstract class MessagingChannel extends BaseChannel {
 
     // Check if conversation is closed
     if (payload.data?.status === 'CLOSED') {
-      this.logger.info(
+      this.logger.debug(
         { conversation_id: conversationId, status: payload.data.status },
         'Conversation closed, cleaning up'
       );

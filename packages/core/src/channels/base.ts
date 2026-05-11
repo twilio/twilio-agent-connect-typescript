@@ -312,6 +312,58 @@ export abstract class BaseChannel {
   }
 
   /**
+   * Preprocess webhook before handling event-specific logic.
+   * Handles deduplication, validation, filtering, and data extraction.
+   *
+   * @param payload - Raw webhook payload from Twilio
+   * @param idempotencyToken - Optional idempotency token for deduplication
+   * @returns Preprocessed webhook data, or null if webhook should be skipped
+   */
+  protected preprocessWebhook(
+    payload: unknown,
+    idempotencyToken: string | undefined
+  ): {
+    webhookData: ConversationWebhookPayload;
+    eventType: string;
+    conversationId: string | undefined;
+  } | null {
+    this.logger.debug({ operation: 'webhook_processing' }, 'Processing webhook');
+
+    if (idempotencyToken && this.isDuplicateWebhook(idempotencyToken)) {
+      this.logger.debug({ idempotency_token: idempotencyToken }, 'Skipping duplicate webhook');
+      return null;
+    }
+
+    if (!this.validateWebhookPayload(payload)) {
+      throw new Error('Invalid webhook payload');
+    }
+
+    const webhookData = payload as ConversationWebhookPayload;
+    const eventType = webhookData.eventType;
+    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+
+    // Self-filter: ignore events meant for other channel types
+    if (!this.isEventForThisChannel(webhookData)) {
+      this.logger.debug(
+        { event_type: eventType, channel: this.channelType, conversation_id: conversationId },
+        'Ignoring event for different channel type'
+      );
+      return null;
+    }
+
+    this.logger.debug(
+      {
+        event_type: eventType,
+        raw_event_type: webhookData.eventType,
+        conversation_id: conversationId,
+      },
+      'Processing webhook event'
+    );
+
+    return { webhookData, eventType, conversationId };
+  }
+
+  /**
    * Extract conversation ID from webhook payload (implemented by subclasses)
    */
   protected abstract extractConversationId(payload: unknown): ConversationId | null;
