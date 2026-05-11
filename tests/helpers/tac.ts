@@ -17,7 +17,7 @@ afterEach(() => {
  */
 export async function createTestTAC(
   configOrData: TACConfig | TACConfigData,
-  memoryStoreIdFromConfig: string = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg'
+  memoryStoreIdFromConfig: string | undefined = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg'
 ): Promise<TAC> {
   const config = configOrData instanceof TACConfig ? configOrData : new TACConfig(configOrData);
 

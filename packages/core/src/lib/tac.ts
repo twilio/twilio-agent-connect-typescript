@@ -113,18 +113,24 @@ export class TAC {
       );
 
       tac.memoryStoreId = conversationConfig.memoryStoreId;
-      tac.memoryClient = new MemoryClient(
-        tac.config,
-        conversationConfig.memoryStoreId,
-        tac.logger.child({ component: 'memory' })
-      );
+      // TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID
+      // server-side — see the conversationsV1ServiceSid field comment above.
+      tac.conversationsV1ServiceSid =
+        conversationConfig.conversationsV1Bridge?.serviceId ?? undefined;
+      if (conversationConfig.memoryStoreId) {
+        tac.memoryClient = new MemoryClient(
+          tac.config,
+          conversationConfig.memoryStoreId,
+          tac.logger.child({ component: 'memory' })
+        );
+      }
 
       tac.knowledgeClient = new KnowledgeClient(
         tac.config,
         tac.logger.child({ component: 'knowledge' })
       );
 
-      if (tac.config.cintelConfigurationId) {
+      if (tac.config.cintelConfigurationId && tac.memoryClient) {
         tac.cintelProcessor = new OperatorResultProcessor(
           tac.memoryClient,
           {
