@@ -113,10 +113,6 @@ export class TAC {
       );
 
       tac.memoryStoreId = conversationConfig.memoryStoreId;
-      // TODO(conv-orch): Remove once the Actions API resolves the V1 Chat service SID
-      // server-side — see the conversationsV1ServiceSid field comment above.
-      tac.conversationsV1ServiceSid =
-        conversationConfig.conversationsV1Bridge?.serviceId ?? undefined;
       if (conversationConfig.memoryStoreId) {
         tac.memoryClient = new MemoryClient(
           tac.config,
