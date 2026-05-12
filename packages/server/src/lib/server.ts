@@ -42,6 +42,11 @@ export interface TACServerConfig {
 
   /** Custom webhook paths */
   webhookPaths?: {
+    /**
+     * @deprecated Use `conversation` instead. This field will be removed in a future version.
+     * If both `messaging` and `conversation` are set, `conversation` takes precedence.
+     */
+    messaging?: string;
     conversation?: string;
     twiml?: string;
     ws?: string;
@@ -118,14 +123,24 @@ export class TACServer {
 
   constructor(tac: TAC, config: TACServerConfig = {}) {
     this.tac = tac;
+
+    // Handle deprecated `messaging` field: log warning and apply fallback if needed
+    const webhookPaths = { ...DEFAULT_CONFIG.webhookPaths, ...config.webhookPaths };
+    if (config.webhookPaths?.messaging) {
+      console.warn(
+        'TACServer: The "webhookPaths.messaging" field is deprecated and will be removed in a future version. ' +
+          'Please update your configuration to use "webhookPaths.conversation" instead.'
+      );
+      // If conversation isn't explicitly set, use messaging value as fallback
+      if (!config.webhookPaths.conversation) {
+        webhookPaths.conversation = config.webhookPaths.messaging;
+      }
+    }
+
     this.config = {
       ...DEFAULT_CONFIG,
       ...config,
-      // Deep merge webhookPaths to preserve defaults while allowing overrides
-      webhookPaths: {
-        ...DEFAULT_CONFIG.webhookPaths,
-        ...config.webhookPaths,
-      },
+      webhookPaths,
       // Deep merge conversationRelayConfig to preserve defaults while allowing overrides
       conversationRelayConfig: {
         ...DEFAULT_CONFIG.conversationRelayConfig,

@@ -1229,3 +1229,164 @@ describe('TACServer WebSocket signature validation', () => {
     expect(closeCode).toBe(1008);
   });
 });
+
+describe('TACServer webhookPaths.messaging deprecation', () => {
+  const getTestConfig = () => ({
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  let tac: TAC;
+  let server: TACServer;
+  let currentPort: number;
+  let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+    mockValidateRequest.mockReturnValue(true);
+
+    currentPort = getNextPort();
+
+    const config = new TACConfig(getTestConfig());
+    tac = await createTestTAC(config);
+
+    const smsChannel = new SMSChannel(tac);
+    const voiceChannel = new VoiceChannel(tac);
+    tac.registerChannel(smsChannel);
+    tac.registerChannel(voiceChannel);
+
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    consoleWarnSpy.mockRestore();
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  it('should log deprecation warning when only messaging is set', async () => {
+    server = new TACServer(tac, {
+      port: currentPort,
+      webhookPaths: {
+        messaging: '/old-webhook',
+      },
+    });
+
+    // Warning logged during construction
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'TACServer: The "webhookPaths.messaging" field is deprecated and will be removed in a future version. ' +
+          'Please update your configuration to use "webhookPaths.conversation" instead.'
+      )
+    );
+
+    await server.start();
+
+    // Verify the webhook is registered at the messaging path (now used as conversation)
+    const response = await fetch(`http://localhost:${currentPort}/old-webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
+    });
+
+    expect(response.status).not.toBe(404);
+  });
+
+  it('should use conversation and warn when both messaging and conversation are set', async () => {
+    server = new TACServer(tac, {
+      port: currentPort,
+      webhookPaths: {
+        messaging: '/old-webhook',
+        conversation: '/new-webhook',
+      },
+    });
+
+    // Warning logged during construction
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'TACServer: The "webhookPaths.messaging" field is deprecated and will be removed in a future version. ' +
+          'Please update your configuration to use "webhookPaths.conversation" instead.'
+      )
+    );
+
+    await server.start();
+
+    // Verify the webhook is registered at the conversation path (conversation takes precedence)
+    const conversationResponse = await fetch(`http://localhost:${currentPort}/new-webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
+    });
+
+    expect(conversationResponse.status).not.toBe(404);
+
+    // Verify the old webhook path is NOT registered (ignored when conversation is set)
+    const messagingResponse = await fetch(`http://localhost:${currentPort}/old-webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
+    });
+
+    expect(messagingResponse.status).toBe(404);
+  });
+
+  it('should not log warning when only conversation is set', async () => {
+    server = new TACServer(tac, {
+      port: currentPort,
+      webhookPaths: {
+        conversation: '/new-webhook',
+      },
+    });
+
+    // Should not have any deprecation warnings
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+    await server.start();
+
+    // Verify the webhook is registered at the conversation path
+    const response = await fetch(`http://localhost:${currentPort}/new-webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
+    });
+
+    expect(response.status).not.toBe(404);
+  });
+
+  it('should not log warning when neither messaging nor conversation is set', async () => {
+    server = new TACServer(tac, {
+      port: currentPort,
+    });
+
+    // Should not have any deprecation warnings
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
+
+    await server.start();
+
+    // Verify default webhook path is used
+    const response = await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'eventType=COMMUNICATION_CREATED&data=%7B%22conversationId%22%3A%22CH123%22%7D',
+    });
+
+    expect(response.status).not.toBe(404);
+  });
+});
