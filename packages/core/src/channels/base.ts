@@ -6,6 +6,8 @@ import {
   ProfileId,
   MemoryMode,
   MemoryModeSchema,
+  isConversationId,
+  isProfileId,
 } from '../types/index';
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
@@ -355,14 +357,54 @@ export abstract class BaseChannel {
   }
 
   /**
-   * Extract conversation ID from webhook payload (implemented by subclasses)
+   * Extract conversation ID from webhook payload with type validation.
+   *
+   * Extracts conversationId from webhookData.data?.conversationId || webhookData.data?.id,
+   * validates the value is a non-empty string, and ensures it passes isConversationId check.
+   *
+   * This prevents invalid IDs from causing downstream issues like incorrect Map key
+   * matching in CONVERSATION_UPDATED self-filtering or propagating malformed IDs.
    */
-  protected abstract extractConversationId(payload: unknown): ConversationId | null;
+  protected extractConversationId(payload: unknown): ConversationId | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const webhookData = payload as ConversationWebhookPayload;
+    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
+
+    // Validate type and format before casting to ConversationId
+    if (conversationId && typeof conversationId === 'string' && isConversationId(conversationId)) {
+      return conversationId;
+    }
+
+    return null;
+  }
 
   /**
-   * Extract profile ID from webhook payload (implemented by subclasses)
+   * Extract profile ID from webhook payload with type validation.
+   *
+   * Extracts profileId from webhookData.data?.profileId,
+   * validates the value is a non-empty string, and ensures it passes isProfileId check.
+   *
+   * This prevents invalid IDs from propagating downstream and ensures consistent
+   * validation across all channel types.
    */
-  protected abstract extractProfileId(payload: unknown): ProfileId | null;
+  protected extractProfileId(payload: unknown): ProfileId | null {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const webhookData = payload as ConversationWebhookPayload;
+    const profileId = webhookData.data?.profileId;
+
+    // Validate type and format before casting to ProfileId
+    if (profileId && typeof profileId === 'string' && isProfileId(profileId)) {
+      return profileId;
+    }
+
+    return null;
+  }
 
   /**
    * Retrieve memory only when memoryMode === 'always'.

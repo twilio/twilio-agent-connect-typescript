@@ -8,7 +8,6 @@ import {
   ProfileId,
   SendMessageActionRequest,
   isConversationId,
-  isProfileId,
 } from '../types/index';
 import axios from 'axios';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
@@ -420,42 +419,6 @@ export abstract class MessagingChannel extends BaseChannel {
       );
       await this.endConversation(conversationId);
     }
-  }
-
-  /**
-   * Extract conversation ID from webhook payload
-   */
-  protected extractConversationId(payload: unknown): ConversationId | null {
-    const webhookData = payload as ConversationWebhookPayload;
-    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
-
-    if (conversationId && isConversationId(conversationId)) {
-      return conversationId;
-    }
-
-    return null;
-  }
-
-  /**
-   * Extract profile ID from webhook payload
-   */
-  protected extractProfileId(payload: unknown): ProfileId | null {
-    const webhookData = payload as ConversationWebhookPayload;
-    const profileId = webhookData.data?.profileId;
-
-    if (profileId && isProfileId(profileId)) {
-      this.logger.debug(
-        { profile_id: profileId, conversation_id: webhookData.data?.conversationId },
-        'Extracted profile ID from webhook payload'
-      );
-      return profileId;
-    }
-
-    this.logger.debug(
-      { conversation_id: webhookData.data?.conversationId },
-      'Profile ID missing or invalid in webhook payload'
-    );
-    return null;
   }
 
   /**

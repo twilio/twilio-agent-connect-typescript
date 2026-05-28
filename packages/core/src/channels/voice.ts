@@ -907,34 +907,6 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Extract conversation ID from webhook payload
-   */
-  protected extractConversationId(payload: unknown): ConversationId | null {
-    if (!payload || typeof payload !== 'object') {
-      return null;
-    }
-
-    const webhookData = payload as ConversationWebhookPayload;
-    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
-
-    return conversationId ? (conversationId as ConversationId) : null;
-  }
-
-  /**
-   * Extract profile ID from webhook payload
-   */
-  protected extractProfileId(payload: unknown): ProfileId | null {
-    if (!payload || typeof payload !== 'object') {
-      return null;
-    }
-
-    const webhookData = payload as ConversationWebhookPayload;
-    const profileId = webhookData.data?.profileId;
-
-    return profileId ? (profileId as ProfileId) : null;
-  }
-
-  /**
    * Cleanup channel state on shutdown
    *
    * Note: WebSocket connections are managed by the server and closed there.
