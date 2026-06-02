@@ -8,6 +8,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'twilio'
     permissions:
       contents: read
     timeout-minutes: 20
@@ -30,6 +31,7 @@ jobs:
     name: Publish to npm
     needs: [test]
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'twilio'
     environment: npm
     permissions:
       contents: read
