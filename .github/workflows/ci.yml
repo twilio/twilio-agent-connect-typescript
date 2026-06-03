@@ -178,12 +178,6 @@ jobs:
           echo "Verifying package exports:"
           node --input-type=module -e "import('./dist/index.js').then((tac) => { console.log('Successfully imported package'); console.log('Exports:', Object.keys(tac).slice(0, 10).join(', '), '...'); });"
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: dist
-          path: dist/
-
   all-checks:
     name: All Checks Passed
     needs: [lint, type-check, test-node-22, test-node-24, getting-started-example, build]
