@@ -8,8 +8,8 @@ node_modules/
 .DS_Store
 *.log
 
-# Only ignore dist in examples, not root
-getting_started/examples/*/dist/
+# Build output (root + per-package + examples)
+dist/
 
 # IDE
 .idea/
