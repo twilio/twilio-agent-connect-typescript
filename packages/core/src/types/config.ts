@@ -52,14 +52,55 @@ export const TACConfigSchema = z.object({
     .string()
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
     .optional(),
+  /**
+   * Public domain where voice routes are reachable (e.g. "abc123.ngrok.app").
+   * Used by VoiceChannel to construct the public WebSocket URL and
+   * ConversationRelay action URL. Required when using the Voice channel.
+   *
+   * Schemes (https://, wss://), surrounding whitespace, and trailing slashes
+   * are stripped automatically before validation — a naive copy-paste from a
+   * browser address bar like "https://example.ngrok.app/" is normalized to
+   * "example.ngrok.app" rather than rejected.
+   */
   voicePublicDomain: z
-    .string()
-    .max(253, 'Hostname too long (max 253 characters)')
-    .regex(
-      /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
-      'Invalid hostname format. Must be a hostname without protocol, port, or path (e.g., "abc123.ngrok.app", "localhost", or "192.168.1.100")'
+    .preprocess(
+      v => {
+        if (typeof v !== 'string') return v;
+        let s = v.trim();
+        if (s.length === 0) return undefined;
+        for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
+          if (s.toLowerCase().startsWith(scheme)) {
+            s = s.slice(scheme.length);
+            break;
+          }
+        }
+        s = s.replace(/\/+$/, '');
+        return s.length === 0 ? undefined : s;
+      },
+      z
+        .string()
+        .max(253, 'Hostname too long (max 253 characters)')
+        .regex(
+          /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+          'Invalid hostname format. Must be a hostname without protocol, port, or path (e.g., "abc123.ngrok.app", "localhost", or "192.168.1.100")'
+        )
+        .optional()
     )
     .optional(),
+
+  /**
+   * Path the voice WebSocket is served at. Combined with voicePublicDomain to
+   * build the public WebSocket URL the voice channel hands to Twilio in TwiML;
+   * TACServer also registers its WebSocket route at this path. Override only if
+   * you mount the route at a non-default path.
+   */
+  voiceWebsocketPath: z.string().default('/ws'),
+
+  /**
+   * Path the ConversationRelay action callback is served at. Same role as
+   * voiceWebsocketPath but for the `<Connect action=...>` cleanup callback.
+   */
+  voiceActionPath: z.string().default('/conversation-relay-callback'),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
@@ -107,6 +148,8 @@ export const EnvironmentVariables = {
   TWILIO_MEMORY_PHONE_TRAIT_FIELD: 'TWILIO_MEMORY_PHONE_TRAIT_FIELD',
   TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
   TWILIO_VOICE_PUBLIC_DOMAIN: 'TWILIO_VOICE_PUBLIC_DOMAIN',
+  TWILIO_VOICE_WEBSOCKET_PATH: 'TWILIO_VOICE_WEBSOCKET_PATH',
+  TWILIO_VOICE_ACTION_PATH: 'TWILIO_VOICE_ACTION_PATH',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',

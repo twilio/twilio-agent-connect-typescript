@@ -31,13 +31,13 @@ const getNextPort = () => testPort++;
 
 describe('TACServer Webhook Validation', () => {
   const getTestConfig = () => ({
-
     accountSid: 'ACtest123456789',
     authToken: 'test_token_123',
     apiKey: 'test_api_key',
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
   });
 
   let tac: TAC;
@@ -348,14 +348,17 @@ describe('TACServer Webhook Validation', () => {
     });
 
     it('should validate /conversation-relay-callback endpoint', async () => {
-      const response = await fetch(`http://localhost:${endpointTestPort}/conversation-relay-callback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Twilio-Signature': 'invalid',
-        },
-        body: 'AccountSid=AC123&CallSid=CA123&CallStatus=completed&From=%2B1234&To=%2B5678',
-      });
+      const response = await fetch(
+        `http://localhost:${endpointTestPort}/conversation-relay-callback`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Twilio-Signature': 'invalid',
+          },
+          body: 'AccountSid=AC123&CallSid=CA123&CallStatus=completed&From=%2B1234&To=%2B5678',
+        }
+      );
 
       expect(response.status).toBe(403);
     });
@@ -393,13 +396,13 @@ describe('TACServer Webhook Validation', () => {
 
 describe('TACServer idempotency token', () => {
   const getTestConfig = () => ({
-
     accountSid: 'ACtest123456789',
     authToken: 'test_token_123',
     apiKey: 'test_api_key',
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
   });
 
   let tac: TAC;
@@ -499,6 +502,7 @@ describe('TACServer messaging channel auto-discovery', () => {
     phoneNumber: '+15551234567',
     rcsSenderId: 'rcs:test_agent',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
   });
 
   let tac: TAC;
@@ -558,15 +562,15 @@ describe('TACServer messaging channel auto-discovery', () => {
   });
 });
 
-describe('TACServer with conversationRelayConfig', () => {
+describe('TACServer voice TwiML', () => {
   const getTestConfig = () => ({
-
     accountSid: 'ACtest123456789',
     authToken: 'test_token_123',
     apiKey: 'test_api_key',
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
   });
 
   let tac: TAC;
@@ -597,137 +601,11 @@ describe('TACServer with conversationRelayConfig', () => {
     tac.shutdown();
   });
 
-  it('should accept conversationRelayConfig parameter', async () => {
-    // Create server with conversationRelayConfig
-    server = new TACServer(tac, {
-      development: true,
-      port: currentPort,
-      conversationRelayConfig: {
-        welcomeGreeting: 'Hello from TACServer!',
-        transcriptionProvider: 'Deepgram',
-        ttsProvider: 'Google',
-        voice: 'en-US-Journey-O',
-        interruptible: 'any',
-      },
-    });
-
-    await server.start();
-
-    // Server should start successfully with config
-    expect(server).toBeDefined();
-  });
-
-  it('should pass server conversationRelayConfig to handleIncomingCall', async () => {
-    // Spy on handleIncomingCall to verify config is passed
+  it('passes a parsed TwiMLRequest to handleIncomingCall', async () => {
     const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    server = new TACServer(tac, {
-      development: true,
-      port: currentPort,
-      conversationRelayConfig: {
-        welcomeGreeting: 'Test greeting',
-        transcriptionProvider: 'Deepgram',
-        interruptible: 'any',
-      },
-    });
-
-    await server.start();
-
-    // Make request to /voice endpoint
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Verify handleIncomingCall was called with conversationRelayConfig
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          welcomeGreeting: 'Test greeting',
-          transcriptionProvider: 'Deepgram',
-          interruptible: 'any',
-          url: expect.stringMatching(/^wss?:\/\//), // WebSocket URL should be added
-        }),
-      })
+    handleIncomingCallSpy.mockResolvedValue(
+      '<Response><Connect><ConversationRelay/></Connect></Response>'
     );
-  });
-
-  it('should merge server config with dynamic WebSocket URL', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    server = new TACServer(tac, {
-      development: true,
-      port: currentPort,
-      conversationRelayConfig: {
-        welcomeGreeting: 'Dynamic merge test',
-        ttsProvider: 'Google',
-        interruptible: 'any',
-      },
-    });
-
-    await server.start();
-
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Verify server config is merged with dynamic URL
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^wss?:\/\//), // Dynamic WebSocket URL is added
-          welcomeGreeting: 'Dynamic merge test', // Server config is preserved
-          ttsProvider: 'Google', // Server config is preserved
-          interruptible: 'any', // Server config is preserved
-        }),
-      })
-    );
-  });
-
-  it('should handle undefined server conversationRelayConfig', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    // Create server without conversationRelayConfig
-    server = new TACServer(tac, {
-      development: true,
-      port: currentPort,
-      // No conversationRelayConfig provided
-    });
-
-    await server.start();
-
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    // Should work with URL and default welcomeGreeting
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^wss?:\/\//),
-          welcomeGreeting: 'Hello! How can I assist you today?', // Default value
-        }),
-      })
-    );
-  });
-
-  it('should use wss:// protocol when X-Forwarded-Proto is https', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
 
     server = new TACServer(tac, {
       development: true,
@@ -740,77 +618,40 @@ describe('TACServer with conversationRelayConfig', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Forwarded-Proto': 'https',
       },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
+      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123&CallerCountry=US',
     });
 
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
+    expect(handleIncomingCallSpy).toHaveBeenCalledTimes(1);
+    const twimlRequest = handleIncomingCallSpy.mock.calls[0]?.[0];
+    expect(twimlRequest).toEqual(
       expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^wss:\/\//), // Should be wss:// not ws://
-        }),
+        from: '+15551234567',
+        to: '+15559876543',
+        callerCountry: 'US',
       })
     );
   });
 
-  it('should use ws:// protocol when X-Forwarded-Proto is http', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
+  it('channel defaultTwimlOptions flow into emitted TwiML', async () => {
+    // Use the real handleIncomingCall (no spy) with a channel configured with
+    // defaultTwimlOptions. Mirror the beforeEach setup with a fresh channel.
+    const cfgTac = await createTestTAC(new TACConfig(getTestConfig()));
+    const sms = new SMSChannel(cfgTac);
+    const voice = new VoiceChannel(cfgTac, {
+      defaultTwimlOptions: { welcomeGreeting: 'Server greeting', voice: 'en-US-Journey-D' },
+    });
+    cfgTac.registerChannel(sms);
+    cfgTac.registerChannel(voice);
 
-    server = new TACServer(tac, {
+    server = new TACServer(cfgTac, {
       development: true,
       port: currentPort,
     });
 
     await server.start();
 
-    await fetch(`http://localhost:${currentPort}/twiml`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-Forwarded-Proto': 'http',
-      },
-      body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
-    });
-
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.stringMatching(/^ws:\/\//), // Should be ws:// not wss://
-        }),
-      })
-    );
-  });
-
-  it('should preserve all server config attributes', async () => {
-    const handleIncomingCallSpy = vi.spyOn(voiceChannel, 'handleIncomingCall');
-    handleIncomingCallSpy.mockResolvedValue('<Response><Connect><ConversationRelay/></Connect></Response>');
-
-    server = new TACServer(tac, {
-      development: true,
-      port: currentPort,
-      conversationRelayConfig: {
-        welcomeGreeting: 'Full config test',
-        welcomeGreetingInterruptible: 'any',
-        transcriptionProvider: 'Deepgram',
-        transcriptionLanguage: 'en-US',
-        speechModel: 'nova-3-general',
-        ttsProvider: 'Google',
-        ttsLanguage: 'en-US',
-        voice: 'en-US-Journey-O',
-        interruptible: 'any',
-        interruptSensitivity: 'medium',
-        dtmfDetection: true,
-        hints: 'technical support, billing',
-        partialPrompts: false,
-        profanityFilter: false,
-      },
-    });
-
-    await server.start();
-
-    await fetch(`http://localhost:${currentPort}/twiml`, {
+    const resp = await fetch(`http://localhost:${currentPort}/twiml`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -818,28 +659,57 @@ describe('TACServer with conversationRelayConfig', () => {
       body: 'From=%2B15551234567&To=%2B15559876543&CallSid=CA123',
     });
 
-    // Verify all attributes are preserved
-    expect(handleIncomingCallSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationRelayConfig: expect.objectContaining({
-          url: expect.any(String),
-          welcomeGreeting: 'Full config test',
-          welcomeGreetingInterruptible: 'any',
-          transcriptionProvider: 'Deepgram',
-          transcriptionLanguage: 'en-US',
-          speechModel: 'nova-3-general',
-          ttsProvider: 'Google',
-          ttsLanguage: 'en-US',
-          voice: 'en-US-Journey-O',
-          interruptible: 'any',
-          interruptSensitivity: 'medium',
-          dtmfDetection: true,
-          hints: 'technical support, billing',
-          partialPrompts: false,
-          profanityFilter: false,
-        }),
-      })
-    );
+    const text = await resp.text();
+    expect(text).toContain('welcomeGreeting="Server greeting"');
+    expect(text).toContain('voice="en-US-Journey-D"');
+    expect(text).toContain('url="wss://test.ngrok.io/ws"');
+
+    cfgTac.shutdown();
+  });
+
+  it('runs an inbound customizer registered on the channel', async () => {
+    const cfgTac = await createTestTAC(new TACConfig(getTestConfig()));
+    const sms = new SMSChannel(cfgTac);
+    const voice = new VoiceChannel(cfgTac);
+    voice.onInboundCallTwiml(async () => ({ voice: 'es-MX-Neural2-A', language: 'es-MX' }));
+    cfgTac.registerChannel(sms);
+    cfgTac.registerChannel(voice);
+
+    server = new TACServer(cfgTac, {
+      development: true,
+      port: currentPort,
+    });
+
+    await server.start();
+
+    const resp = await fetch(`http://localhost:${currentPort}/twiml`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'From=%2B14155551234&CallerCountry=MX',
+    });
+
+    const text = await resp.text();
+    expect(text).toContain('voice="es-MX-Neural2-A"');
+    expect(text).toContain('language="es-MX"');
+
+    cfgTac.shutdown();
+  });
+
+  it('throws at construction when voice channel attached but voicePublicDomain unset', async () => {
+    const cfg = getTestConfig();
+    delete (cfg as { voicePublicDomain?: string }).voicePublicDomain;
+
+    const t = await createTestTAC(new TACConfig(cfg));
+    const sms = new SMSChannel(t);
+    const voice = new VoiceChannel(t);
+    t.registerChannel(sms);
+    t.registerChannel(voice);
+
+    expect(() => new TACServer(t, { port: getNextPort() })).toThrow(/voicePublicDomain/);
+
+    t.shutdown();
   });
 });
 
@@ -851,6 +721,7 @@ describe('TACServer customization', () => {
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
   });
 
   let tac: TAC;
@@ -1051,6 +922,7 @@ describe('TACServer WebSocket signature validation', () => {
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
   });
 
   let tac: TAC;
@@ -1184,12 +1056,9 @@ describe('TACServer WebSocket signature validation', () => {
 
     await server.start();
 
-    const ws = new WebSocket(
-      `ws://localhost:${currentPort}/ws?AccountSid=AC123&CallSid=CA456`,
-      {
-        headers: { 'X-Twilio-Signature': 'test-ws-sig' },
-      }
-    );
+    const ws = new WebSocket(`ws://localhost:${currentPort}/ws?AccountSid=AC123&CallSid=CA456`, {
+      headers: { 'X-Twilio-Signature': 'test-ws-sig' },
+    });
 
     await new Promise<void>(resolve => {
       ws.on('open', () => resolve());

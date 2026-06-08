@@ -51,7 +51,12 @@ export type {
 } from './channels/chat';
 
 export { VoiceChannel } from './channels/voice';
-export type { VoiceChannelEvents, StreamTask } from './channels/voice';
+export type {
+  VoiceChannelEvents,
+  VoiceChannelConfig,
+  InboundCallTwimlHandler,
+  StreamTask,
+} from './channels/voice';
 
 // Log redaction utilities
 export { maskPhone, maskEmail, maskAddress, scrubPii, scrubObject } from './util/log-redaction';

@@ -27,6 +27,10 @@ export class TACConfig {
   public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
+  /** Path the voice WebSocket is served at (default '/ws'). */
+  public readonly voiceWebsocketPath: string;
+  /** Path the ConversationRelay action callback is served at (default '/conversation-relay-callback'). */
+  public readonly voiceActionPath: string;
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
   public readonly cintelSummaryOperatorSid?: string;
@@ -64,6 +68,9 @@ export class TACConfig {
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
+    // voiceWebsocketPath / voiceActionPath always have schema defaults
+    this.voiceWebsocketPath = validatedConfig.voiceWebsocketPath;
+    this.voiceActionPath = validatedConfig.voiceActionPath;
     if (validatedConfig.cintelConfigurationId) {
       this.cintelConfigurationId = validatedConfig.cintelConfigurationId;
     }
@@ -94,7 +101,9 @@ export class TACConfig {
    * Optional environment variables:
    * - TWILIO_WHATSAPP_NUMBER: WhatsApp number for WhatsApp channel (e.g., 'whatsapp:+1234567890')
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
-   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice WebSocket connections (domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
+   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
+   * - TWILIO_VOICE_WEBSOCKET_PATH: Path for the voice WebSocket (default: /ws)
+   * - TWILIO_VOICE_ACTION_PATH: Path for the ConversationRelay action callback (default: /conversation-relay-callback)
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    * - TWILIO_RCS_SENDER_ID: RCS Sender ID for the RCS channel
@@ -240,6 +249,9 @@ export class TACConfig {
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
       voicePublicDomain: process.env[EnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN],
+      voiceWebsocketPath:
+        process.env[EnvironmentVariables.TWILIO_VOICE_WEBSOCKET_PATH] || undefined,
+      voiceActionPath: process.env[EnvironmentVariables.TWILIO_VOICE_ACTION_PATH] || undefined,
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],

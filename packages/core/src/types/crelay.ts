@@ -216,6 +216,309 @@ export const ConversationRelayConfigSchema: z.ZodType<ConversationRelayConfig> =
     languages: z.array(LanguageAttributesSchema).optional(),
   });
 
+// =========================================================================
+// TwiML customization layer
+// =========================================================================
+
+/**
+ * Twilio uses the same four-value enum for several attributes that control
+ * what caller input (DTMF, speech, both, neither) triggers a given behavior.
+ */
+export const InterruptModeSchema = z.enum(['none', 'dtmf', 'speech', 'any']);
+export type InterruptMode = z.infer<typeof InterruptModeSchema>;
+
+/**
+ * A single `<Language>` child for multi-language ConversationRelay setups.
+ *
+ * Maps to the `<Language>` element documented at
+ * https://www.twilio.com/docs/voice/twiml/connect/conversationrelay#language-element
+ *
+ * Distinct from {@link LanguageAttributes} (the Twilio-SDK-shaped type used by
+ * `connectConversationRelay`): this is the customization-facing model used in
+ * {@link TwiMLOptions}, mirroring the Python SDK's `LanguageConfig`.
+ */
+export const LanguageConfigSchema = z.object({
+  /**
+   * Language code, e.g. 'es-MX'. Can be 'multi' for automatic language
+   * detection (requires ElevenLabs TTS and Deepgram STT).
+   */
+  code: z.string(),
+  /** TTS voice name for this language */
+  voice: z.string().optional(),
+  /** TTS provider, e.g. 'google' */
+  ttsProvider: z.string().optional(),
+  /** Transcription provider, e.g. 'deepgram' */
+  transcriptionProvider: z.string().optional(),
+  /** Speech model for STT. Choices vary by transcriptionProvider. */
+  speechModel: z.string().optional(),
+});
+
+export type LanguageConfig = z.infer<typeof LanguageConfigSchema>;
+
+/**
+ * Options for the TwiML inside `<ConversationRelay>` (plus the
+ * `<Connect action>` URL).
+ *
+ * Fields map to the attributes documented at
+ * https://www.twilio.com/docs/voice/twiml/connect/conversationrelay . All
+ * fields are optional. `VoiceChannel.handleIncomingCall` merges these values
+ * over TAC defaults per-field — only fields explicitly present on the object
+ * override lower layers (see `VoiceChannel`'s overlay logic).
+ *
+ * This is the customization-facing counterpart to {@link ConversationRelayConfig}
+ * (which is the Twilio-SDK-shaped emit model and carries the required `url`).
+ * Mirrors the Python SDK's `TwiMLOptions`.
+ */
+export const TwiMLOptionsSchema = z
+  .object({
+    /** Custom parameters to pass to ConversationRelay as `<Parameter>` children */
+    customParameters: CustomParametersSchema.optional(),
+    /** Initial greeting message for the caller */
+    welcomeGreeting: z.string().optional(),
+    /**
+     * What caller input can interrupt the welcome greeting.
+     * Defaults to 'any' on Twilio.
+     */
+    welcomeGreetingInterruptible: InterruptModeSchema.optional(),
+    /** URL for Twilio to request when the call ends (`<Connect action>`) */
+    actionUrl: z.string().optional(),
+    /**
+     * Conversation Service SID. When set, ConversationRelay will manage
+     * conversation creation and participants.
+     */
+    conversationConfiguration: z.string().optional(),
+
+    // Language, TTS, STT
+    /**
+     * Language for both STT and TTS, e.g. 'en-US'. Equivalent to setting both
+     * ttsLanguage and transcriptionLanguage.
+     */
+    language: z.string().optional(),
+    /** TTS language code; overrides `language` for TTS. */
+    ttsLanguage: z.string().optional(),
+    /**
+     * STT language code; overrides `language` for transcription. Can be
+     * 'multi' for automatic language detection (Deepgram only).
+     */
+    transcriptionLanguage: z.string().optional(),
+    /** TTS voice name (choices vary by ttsProvider) */
+    voice: z.string().optional(),
+    /** TTS provider: 'Google', 'Amazon', or 'ElevenLabs'. Defaults to 'ElevenLabs'. */
+    ttsProvider: z.string().optional(),
+    /**
+     * STT provider: 'Google' or 'Deepgram'. Defaults to 'Deepgram' (or 'Google'
+     * for accounts that used ConversationRelay before 2025-09-12).
+     */
+    transcriptionProvider: z.string().optional(),
+    /** Speech model for STT. Choices vary by transcriptionProvider. */
+    speechModel: z.string().optional(),
+    /**
+     * Text normalization for ElevenLabs TTS. Defaults to 'off'. 'auto' behaves
+     * like 'off' for ConversationRelay calls.
+     */
+    elevenlabsTextNormalization: z.enum(['on', 'auto', 'off']).optional(),
+
+    // Turn detection / interruption
+    /**
+     * Confidence required to finish a turn. Only applies with Deepgram + flux
+     * speech model. Twilio enforces the accepted range — see ConversationRelay docs.
+     */
+    eotThreshold: z.number().optional(),
+    /**
+     * Send unfinalized prompts and eager end-of-turn events (last=false). Only
+     * applies with Deepgram + flux speech model.
+     */
+    partialPrompts: z.boolean().optional(),
+    /**
+     * Use Deepgram Smart Format for transcription output. Defaults to true when
+     * transcriptionProvider='Deepgram'.
+     */
+    deepgramSmartFormat: z.boolean().optional(),
+    /**
+     * Silence (ms) after speech before finalizing the prompt. Integer
+     * milliseconds or the literal 'auto' (the platform default). Twilio enforces
+     * the accepted range — see ConversationRelay docs.
+     */
+    speechTimeout: z.union([z.number().int(), z.literal('auto')]).optional(),
+    /**
+     * What caller input interrupts TTS playback. Boolean accepted for backward
+     * compat: true='any', false='none'. Defaults to 'any'.
+     */
+    interruptible: z.union([InterruptModeSchema, z.boolean()]).optional(),
+    /** How easily caller speech triggers an interrupt. Defaults to 'high'. */
+    interruptSensitivity: z.enum(['high', 'medium', 'low']).optional(),
+    /**
+     * What caller input gets reported while the agent is speaking (independent
+     * of whether playback is interrupted). Defaults to 'none' since May 2025.
+     */
+    reportInputDuringAgentSpeech: InterruptModeSchema.optional(),
+    /**
+     * Filter short conversational feedback ('yeah', 'uh-huh', …) so it doesn't
+     * interrupt the agent. Defaults to false.
+     */
+    ignoreBackchannel: z.boolean().optional(),
+    /**
+     * Allow text tokens from the next talk cycle to interrupt the current one.
+     * Defaults to false.
+     */
+    preemptible: z.boolean().optional(),
+    /** Emit DTMF keypress events over the WebSocket. */
+    dtmfDetection: z.boolean().optional(),
+
+    // Recognition hints / events / debug / intelligence
+    /**
+     * Comma-separated words/phrases likely to appear in speech. Capitalize
+     * proper nouns.
+     */
+    hints: z.string().optional(),
+    /** Space-separated event subscriptions, e.g. 'speaker-events tokens-played'. */
+    events: z.string().optional(),
+    /**
+     * Debug subscription, e.g. 'debugging'. Note: 'speaker-events' and
+     * 'tokens-played' have moved to the `events` attribute — only use them here
+     * for backward compatibility.
+     */
+    debug: z.string().optional(),
+    /**
+     * Conversation Intelligence (classic) Service SID or unique name for
+     * persisting transcripts and running Language Operators.
+     */
+    intelligenceService: z.string().optional(),
+
+    // Nested <Language> children
+    /** Additional `<Language>` children for multi-language support */
+    languages: z.array(LanguageConfigSchema).optional(),
+
+    /**
+     * Escape hatch for ConversationRelay attributes not yet typed on this model.
+     * Keys are emitted as-is on `<ConversationRelay>`; Twilio's SDK converts
+     * snake_case to camelCase, lowercases bools to 'true'/'false', and
+     * stringifies numbers. Prefer a typed field when one exists — use `extra`
+     * only for newly-added Twilio attributes not yet in this SDK.
+     */
+    extra: z.record(z.string(), z.union([z.string(), z.boolean(), z.number()])).optional(),
+  })
+  // Forbid unknown keys so a typo in a field name fails loudly rather than
+  // being silently dropped from the emitted TwiML.
+  .strict()
+  // Fail fast when `extra` includes a key that has a typed field on this model.
+  // Without this, the user's value would be silently dropped by the TwiML
+  // serializer in favor of the typed default — a footgun.
+  .superRefine((value, ctx) => {
+    if (!value.extra) return;
+    const typed = new Set(Object.keys(TwiMLOptionsShape).filter(k => k !== 'extra'));
+    const shadowed = Object.keys(value.extra)
+      .filter(k => typed.has(k))
+      .sort();
+    if (shadowed.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['extra'],
+        message:
+          `TwiMLOptions.extra keys [${shadowed.join(', ')}] shadow typed fields. ` +
+          'Set the typed field directly instead of using `extra`.',
+      });
+    }
+  });
+
+/**
+ * @internal Field names of {@link TwiMLOptionsSchema}, used by the shadow-guard
+ * refinement above. Declared separately because `.strict().superRefine(...)`
+ * erases the object shape on the schema instance.
+ */
+const TwiMLOptionsShape = {
+  customParameters: true,
+  welcomeGreeting: true,
+  welcomeGreetingInterruptible: true,
+  actionUrl: true,
+  conversationConfiguration: true,
+  language: true,
+  ttsLanguage: true,
+  transcriptionLanguage: true,
+  voice: true,
+  ttsProvider: true,
+  transcriptionProvider: true,
+  speechModel: true,
+  elevenlabsTextNormalization: true,
+  eotThreshold: true,
+  partialPrompts: true,
+  deepgramSmartFormat: true,
+  speechTimeout: true,
+  interruptible: true,
+  interruptSensitivity: true,
+  reportInputDuringAgentSpeech: true,
+  ignoreBackchannel: true,
+  preemptible: true,
+  dtmfDetection: true,
+  hints: true,
+  events: true,
+  debug: true,
+  intelligenceService: true,
+  languages: true,
+  extra: true,
+} as const;
+
+export type TwiMLOptions = z.infer<typeof TwiMLOptionsSchema>;
+
+/**
+ * Framework-neutral view of the Twilio TwiML webhook form.
+ *
+ * Populated by `TACServer` from the incoming Twilio webhook, then passed to a
+ * customizer registered via `VoiceChannel.onInboundCallTwiml(...)` so the
+ * application can produce per-call {@link TwiMLOptions} overrides without
+ * depending on Fastify types. Mirrors the Python SDK's `TwiMLRequest`.
+ */
+export const TwiMLRequestSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  callSid: z.string().optional(),
+  callerCountry: z.string().optional(),
+  callerState: z.string().optional(),
+  callerCity: z.string().optional(),
+  direction: z.string().optional(),
+  /**
+   * Any other fields from the Twilio webhook not captured above. Values are
+   * always strings here (webhook form fields are url-encoded), unlike
+   * TwiMLOptions.extra which accepts string | boolean | number for emitted
+   * TwiML attributes.
+   */
+  extra: z.record(z.string(), z.string()).default({}),
+});
+
+export type TwiMLRequest = z.infer<typeof TwiMLRequestSchema>;
+
+/**
+ * Map from Twilio webhook form field names to {@link TwiMLRequest} keys.
+ * Fields not in this map are bucketed into `extra` by {@link twiMLRequestFromForm}.
+ */
+const TWIML_REQUEST_FORM_ALIASES: Record<string, keyof Omit<TwiMLRequest, 'extra'>> = {
+  From: 'from',
+  To: 'to',
+  CallSid: 'callSid',
+  CallerCountry: 'callerCountry',
+  CallerState: 'callerState',
+  CallerCity: 'callerCity',
+  Direction: 'direction',
+};
+
+/**
+ * Build a {@link TwiMLRequest} from a raw Twilio form dict, bucketing unknown
+ * keys into `extra`. Mirrors the Python SDK's `TwiMLRequest.from_form`.
+ */
+export function twiMLRequestFromForm(form: Record<string, string>): TwiMLRequest {
+  const known: Record<string, string> = {};
+  const extra: Record<string, string> = {};
+  for (const [key, value] of Object.entries(form)) {
+    const alias = TWIML_REQUEST_FORM_ALIASES[key];
+    if (alias) {
+      known[alias] = value;
+    } else {
+      extra[key] = value;
+    }
+  }
+  return TwiMLRequestSchema.parse({ ...known, extra });
+}
+
 /**
  * Voice channel specific events
  */
@@ -286,16 +589,41 @@ export type ConversationRelayCallbackPayload = z.infer<
  *
  * The caller identity is always TAC's configured `config.phoneNumber`.
  * Multi-number deployments should run one TAC instance per line.
+ *
+ * TwiML for the outbound call is built by merging per-field, highest precedence
+ * first:
+ *   1. This call's `twimlOptions` (per-call overrides)
+ *   2. `VoiceChannelConfig.defaultTwimlOptions` (channel-wide defaults)
+ *   3. TAC defaults (welcome greeting, conversationConfiguration, actionUrl
+ *      resolved via Studio handoff if configured, else derived from
+ *      `TACConfig.voicePublicDomain` + `voiceActionPath`)
+ *
+ * Fields you don't set at a layer fall through to lower layers — so
+ * `twimlOptions: { voice: 'es-MX-Neural2-A' }` on this call overrides only
+ * `voice`; `language`, `interruptible`, etc. from the channel config still apply.
  */
 export interface InitiateVoiceConversationOptions {
   to: string;
-  conversationRelayConfig: ConversationRelayConfig;
-  actionUrl?: string | undefined;
+  /**
+   * Public WebSocket URL for ConversationRelay (e.g. 'wss://your-domain.ngrok.app/ws').
+   * Optional — defaults to the URL derived from `TACConfig.voicePublicDomain` +
+   * `voiceWebsocketPath`. Pass it here only to override the URL for a specific call.
+   */
+  websocketUrl?: string | undefined;
+  /**
+   * Per-call overrides for the TwiML inside `<ConversationRelay>`. Merged over
+   * `VoiceChannelConfig.defaultTwimlOptions` and TAC defaults.
+   */
+  twimlOptions?: TwiMLOptions | undefined;
 }
 
-export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> =
-  z.object({
+export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> = z
+  .object({
     to: z.string().min(1, 'Recipient phone number is required'),
-    conversationRelayConfig: ConversationRelayConfigSchema,
-    actionUrl: z.url().optional(),
-  });
+    websocketUrl: z.url().optional(),
+    twimlOptions: TwiMLOptionsSchema.optional(),
+  })
+  // Reject removed flat fields (welcomeGreeting, actionUrl, customParameters,
+  // conversationRelayConfig) so callers upgrading from older TAC versions get
+  // a clear error instead of having their values silently dropped.
+  .strict();

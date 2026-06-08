@@ -87,9 +87,7 @@ describe('Outbound Conversations', () => {
     beforeEach(async () => {
       tac = await createTestTAC(getTestConfig());
       channel = new SMSChannel(tac);
-      mockAdapter = new MockAdapter(
-        (tac.getConversationClient() as any).axiosInstance
-      );
+      mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
     });
 
     afterEach(() => {
@@ -175,11 +173,14 @@ describe('Outbound Conversations', () => {
       let capturedBody: unknown;
       mockAdapter.onPost(/\/v2\/Conversations$/).reply(config => {
         capturedBody = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-        return [200, {
-          id: 'CHinline1',
-          accountId: 'ACtest123456789',
-          status: 'ACTIVE',
-        }];
+        return [
+          200,
+          {
+            id: 'CHinline1',
+            accountId: 'ACtest123456789',
+            status: 'ACTIVE',
+          },
+        ];
       });
 
       mockAdapter.onGet(/\/Participants$/).reply(200, {
@@ -228,7 +229,8 @@ describe('Outbound Conversations', () => {
         409,
         {
           code: 400,
-          message: 'Address mapping already exists on conversation conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf.',
+          message:
+            'Address mapping already exists on conversation conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf.',
           more_info: 'https://www.twilio.com/docs/errors/400',
           status: 409,
         },
@@ -283,9 +285,7 @@ describe('Outbound Conversations', () => {
     beforeEach(async () => {
       tac = await createTestTAC(getTestConfig());
       channel = new SMSChannel(tac);
-      mockAdapter = new MockAdapter(
-        (tac.getConversationClient() as any).axiosInstance
-      );
+      mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
     });
 
     afterEach(() => {
@@ -338,13 +338,16 @@ describe('Outbound Conversations', () => {
       let capturedBody: unknown;
       mockAdapter.onPost(/\/CHsr001\/Actions$/).reply(config => {
         capturedBody = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-        return [202, {
-          id: 'ACTsr_reply',
-          type: 'SEND_MESSAGE',
-          status: 'PENDING',
-          conversationId: 'CHsr001',
-          createdAt: '2024-01-01T00:00:00Z',
-        }];
+        return [
+          202,
+          {
+            id: 'ACTsr_reply',
+            type: 'SEND_MESSAGE',
+            status: 'PENDING',
+            conversationId: 'CHsr001',
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+        ];
       });
 
       await channel.sendResponse('CHsr001', 'Follow-up message');
@@ -358,7 +361,6 @@ describe('Outbound Conversations', () => {
         },
       });
     });
-
   });
 
   describe('ChatChannel.initiateOutboundConversation', () => {
@@ -369,9 +371,7 @@ describe('Outbound Conversations', () => {
     beforeEach(async () => {
       tac = await createTestTAC(getTestConfig());
       channel = new ChatChannel(tac);
-      mockAdapter = new MockAdapter(
-        (tac.getConversationClient() as any).axiosInstance
-      );
+      mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
     });
 
     afterEach(() => {
@@ -392,7 +392,9 @@ describe('Outbound Conversations', () => {
             conversationId: 'CHchat123',
             accountId: 'ACtest123456789',
             type: 'CUSTOMER',
-            addresses: [{ channel: 'CHAT', address: 'customer@example.com', channelId: 'CHSIDabc' }],
+            addresses: [
+              { channel: 'CHAT', address: 'customer@example.com', channelId: 'CHSIDabc' },
+            ],
           },
           {
             id: 'PAchatagent1',
@@ -429,7 +431,8 @@ describe('Outbound Conversations', () => {
         409,
         {
           code: 400,
-          message: 'Address mapping already exists on conversation conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf.',
+          message:
+            'Address mapping already exists on conversation conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf.',
           more_info: 'https://www.twilio.com/docs/errors/400',
           status: 409,
         },
@@ -454,9 +457,7 @@ describe('Outbound Conversations', () => {
               conversationId: 'conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf',
               accountId: 'ACtest123456789',
               type: 'AI_AGENT',
-              addresses: [
-                { channel: 'CHAT', address: 'ai-assistant', channelId: 'CHSIDabc' },
-              ],
+              addresses: [{ channel: 'CHAT', address: 'ai-assistant', channelId: 'CHSIDabc' }],
             },
           ],
         });
@@ -512,9 +513,7 @@ describe('Outbound Conversations', () => {
     it('should use CUSTOMER participant address for authorInfo on outbound calls', async () => {
       const tac = await createTestTAC(getTestConfig());
       const channel = new VoiceChannel(tac);
-      const mockAdapter = new MockAdapter(
-        (tac.getConversationClient() as any).axiosInstance
-      );
+      const mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
 
       // Mock listConversations and listParticipants for lazy init
       mockAdapter.onGet(/\/v2\/Conversations$/).reply(200, {
@@ -582,9 +581,7 @@ describe('Outbound Conversations', () => {
     it('should fall back to from for authorInfo on inbound calls', async () => {
       const tac = await createTestTAC(getTestConfig());
       const channel = new VoiceChannel(tac);
-      const mockAdapter = new MockAdapter(
-        (tac.getConversationClient() as any).axiosInstance
-      );
+      const mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
 
       // Mock listConversations and listParticipants for lazy init
       mockAdapter.onGet(/\/v2\/Conversations$/).reply(200, {
@@ -651,11 +648,14 @@ describe('Outbound Conversations', () => {
   });
 
   describe('VoiceChannel.initiateOutboundConversation', () => {
+    // Voice outbound derives the WebSocket URL from voicePublicDomain unless
+    // overridden per-call via websocketUrl.
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
     let tac: TAC;
     let channel: VoiceChannel;
 
     beforeEach(async () => {
-      tac = await createTestTAC(getTestConfig());
+      tac = await createTestTAC(getVoiceConfig());
       channel = new VoiceChannel(tac);
     });
 
@@ -664,10 +664,8 @@ describe('Outbound Conversations', () => {
 
       const result = await channel.initiateOutboundConversation({
         to: '+15559876543',
-        conversationRelayConfig: {
-          url: 'wss://example.com/ws',
-          welcomeGreeting: 'Hello, this is a call from our AI assistant.',
-        },
+        websocketUrl: 'wss://example.com/ws',
+        twimlOptions: { welcomeGreeting: 'Hello, this is a call from our AI assistant.' },
       });
 
       expect(result.callSid).toBe('CA123outbound');
@@ -684,13 +682,70 @@ describe('Outbound Conversations', () => {
       expect(twiml).toContain('conversationConfiguration');
     });
 
+    it('should derive the WebSocket URL from voicePublicDomain when not passed', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAderived' });
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('url="wss://example.com/ws"');
+    });
+
+    it('should apply VoiceChannelConfig.defaultTwimlOptions to outbound TwiML', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAchan' });
+      const chan = new VoiceChannel(tac, {
+        defaultTwimlOptions: { voice: 'en-US-Journey-D', interruptible: 'speech' },
+      });
+
+      await chan.initiateOutboundConversation({
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('voice="en-US-Journey-D"');
+      expect(twiml).toContain('interruptible="speech"');
+    });
+
+    it('should let per-call twimlOptions win over channel defaults', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CApercall' });
+      const chan = new VoiceChannel(tac, {
+        defaultTwimlOptions: { voice: 'en-US-Journey-D' },
+      });
+
+      await chan.initiateOutboundConversation({
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        twimlOptions: { voice: 'es-MX-Neural2-A' },
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('voice="es-MX-Neural2-A"');
+      expect(twiml).not.toContain('en-US-Journey-D');
+    });
+
+    it('should use the Studio handoff URL for action when no override', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAstudio' });
+      const flowSid = 'FW' + 'a'.repeat(32);
+      const studioTac = await createTestTAC({ ...getVoiceConfig(), studioHandoffFlowSid: flowSid });
+      const chan = new VoiceChannel(studioTac);
+
+      await chan.initiateOutboundConversation({
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain(`Flows/${flowSid}`);
+    });
+
     it('should throw when calls.create fails', async () => {
       mockCallCreate.mockRejectedValue(new Error('Call placement failed'));
 
       await expect(
         channel.initiateOutboundConversation({
           to: '+15559876543',
-          conversationRelayConfig: { url: 'wss://example.com/ws' },
+          websocketUrl: 'wss://example.com/ws',
         })
       ).rejects.toThrow('Call placement failed');
     });
@@ -699,7 +754,17 @@ describe('Outbound Conversations', () => {
       await expect(
         channel.initiateOutboundConversation({
           to: '',
-          conversationRelayConfig: { url: 'wss://example.com/ws' },
+          websocketUrl: 'wss://example.com/ws',
+        })
+      ).rejects.toThrow();
+    });
+
+    it('should reject removed flat fields like welcomeGreeting', async () => {
+      await expect(
+        channel.initiateOutboundConversation({
+          to: '+15559876543',
+          // @ts-expect-error removed flat field — must go on twimlOptions now
+          welcomeGreeting: 'Hi!',
         })
       ).rejects.toThrow();
     });

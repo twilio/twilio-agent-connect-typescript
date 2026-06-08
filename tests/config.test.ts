@@ -53,7 +53,9 @@ describe('TACConfig', () => {
       expect(config.accountSid).toBe('ACtest123456789');
       expect(config.authToken).toBe('test_token_123');
       expect(config.phoneNumber).toBe('+15551234567');
-      expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationConfigurationId).toBe(
+        'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
+      );
     });
 
     it('should validate required fields', () => {
@@ -138,7 +140,6 @@ describe('TACConfig', () => {
         }).toThrow('Invalid Twilio region format');
       }
     });
-
   });
 
   describe('fromEnv', () => {
@@ -148,7 +149,8 @@ describe('TACConfig', () => {
       process.env.TWILIO_API_KEY = 'SKtest123';
       process.env.TWILIO_API_SECRET = 'test_api_token';
       process.env.TWILIO_PHONE_NUMBER = '+1234567890';
-      process.env.TWILIO_CONVERSATION_CONFIGURATION_ID = 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd';
+      process.env.TWILIO_CONVERSATION_CONFIGURATION_ID =
+        'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd';
     };
 
     it('should create config when all required env vars are set', () => {
@@ -159,7 +161,9 @@ describe('TACConfig', () => {
       expect(config.accountSid).toBe('ACtest123');
       expect(config.authToken).toBe('test_auth_token');
       expect(config.phoneNumber).toBe('+1234567890');
-      expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+      expect(config.conversationConfigurationId).toBe(
+        'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
+      );
     });
 
     it('should include optional voicePublicDomain when set', () => {
@@ -171,13 +175,13 @@ describe('TACConfig', () => {
       expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
-    it('should reject voicePublicDomain with protocol', () => {
+    it('should strip an https:// protocol from voicePublicDomain', () => {
       setRequiredEnvVars();
       process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'https://example.ngrok.app';
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Invalid hostname format/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
     it('should reject invalid voicePublicDomain format', () => {
@@ -189,22 +193,31 @@ describe('TACConfig', () => {
       }).toThrow(/Invalid hostname format/);
     });
 
-    it('should reject voicePublicDomain with http protocol', () => {
+    it('should strip an http:// protocol from voicePublicDomain', () => {
       setRequiredEnvVars();
       process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'http://example.ngrok.app';
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Invalid hostname format/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
-    it('should reject voicePublicDomain with wss protocol', () => {
+    it('should strip a wss:// protocol from voicePublicDomain', () => {
       setRequiredEnvVars();
       process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'wss://example.ngrok.app';
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Invalid hostname format/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.ngrok.app');
+    });
+
+    it('should strip a trailing slash (and protocol) from voicePublicDomain', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'https://example.ngrok.app/';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
     it('should reject voicePublicDomain with path', () => {
@@ -279,6 +292,31 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.voicePublicDomain).toBeUndefined();
+    });
+
+    it('should default the voice paths', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
+      delete process.env.TWILIO_VOICE_ACTION_PATH;
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voiceWebsocketPath).toBe('/ws');
+      expect(config.voiceActionPath).toBe('/conversation-relay-callback');
+    });
+
+    it('should read voice paths from env vars', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_WEBSOCKET_PATH = '/voice/ws';
+      process.env.TWILIO_VOICE_ACTION_PATH = '/voice/cleanup';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voiceWebsocketPath).toBe('/voice/ws');
+      expect(config.voiceActionPath).toBe('/voice/cleanup');
+
+      delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
+      delete process.env.TWILIO_VOICE_ACTION_PATH;
     });
 
     it('should throw error when TWILIO_ACCOUNT_SID is missing', () => {
@@ -521,7 +559,9 @@ describe('TACConfig', () => {
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Invalid TWILIO_MEMORY_RELEVANCE_THRESHOLD: expected a number, got "not_a_number"');
+      }).toThrow(
+        'Invalid TWILIO_MEMORY_RELEVANCE_THRESHOLD: expected a number, got "not_a_number"'
+      );
     });
 
     it('should throw error for out of range relevance threshold', () => {

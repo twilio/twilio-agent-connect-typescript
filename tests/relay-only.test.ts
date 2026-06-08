@@ -7,6 +7,7 @@ const getRelayOnlyConfigData = () => ({
   apiKey: 'SKtest123456789',
   apiSecret: 'test_api_secret_123',
   phoneNumber: '+15551234567',
+  voicePublicDomain: 'example.com',
 });
 
 const getOrchestratedConfigData = () => ({
@@ -197,13 +198,12 @@ describe('Relay-Only Mode', () => {
       expect(session?.authorInfo?.address).toBe('+15551112222');
     });
 
-    it('TwiML omits conversationConfiguration in relay-only mode', () => {
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/ws',
-          welcomeGreeting: 'Hello!',
-        },
+    it('TwiML omits conversationConfiguration in relay-only mode', async () => {
+      const channel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Hello!' },
       });
+
+      const twiml = await channel.handleIncomingCall();
 
       expect(twiml).not.toContain('conversationConfiguration');
       expect(twiml).toContain('wss://example.com/ws');

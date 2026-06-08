@@ -212,20 +212,13 @@ server
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {
-      const publicDomain = process.env.TWILIO_VOICE_PUBLIC_DOMAIN;
-      if (!publicDomain) {
-        console.error(
-          'TWILIO_VOICE_PUBLIC_DOMAIN is required for voice calls. Set it in your .env file to your domain (e.g., abc123.ngrok.app)'
-        );
-        process.exit(1);
-      }
-
+      // The WebSocket URL is derived from TACConfig.voicePublicDomain
+      // (TWILIO_VOICE_PUBLIC_DOMAIN) + voiceWebsocketPath. Per-call TwiML
+      // overrides go on twimlOptions; they merge over
+      // VoiceChannelConfig.defaultTwimlOptions and TAC defaults.
       const result = await voiceChannel.initiateOutboundConversation({
         to,
-        conversationRelayConfig: {
-          url: `wss://${publicDomain}/ws`,
-          ...(welcomeGreeting ? { welcomeGreeting } : {}),
-        },
+        ...(welcomeGreeting ? { twimlOptions: { welcomeGreeting } } : {}),
       });
       console.log(`Call placed to ${to}`);
       console.log(`Call SID: ${result.callSid}`);
