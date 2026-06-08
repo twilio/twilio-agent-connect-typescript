@@ -70,7 +70,7 @@ getting_started/  # Example apps (OpenAI integration)
   - **MemoryPromptBuilder** (`prompt-builder.ts`): Builds formatted LLM prompts from memory and profile data
   - **AdapterOptions** (`options.ts`): Configuration options for profile trait filtering
   - **buildProfilePrompt** (`conversation-session-helpers.ts`): Helper to build profile section from ConversationSession
-- **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server with default `welcomeGreeting` for voice calls; customizable via `conversationRelayConfig`
+- **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server that registers voice/messaging/CI routes. Voice TwiML is owned by the `VoiceChannel` (defaults + per-call customizer); the server just hands the channel a parsed `TwiMLRequest`. Voice URLs are built from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`/`voiceActionPath`, not from request headers. The server throws at construction if a voice channel is attached but `voicePublicDomain` is unset.
 
 ## Dependencies
 
@@ -87,34 +87,47 @@ The `TACServer` class (`packages/server/src/lib/server.ts`) provides a productio
 {
   voice: { host: '0.0.0.0', port: 3000 },
   webhookPaths: {
-    sms: '/webhook',
+    messaging: '/webhook',
     twiml: '/twiml',
-    ws: '/ws',
-    conversationRelayCallback: '/conversation-relay-callback',
-  },
-  conversationRelayConfig: {
-    welcomeGreeting: 'Hello! How can I assist you today?',
   },
   development: false,
 }
 ```
 
-### Customizing Voice Greeting
+The voice WebSocket and ConversationRelay action paths live on `TACConfig`
+(`voiceWebsocketPath` defaults to `/ws`, `voiceActionPath` to
+`/conversation-relay-callback`) — the channel builds its public URLs from them,
+and the server registers its routes at the same paths so the two stay in sync.
 
-The default `welcomeGreeting` is automatically applied to all voice calls. Customize it via `conversationRelayConfig`:
+### Customizing voice TwiML
+
+TwiML inside `<ConversationRelay>` is configured on the **voice channel**, not
+the server. Two layers (highest precedence first): the per-call inbound
+customizer registered via `voiceChannel.onInboundCallTwiml(...)`, then
+`VoiceChannelConfig.defaultTwimlOptions`. Layers merge per-field over TAC
+defaults (welcome greeting, `conversationConfiguration`, action URL).
 
 ```typescript
-const server = new TACServer(tac, {
-  conversationRelayConfig: {
+const voiceChannel = new VoiceChannel(tac, {
+  defaultTwimlOptions: {
     welcomeGreeting: 'Welcome to our support line!',
     welcomeGreetingInterruptible: 'any',
     transcriptionProvider: 'Deepgram',
     ttsProvider: 'Google',
   },
 });
+
+voiceChannel.onInboundCallTwiml(req =>
+  req.callerCountry === 'MX' ? { language: 'es-MX', welcomeGreeting: '¡Hola!' } : {}
+);
 ```
 
-All ConversationRelay attributes except `url` are supported (see `packages/core/src/types/crelay.ts`). The `url` field is automatically set by the server based on the request host and WebSocket path.
+All ConversationRelay attributes are supported (see
+`packages/core/src/types/crelay.ts`), plus an `extra` escape hatch for
+attributes not yet typed. The WebSocket `url` is resolved by the channel from
+`TACConfig.voicePublicDomain` (set `TWILIO_VOICE_PUBLIC_DOMAIN`), so it never
+needs to be passed in. Outbound calls take the same surface via
+`InitiateVoiceConversationOptions.twimlOptions`.
 
 ## Pull Requests
 

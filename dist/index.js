@@ -21,6 +21,17 @@ var TwilioMemoryConfigSchema = z.object({
   communicationsLimit: z.number().int().min(0).max(100).default(10),
   relevanceThreshold: z.number().min(0).max(1).default(0)
 });
+function normalizeVoicePublicDomain(value) {
+  let v = value.trim();
+  if (!v) return "";
+  for (const scheme of ["https://", "http://", "wss://", "ws://"]) {
+    if (v.toLowerCase().startsWith(scheme)) {
+      v = v.slice(scheme.length);
+      break;
+    }
+  }
+  return v.replace(/\/+$/, "");
+}
 var TACConfigSchema = z.object({
   accountSid: z.string().min(1, "Twilio Account SID is required"),
   authToken: z.string().min(1, "Twilio Auth Token is required"),
@@ -29,7 +40,26 @@ var TACConfigSchema = z.object({
   phoneNumber: z.string().min(1, "Twilio Phone Number is required"),
   memoryConfig: TwilioMemoryConfigSchema.default({}),
   conversationConfigurationId: z.string().regex(/^conv_configuration_[0-9a-z]{26}$/, "Invalid Conversation Configuration ID format"),
-  voicePublicDomain: z.string().url().optional(),
+  /**
+   * Public domain where voice routes are reachable (e.g. `example.ngrok.app`).
+   * Used by VoiceChannel to construct the public WebSocket URL and
+   * ConversationRelay action URL. Required when using the Voice channel.
+   * Schemes (https://, wss://) and trailing slashes are stripped automatically,
+   * so a copy-pasted `https://example.ngrok.app/` normalizes to `example.ngrok.app`.
+   */
+  voicePublicDomain: z.string().transform(normalizeVoicePublicDomain).optional().transform((v) => v ? v : void 0),
+  /**
+   * Path the voice WebSocket is served at. Combined with voicePublicDomain to
+   * build the public WebSocket URL the voice channel hands to Twilio in TwiML;
+   * TACServer also registers its WebSocket route at this path. Override only if
+   * you mount the route at a non-default path.
+   */
+  voiceWebsocketPath: z.string().default("/ws"),
+  /**
+   * Path the ConversationRelay action callback is served at. Same role as
+   * voiceWebsocketPath but for the `<Connect action=...>` cleanup callback.
+   */
+  voiceActionPath: z.string().default("/conversation-relay-callback"),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
@@ -59,7 +89,9 @@ var EnvironmentVariables = {
   TWILIO_MEMORY_COMMUNICATIONS_LIMIT: "TWILIO_MEMORY_COMMUNICATIONS_LIMIT",
   TWILIO_MEMORY_RELEVANCE_THRESHOLD: "TWILIO_MEMORY_RELEVANCE_THRESHOLD",
   TWILIO_CONVERSATION_CONFIGURATION_ID: "TWILIO_CONVERSATION_CONFIGURATION_ID",
-  VOICE_PUBLIC_DOMAIN: "VOICE_PUBLIC_DOMAIN",
+  TWILIO_VOICE_PUBLIC_DOMAIN: "TWILIO_VOICE_PUBLIC_DOMAIN",
+  TWILIO_VOICE_WEBSOCKET_PATH: "TWILIO_VOICE_WEBSOCKET_PATH",
+  TWILIO_VOICE_ACTION_PATH: "TWILIO_VOICE_ACTION_PATH",
   TWILIO_TAC_CI_CONFIGURATION_ID: "TWILIO_TAC_CI_CONFIGURATION_ID",
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: "TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID",
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: "TWILIO_TAC_CI_SUMMARY_OPERATOR_SID",
@@ -588,6 +620,7 @@ var CreateObservationResponseSchema = z.object({
 var CreateConversationSummariesResponseSchema = z.object({
   message: z.string()
 });
+var InterruptModeSchema = z.enum(["none", "dtmf", "speech", "any"]);
 var LanguageAttributesSchema = z.object({
   /** Language code (e.g., 'en-US', 'es-ES', 'en-AU') */
   code: z.string(),
@@ -610,8 +643,8 @@ var ConversationRelayAttributesSchema = z.object({
   // Welcome greeting settings
   /** Initial greeting to play when call connects */
   welcomeGreeting: z.string().optional(),
-  /** Whether welcome greeting can be interrupted */
-  welcomeGreetingInterruptible: z.enum(["any", "speech", "none"]).optional(),
+  /** What caller input can interrupt the welcome greeting. Defaults to 'any' on Twilio. */
+  welcomeGreetingInterruptible: InterruptModeSchema.optional(),
   // Transcription settings
   /** Transcription provider (e.g., 'Deepgram', 'Google') */
   transcriptionProvider: z.string().optional(),
@@ -629,8 +662,12 @@ var ConversationRelayAttributesSchema = z.object({
   /** ElevenLabs text normalization setting */
   elevenlabsTextNormalization: z.string().optional(),
   // Interaction settings
-  /** When agent speech can be interrupted */
-  interruptible: z.enum(["any", "speech", "none"]).optional(),
+  /**
+   * What caller input interrupts TTS playback. Defaults to 'any'.
+   * (Python's TwiMLOptions also accepts a boolean for backward compat; the
+   * Twilio SDK's TS types only permit the string enum, so we expose the enum.)
+   */
+  interruptible: InterruptModeSchema.optional(),
   /** Interrupt detection sensitivity */
   interruptSensitivity: z.enum(["low", "medium", "high"]).optional(),
   /** Enable DTMF tone detection */
@@ -695,10 +732,49 @@ var TextTokenMessageSchema = z.object({
   token: z.string(),
   last: z.boolean().optional().default(true)
 });
-var ConversationRelayConfigSchema = ConversationRelayAttributesSchema.extend({
+var ConversationRelayExtraSchema = z.record(
+  z.union([z.string(), z.boolean(), z.number()])
+);
+var CRELAY_NON_ATTRIBUTE_KEYS = ["languages", "extra", "actionUrl", "customParameters"];
+var CRELAY_TYPED_ATTRIBUTE_KEYS = [
+  ...Object.keys(ConversationRelayAttributesSchema.shape),
+  "eotThreshold",
+  "deepgramSmartFormat",
+  "speechTimeout",
+  "ignoreBackchannel",
+  "events"
+];
+function refineNoExtraShadowing(config, ctx) {
+  if (!config.extra) return;
+  const typed = new Set(
+    Object.keys(config).filter((k) => !CRELAY_NON_ATTRIBUTE_KEYS.includes(k))
+  );
+  for (const k of CRELAY_TYPED_ATTRIBUTE_KEYS) typed.add(k);
+  const shadowed = Object.keys(config.extra).filter((k) => typed.has(k)).sort();
+  if (shadowed.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["extra"],
+      message: `extra keys ${JSON.stringify(shadowed)} shadow typed fields. Set the typed field directly instead of using extra.`
+    });
+  }
+}
+var ConversationRelayConfigShape = {
   /** Optional language configurations as child <Language> elements */
-  languages: z.array(LanguageAttributesSchema).optional()
-});
+  languages: z.array(LanguageAttributesSchema).optional(),
+  eotThreshold: z.number().optional(),
+  deepgramSmartFormat: z.boolean().optional(),
+  speechTimeout: z.union([z.number().int(), z.literal("auto")]).optional(),
+  ignoreBackchannel: z.boolean().optional(),
+  events: z.string().optional(),
+  actionUrl: z.string().url().optional(),
+  customParameters: CustomParametersSchema.optional(),
+  extra: ConversationRelayExtraSchema.optional()
+};
+var ConversationRelayConfigSchema = ConversationRelayAttributesSchema.extend(ConversationRelayConfigShape).superRefine(
+  refineNoExtraShadowing
+);
+var ConversationRelayOptionsSchema = ConversationRelayAttributesSchema.omit({ url: true }).extend(ConversationRelayConfigShape).superRefine(refineNoExtraShadowing);
 var ConversationRelayCallbackPayloadSchema = z.object({
   // Core Twilio identifiers (required)
   AccountSid: z.string(),
@@ -731,11 +807,35 @@ var ConversationRelayCallbackPayloadSchema = z.object({
   SessionStatus: z.string().optional(),
   SessionDuration: z.string().optional()
 });
+var TWIML_REQUEST_FIELD_KEYS = {
+  from: "From",
+  to: "To",
+  callSid: "CallSid",
+  callerCountry: "CallerCountry",
+  callerState: "CallerState",
+  callerCity: "CallerCity",
+  direction: "Direction"
+};
+function twimlRequestFromForm(form) {
+  const knownByKey = new Map(
+    Object.entries(TWIML_REQUEST_FIELD_KEYS).map(([field, key]) => [key, field])
+  );
+  const request = { extra: {} };
+  for (const [key, value] of Object.entries(form)) {
+    const field = knownByKey.get(key);
+    if (field) {
+      request[field] = value;
+    } else {
+      request.extra[key] = value;
+    }
+  }
+  return request;
+}
 var InitiateVoiceConversationOptionsSchema = z.object({
   to: z.string().min(1, "Recipient phone number is required"),
   from: z.string().optional(),
-  conversationRelayConfig: ConversationRelayConfigSchema,
-  actionUrl: z.string().url().optional()
+  websocketUrl: z.string().optional(),
+  twimlOptions: ConversationRelayOptionsSchema.optional()
 });
 var JSONSchemaSchema = z.object({
   type: z.enum(["object", "string", "number", "boolean", "array"]),
@@ -852,6 +952,10 @@ var TACConfig = class _TACConfig {
   memoryConfig;
   conversationConfigurationId;
   voicePublicDomain;
+  /** Path the voice WebSocket is served at (combined with voicePublicDomain). */
+  voiceWebsocketPath;
+  /** Path the ConversationRelay `<Connect action>` callback is served at. */
+  voiceActionPath;
   cintelConfigurationId;
   cintelObservationOperatorSid;
   cintelSummaryOperatorSid;
@@ -877,6 +981,8 @@ var TACConfig = class _TACConfig {
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
+    this.voiceWebsocketPath = validatedConfig.voiceWebsocketPath;
+    this.voiceActionPath = validatedConfig.voiceActionPath;
     if (validatedConfig.cintelConfigurationId) {
       this.cintelConfigurationId = validatedConfig.cintelConfigurationId;
     }
@@ -905,7 +1011,9 @@ var TACConfig = class _TACConfig {
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID
    *
    * Optional environment variables:
-   * - VOICE_PUBLIC_DOMAIN: Public domain for voice webhooks
+   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; e.g. `example.ngrok.app`)
+   * - TWILIO_VOICE_WEBSOCKET_PATH: Path for the voice WebSocket (default: /ws)
+   * - TWILIO_VOICE_ACTION_PATH: Path for the ConversationRelay action callback (default: /conversation-relay-callback)
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    *
@@ -1011,7 +1119,9 @@ var TACConfig = class _TACConfig {
         )
       },
       conversationConfigurationId: process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID],
-      voicePublicDomain: process.env[EnvironmentVariables.VOICE_PUBLIC_DOMAIN],
+      voicePublicDomain: process.env[EnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN],
+      voiceWebsocketPath: process.env[EnvironmentVariables.TWILIO_VOICE_WEBSOCKET_PATH],
+      voiceActionPath: process.env[EnvironmentVariables.TWILIO_VOICE_ACTION_PATH],
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid: process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],
       cintelSummaryOperatorSid: process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
@@ -3451,6 +3561,23 @@ var ChatChannel = class extends MessagingChannel {
     });
   }
 };
+
+// packages/core/src/util/handoff-urls.ts
+function studioExecutionsUrl(flowSid) {
+  return `https://studio.twilio.com/v2/Flows/${flowSid}/Executions`;
+}
+function studioVoiceHandoffUrl(accountSid, flowSid) {
+  return `https://webhooks.twilio.com/v1/Accounts/${accountSid}/Flows/${flowSid}?Trigger=incomingCall`;
+}
+
+// packages/core/src/channels/voice.ts
+var DEFAULT_WELCOME_GREETING = "Hello! How can I assist you today?";
+function stringifyParameterValue(value) {
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
 var VoiceChannel = class extends BaseChannel {
   webSocketConnections;
   voiceCallbacks;
@@ -3459,13 +3586,118 @@ var VoiceChannel = class extends BaseChannel {
   initializationRetries;
   MAX_INITIALIZATION_RETRIES = 3;
   twilioClient;
-  constructor(tac) {
+  voiceConfig;
+  onInboundCallTwimlHandler;
+  constructor(tac, config = {}) {
     super(tac);
     this.webSocketConnections = /* @__PURE__ */ new Map();
     this.voiceCallbacks = {};
     this.streamTasks = /* @__PURE__ */ new Map();
     this.promptQueues = /* @__PURE__ */ new Map();
     this.initializationRetries = /* @__PURE__ */ new Map();
+    this.voiceConfig = config;
+  }
+  /**
+   * Register a callback that produces per-call overrides for the TwiML inside
+   * `<ConversationRelay>` on inbound calls.
+   *
+   * The callback receives a framework-neutral {@link TwiMLRequest} (parsed from
+   * the Twilio webhook form) and returns a ConversationRelayConfig. Keys the
+   * callback explicitly sets override `defaultTwimlOptions` and TAC defaults;
+   * unset keys fall through.
+   *
+   * Outbound calls don't use this — pass per-call TwiML via
+   * `InitiateVoiceConversationOptions.twimlOptions` instead.
+   */
+  onInboundCallTwiml(callback) {
+    this.onInboundCallTwimlHandler = callback;
+  }
+  /**
+   * Resolve the public WebSocket URL from TACConfig.voicePublicDomain +
+   * voiceWebsocketPath. Throws if voicePublicDomain isn't set.
+   */
+  resolveWebsocketUrl(action) {
+    if (this.config.voicePublicDomain) {
+      return `wss://${this.config.voicePublicDomain}${this.config.voiceWebsocketPath}`;
+    }
+    throw new Error(
+      `${action} needs a WebSocket URL. Set TWILIO_VOICE_PUBLIC_DOMAIN (or TACConfig.voicePublicDomain).`
+    );
+  }
+  /**
+   * Resolve the default `<Connect action=...>` cleanup URL. Returns undefined
+   * if voicePublicDomain isn't set — fine, because action_url has
+   * higher-priority layers (customizer, twimlOptions, Studio handoff).
+   */
+  resolveDefaultActionUrl() {
+    if (this.config.voicePublicDomain) {
+      return `https://${this.config.voicePublicDomain}${this.config.voiceActionPath}`;
+    }
+    return void 0;
+  }
+  /**
+   * Layer TwiML options: TAC defaults -> channel `defaultTwimlOptions` ->
+   * `perCall` (customizer output for inbound, or twimlOptions for outbound).
+   * Mirrors Python's `_build_twiml_options`.
+   *
+   * Returns the merged `<ConversationRelay>` config (with `url` set) plus the
+   * separately-resolved `actionUrl` for the enclosing `<Connect>`.
+   */
+  buildTwimlOptions(websocketUrl, perCall) {
+    const merged = {
+      url: websocketUrl,
+      welcomeGreeting: DEFAULT_WELCOME_GREETING
+    };
+    const conversationConfiguration = this.config.conversationConfigurationId;
+    if (conversationConfiguration) {
+      merged.conversationConfiguration = conversationConfiguration;
+    }
+    const actionUrl = this.resolveActionUrl(perCall);
+    if (this.voiceConfig.defaultTwimlOptions) {
+      this.overlayFields(merged, this.voiceConfig.defaultTwimlOptions);
+    }
+    if (perCall) {
+      this.overlayFields(merged, perCall);
+    }
+    return { config: merged, actionUrl };
+  }
+  /**
+   * Apply keys explicitly present on `source` onto `target`. Lists
+   * (`languages`) and nested objects (`extra`) replace wholesale.
+   *
+   * `actionUrl`/`url` are skipped — `url` is owned by the caller and the action
+   * URL is resolved once across all layers via {@link resolveActionUrl}.
+   */
+  overlayFields(target, source) {
+    for (const [key, value] of Object.entries(source)) {
+      if (key === "actionUrl" || key === "url") continue;
+      if (value === void 0) continue;
+      target[key] = value;
+    }
+  }
+  /**
+   * Resolve the TwiML `<Connect action=...>` URL. Precedence (highest first):
+   *   1. customizer / per-call twimlOptions (`actionUrl` key present)
+   *   2. channel `defaultTwimlOptions.actionUrl`
+   *   3. Studio handoff (when studioHandoffFlowSid is configured)
+   *   4. Channel default derived from voicePublicDomain + voiceActionPath.
+   *
+   * An explicit `actionUrl: undefined`... has no representation in JS object
+   * spreads (the key is simply absent), so unlike Python there is no
+   * "explicitly suppress" sentinel — omit the key to fall through.
+   */
+  resolveActionUrl(perCall) {
+    if (perCall && "actionUrl" in perCall && perCall.actionUrl !== void 0) {
+      return perCall.actionUrl;
+    }
+    const channelDefault = this.voiceConfig.defaultTwimlOptions;
+    if (channelDefault && "actionUrl" in channelDefault && channelDefault.actionUrl !== void 0) {
+      return channelDefault.actionUrl;
+    }
+    if (this.config.studioHandoffFlowSid) {
+      return studioVoiceHandoffUrl(this.config.accountSid, this.config.studioHandoffFlowSid);
+    }
+    return this.resolveDefaultActionUrl();
   }
   getTwilioClient() {
     if (!this.twilioClient) {
@@ -3858,23 +4090,31 @@ var VoiceChannel = class extends BaseChannel {
   // Incoming Call Handling
   // =========================================================================
   /**
-   * Handle incoming voice call - generate TwiML to connect to ConversationRelay
+   * Handle incoming voice call — generate TwiML to connect to ConversationRelay.
    *
-   * ConversationRelay will create the conversation automatically. The conversation
-   * will be initialized on the first prompt using the callSid.
+   * The WebSocket URL and default session-cleanup action URL are derived from
+   * TACConfig.voicePublicDomain + voiceWebsocketPath / voiceActionPath.
    *
-   * @param options - Options for handling the incoming call
-   * @returns TwiML XML string with ConversationRelay configuration
+   * TwiML fields are merged per-field, highest precedence first:
+   *   1. Output of the customizer registered via `onInboundCallTwiml(...)` (if
+   *      configured and `twimlRequest` is given).
+   *   2. `VoiceChannelConfig.defaultTwimlOptions` — per-channel defaults.
+   *   3. TAC defaults: default welcomeGreeting, conversationConfiguration from
+   *      TACConfig, and the action URL (Studio handoff if configured, else
+   *      derived from voicePublicDomain + voiceActionPath).
+   *
+   * @param twimlRequest - Parsed Twilio webhook fields, passed to the customizer.
+   * @returns TwiML XML string with ConversationRelay configuration.
+   * @throws {Error} if the WebSocket URL can't be resolved (voicePublicDomain unset).
    */
-  handleIncomingCall(options) {
-    const { actionUrl, conversationRelayConfig } = options;
-    return this.connectConversationRelay(
-      {
-        ...conversationRelayConfig,
-        conversationConfiguration: conversationRelayConfig.conversationConfiguration ?? this.config.conversationConfigurationId
-      },
-      actionUrl ? { actionUrl } : void 0
-    );
+  async handleIncomingCall(twimlRequest) {
+    const websocketUrl = this.resolveWebsocketUrl("handleIncomingCall");
+    let customized;
+    if (this.onInboundCallTwimlHandler && twimlRequest) {
+      customized = await this.onInboundCallTwimlHandler(twimlRequest);
+    }
+    const { config, actionUrl } = this.buildTwimlOptions(websocketUrl, customized);
+    return this.connectConversationRelay(config, actionUrl ? { actionUrl } : void 0);
   }
   // =========================================================================
   // Outbound Call Handling
@@ -3887,28 +4127,25 @@ var VoiceChannel = class extends BaseChannel {
    * conversation during passive hydration. The session is initialized lazily
    * on the first prompt when the conversation is discovered by callSid.
    *
-   * `conversationRelayConfig.url` must be the publicly accessible WebSocket
-   * endpoint (e.g., `wss://your-domain.ngrok.app/ws`). Unlike inbound calls
-   * where TACServer sets this automatically, outbound calls require it
-   * explicitly since there is no incoming HTTP request to derive the host from.
+   * The WebSocket URL is derived from TACConfig.voicePublicDomain +
+   * voiceWebsocketPath, unless overridden per-call via `options.websocketUrl`.
+   *
+   * TwiML fields are merged per-field, highest precedence first:
+   *   1. `options.twimlOptions` — per-call overrides
+   *   2. `VoiceChannelConfig.defaultTwimlOptions` — channel-wide defaults
+   *   3. TAC defaults (welcome greeting, conversationConfiguration, action URL).
    */
   async initiateOutboundConversation(options) {
     const validated = InitiateVoiceConversationOptionsSchema.parse(options);
     const fromNumber = validated.from ?? this.config.phoneNumber;
+    const websocketUrl = validated.websocketUrl ?? this.resolveWebsocketUrl("initiateOutboundConversation");
     this.logger.info(
       { to: validated.to, from: fromNumber },
       "Initiating outbound voice conversation"
     );
     try {
-      const twiml = this.connectConversationRelay(
-        {
-          ...validated.conversationRelayConfig,
-          conversationConfiguration: validated.conversationRelayConfig.conversationConfiguration ?? this.config.conversationConfigurationId
-        },
-        {
-          ...validated.actionUrl ? { actionUrl: validated.actionUrl } : {}
-        }
-      );
+      const { config, actionUrl } = this.buildTwimlOptions(websocketUrl, validated.twimlOptions);
+      const twiml = this.connectConversationRelay(config, actionUrl ? { actionUrl } : void 0);
       const client = this.getTwilioClient();
       const call = await client.calls.create({
         to: validated.to,
@@ -4011,20 +4248,29 @@ var VoiceChannel = class extends BaseChannel {
       throw new Error(`Invalid ConversationRelay configuration: ${errorMessage}`);
     }
     const validatedConfig = validationResult.data;
-    const { languages, ...conversationRelayAttributes } = validatedConfig;
-    const filteredConfig = this.filterUnsetValues(conversationRelayAttributes);
+    const { languages, customParameters, extra, actionUrl, ...conversationRelayAttributes } = validatedConfig;
+    const attributes = {
+      ...this.filterUnsetValues(conversationRelayAttributes),
+      ...extra ?? {}
+    };
+    const resolvedActionUrl = options?.actionUrl ?? actionUrl;
     const response = new VoiceResponse();
-    const connect = response.connect(options?.actionUrl ? { action: options.actionUrl } : {});
-    const relay = connect.conversationRelay(filteredConfig);
+    const connect = response.connect(resolvedActionUrl ? { action: resolvedActionUrl } : {});
+    const relay = connect.conversationRelay(
+      attributes
+    );
     if (languages && languages.length > 0) {
       for (const lang of languages) {
         const filteredLang = this.filterUnsetValues(lang);
         relay.language(filteredLang);
       }
     }
-    if (options?.parameters) {
-      for (const [name, value] of Object.entries(options.parameters)) {
-        relay.parameter({ name, value: String(value) });
+    const parameterSources = [customParameters, options?.parameters];
+    for (const source of parameterSources) {
+      if (!source) continue;
+      for (const [name, value] of Object.entries(source)) {
+        if (value === void 0 || value === null) continue;
+        relay.parameter({ name, value: stringifyParameterValue(value) });
       }
     }
     return response.toString();
@@ -4068,14 +4314,6 @@ var VoiceChannel = class extends BaseChannel {
     super.shutdown();
   }
 };
-
-// packages/core/src/util/handoff-urls.ts
-function studioExecutionsUrl(flowSid) {
-  return `https://studio.twilio.com/v2/Flows/${flowSid}/Executions`;
-}
-function studioVoiceHandoffUrl(accountSid, flowSid) {
-  return `https://webhooks.twilio.com/v1/Accounts/${accountSid}/Flows/${flowSid}?Trigger=incomingCall`;
-}
 
 // packages/core/src/lib/conversation-session-helpers.ts
 function formatTraitValue(value) {
@@ -4576,12 +4814,7 @@ var DEFAULT_CONFIG = {
   },
   webhookPaths: {
     messaging: "/webhook",
-    twiml: "/twiml",
-    ws: "/ws",
-    conversationRelayCallback: "/conversation-relay-callback"
-  },
-  conversationRelayConfig: {
-    welcomeGreeting: "Hello! How can I assist you today?"
+    twiml: "/twiml"
   },
   development: false
 };
@@ -4602,14 +4835,14 @@ var TACServer = class {
       webhookPaths: {
         ...DEFAULT_CONFIG.webhookPaths,
         ...config.webhookPaths
-      },
-      // Deep merge conversationRelayConfig to preserve defaults while allowing overrides
-      conversationRelayConfig: {
-        ...DEFAULT_CONFIG.conversationRelayConfig,
-        ...config.conversationRelayConfig
       }
     };
     this.voiceChannel = config.voiceChannel ?? tac.getChannel("voice");
+    if (this.voiceChannel && !tac.getConfig().voicePublicDomain) {
+      throw new Error(
+        "Voice channel is configured but TACConfig.voicePublicDomain is not set. Set it directly or via the TWILIO_VOICE_PUBLIC_DOMAIN env var."
+      );
+    }
     this.messagingChannels = config.messagingChannels ?? [tac.getChannel("sms"), tac.getChannel("chat")].filter((ch) => ch != null);
     if (this.messagingChannels.length === 0) {
       console.warn(
@@ -4715,18 +4948,9 @@ var TACServer = class {
             return;
           }
           const voiceChannel = this.voiceChannel;
-          const protocol = this.getForwardedProto(request);
-          const host = this.getForwardedHost(request);
-          const websocketUrl = `${protocol === "https" ? "wss" : "ws"}://${host}${this.config.webhookPaths.ws || "/ws"}`;
-          const tacConfig = this.tac.getConfig();
-          const actionUrl = tacConfig.studioHandoffFlowSid ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid) : `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || "/conversation-relay-callback"}`;
-          const twiml = voiceChannel.handleIncomingCall({
-            actionUrl,
-            conversationRelayConfig: {
-              url: websocketUrl,
-              ...this.config.conversationRelayConfig
-            }
-          });
+          const formBody = request.body || {};
+          const twimlRequest = twimlRequestFromForm(formBody);
+          const twiml = await voiceChannel.handleIncomingCall(twimlRequest);
           await reply.type("application/xml").send(twiml);
         } catch (error) {
           this.fastify.log.error(
@@ -4740,7 +4964,7 @@ var TACServer = class {
       }
     );
     this.fastify.post(
-      this.config.webhookPaths.conversationRelayCallback || "/conversation-relay-callback",
+      this.tac.getConfig().voiceActionPath,
       async (request, reply) => {
         try {
           if (!this.voiceChannel) {
@@ -4770,7 +4994,7 @@ var TACServer = class {
     );
     await this.fastify.register((fastify) => {
       fastify.get(
-        this.config.webhookPaths.ws || "/ws",
+        this.tac.getConfig().voiceWebsocketPath,
         { websocket: true },
         (socket, request) => {
           const signature = request.headers["x-twilio-signature"];
@@ -4890,8 +5114,8 @@ var TACServer = class {
           port: voiceConfig.port,
           messaging_webhook: this.config.webhookPaths.messaging,
           twiml_webhook: this.config.webhookPaths.twiml,
-          ws_websocket: this.config.webhookPaths.ws,
-          conversation_relay_callback: this.config.webhookPaths.conversationRelayCallback,
+          ws_websocket: this.tac.getConfig().voiceWebsocketPath,
+          conversation_relay_callback: this.tac.getConfig().voiceActionPath,
           ...this.config.webhookPaths.cintel && {
             cintel_webhook: this.config.webhookPaths.cintel
           }
@@ -4955,6 +5179,6 @@ var TACServer = class {
   }
 };
 
-export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffPayloadSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryPromptBuilder, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, PendingHandoffDataSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, buildHandoffPayload, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, createStudioHandoffTool, defineTool, isConversationId, isParticipantId, isProfileId, postStudioHandoff, studioExecutionsUrl, studioVoiceHandoffUrl };
+export { ActionChannelSettingsSchema, ActionParticipantRefSchema, ActionResponseSchema, ActionTextContentSchema, AuthorInfoSchema, BaseChannel, BaseClient, BuiltInTools, CaptureRuleSchema, ChannelSettingsSchema, ChannelTypeSchema, ChatChannel, CintelParticipantSchema, CommunicationContentSchema, CommunicationParticipantSchema, CommunicationSchema, ConversationAddressSchema, ConversationClient, ConversationConfigurationSchema, ConversationGroupingTypeSchema, ConversationIntelligenceConfigSchema, ConversationParticipantSchema, ConversationRelayAttributesSchema, ConversationRelayCallbackPayloadSchema, ConversationRelayConfigSchema, ConversationRelayExtraSchema, ConversationRelayOptionsSchema, ConversationResponseSchema, ConversationSessionSchema, ConversationSummaryItemSchema, ConversationsV1BridgeSchema, CreateConversationSummariesResponseSchema, CreateObservationResponseSchema, CustomParametersSchema, DEFAULT_WELCOME_GREETING, EMPTY_MEMORY_RESPONSE, EnvironmentVariables, ExecutionDetailsSchema, HandoffPayloadSchema, InitiateMessagingConversationOptionsSchema, InitiateVoiceConversationOptionsSchema, IntelligenceConfigurationSchema, InterruptMessageSchema, InterruptModeSchema, JSONSchemaSchema, KnowledgeBaseSchema, KnowledgeBaseStatusSchema, KnowledgeChunkResultSchema, KnowledgeClient, KnowledgeSearchResponseSchema, LanguageAttributesSchema, ListCommunicationsResponseSchema, ListConversationsResponseSchema, ListParticipantsResponseSchema, MemoryChannelTypeSchema, MemoryClient, MemoryCommunicationContentSchema, MemoryCommunicationSchema, MemoryDeliveryStatusSchema, MemoryParticipantSchema, MemoryParticipantTypeSchema, MemoryPromptBuilder, MemoryRetrievalRequestSchema, MemoryRetrievalResponseSchema, MessageDirectionSchema, MessagingChannel, ObservationInfoSchema, OpenAIToolSchema, OperatorProcessingResultSchema, OperatorResultEventSchema, OperatorResultProcessor, OperatorResultSchema, OperatorSchema, ParticipantAddressSchema, ParticipantAddressTypeSchema, PendingHandoffDataSchema, ProfileLookupResponseSchema, ProfileResponseSchema, PromptMessageSchema, SMSChannel, SendMessageActionPayloadSchema, SendMessageActionRequestSchema, SessionInfoSchema, SessionMessageSchema, SetupMessageSchema, StatusCallbackSchema, StatusTimeoutsSchema, SummaryInfoSchema, TAC, TACChannelTypeSchema, TACCommunicationAuthorSchema, TACCommunicationContentSchema, TACCommunicationSchema, TACConfig, TACConfigSchema, TACDeliveryStatusSchema, TACMemoryResponse, TACParticipantTypeSchema, TACServer, TACTool, TextTokenMessageSchema, ToolExecutionResultSchema, TranscriptionSchema, TranscriptionWordSchema, TwilioMemoryConfigSchema, VoiceChannel, VoiceServerConfigSchema, WebSocketMessageSchema, buildHandoffPayload, createKnowledgeSearchTool, createKnowledgeSearchToolAsync, createKnowledgeTools, createLogger, createMemoryRetrievalTool, createMemoryTools, createMessagingTools, createSendMessageTool, createStudioHandoffTool, defineTool, isConversationId, isParticipantId, isProfileId, postStudioHandoff, studioExecutionsUrl, studioVoiceHandoffUrl, twimlRequestFromForm };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

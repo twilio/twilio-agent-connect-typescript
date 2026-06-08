@@ -14,8 +14,7 @@ import {
   VoiceServerConfig,
   VoiceServerConfigSchema,
   ConversationRelayCallbackPayloadSchema,
-  ConversationRelayConfig,
-  studioVoiceHandoffUrl,
+  twimlRequestFromForm,
 } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 
@@ -39,18 +38,20 @@ export interface TACServerConfig {
   /** Voice server configuration */
   voice?: Partial<VoiceServerConfig>;
 
-  /** Custom webhook paths */
+  /**
+   * Custom webhook paths for server-only routes.
+   *
+   * The voice WebSocket and ConversationRelay action paths are NOT set here —
+   * they live on TACConfig (`voiceWebsocketPath` / `voiceActionPath`) because
+   * the voice channel builds its public URLs from them, and the server
+   * registers its routes at the same paths so the two stay in sync.
+   */
   webhookPaths?: {
     messaging?: string;
     twiml?: string;
-    ws?: string;
-    conversationRelayCallback?: string;
     /** Path for Conversation Intelligence webhook (optional - only registered if provided) */
     cintel?: string;
   };
-
-  /** ConversationRelay configuration (welcomeGreeting, transcription, TTS, interaction settings, etc.) */
-  conversationRelayConfig?: Partial<Omit<ConversationRelayConfig, 'url'>>;
 
   /** Enable development features */
   development?: boolean;
@@ -73,11 +74,6 @@ const DEFAULT_CONFIG = {
   webhookPaths: {
     messaging: '/webhook',
     twiml: '/twiml',
-    ws: '/ws',
-    conversationRelayCallback: '/conversation-relay-callback',
-  },
-  conversationRelayConfig: {
-    welcomeGreeting: 'Hello! How can I assist you today?',
   },
   development: false,
 } satisfies Omit<
@@ -129,15 +125,21 @@ export class TACServer {
         ...DEFAULT_CONFIG.webhookPaths,
         ...config.webhookPaths,
       },
-      // Deep merge conversationRelayConfig to preserve defaults while allowing overrides
-      conversationRelayConfig: {
-        ...DEFAULT_CONFIG.conversationRelayConfig,
-        ...config.conversationRelayConfig,
-      },
     };
 
     // Resolve channels: prefer explicit kwargs, fall back to tac.getChannel()
     this.voiceChannel = config.voiceChannel ?? tac.getChannel<VoiceChannel>('voice');
+
+    // Fail fast: a voice channel can't build its public WebSocket URL without
+    // voicePublicDomain. Without this check the misconfiguration would only
+    // surface as a 500 on the first inbound call. Mirrors Python's
+    // TACFastAPIServer._validate_voice_url_config.
+    if (this.voiceChannel && !tac.getConfig().voicePublicDomain) {
+      throw new Error(
+        'Voice channel is configured but TACConfig.voicePublicDomain is not set. ' +
+          'Set it directly or via the TWILIO_VOICE_PUBLIC_DOMAIN env var.'
+      );
+    }
     this.messagingChannels =
       config.messagingChannels ??
       (
@@ -274,29 +276,12 @@ export class TACServer {
 
           const voiceChannel = this.voiceChannel;
 
-          // Generate WebSocket URL
-          const protocol = this.getForwardedProto(request);
-          const host = this.getForwardedHost(request);
-          const websocketUrl = `${protocol === 'https' ? 'wss' : 'ws'}://${host}${this.config.webhookPaths.ws || '/ws'}`;
-
-          // If a Studio handoff flow is configured, point `<Connect action>`
-          // directly at the Studio webhook so Studio (and Flex) takes over
-          // when the ConversationRelay session ends. Otherwise, route the
-          // post-CR action back to TAC's own callback.
-          const tacConfig = this.tac.getConfig();
-          const actionUrl = tacConfig.studioHandoffFlowSid
-            ? studioVoiceHandoffUrl(tacConfig.accountSid, tacConfig.studioHandoffFlowSid)
-            : `${protocol}://${host}${this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback'}`;
-
-          // Generate TwiML to connect to ConversationRelay
-          // ConversationRelay will create the conversation automatically
-          const twiml = voiceChannel.handleIncomingCall({
-            actionUrl,
-            conversationRelayConfig: {
-              url: websocketUrl,
-              ...this.config.conversationRelayConfig,
-            },
-          });
+          // Hand the parsed webhook form to the channel. The channel resolves
+          // the WebSocket URL and action URL from TACConfig and applies its
+          // TwiML layering (customizer -> defaultTwimlOptions -> TAC defaults).
+          const formBody = (request.body as Record<string, string>) || {};
+          const twimlRequest = twimlRequestFromForm(formBody);
+          const twiml = await voiceChannel.handleIncomingCall(twimlRequest);
 
           await reply.type('application/xml').send(twiml);
         } catch (error) {
@@ -311,9 +296,10 @@ export class TACServer {
       }
     );
 
-    // ConversationRelay callback endpoint
+    // ConversationRelay callback endpoint — path lives on TACConfig so the
+    // channel's emitted action URL and this route stay in sync.
     this.fastify.post(
-      this.config.webhookPaths.conversationRelayCallback || '/conversation-relay-callback',
+      this.tac.getConfig().voiceActionPath,
       async (request: FastifyRequest, reply: FastifyReply) => {
         try {
           if (!this.voiceChannel) {
@@ -349,10 +335,11 @@ export class TACServer {
       }
     );
 
-    // Voice WebSocket endpoint
+    // Voice WebSocket endpoint — path lives on TACConfig (voiceWebsocketPath)
+    // so the channel's emitted WebSocket URL and this route stay in sync.
     await this.fastify.register(fastify => {
       fastify.get(
-        this.config.webhookPaths.ws || '/ws',
+        this.tac.getConfig().voiceWebsocketPath,
         { websocket: true },
         (socket: WebSocket, request: FastifyRequest) => {
           const signature = request.headers['x-twilio-signature'] as string;
@@ -504,8 +491,8 @@ export class TACServer {
           port: voiceConfig.port,
           messaging_webhook: this.config.webhookPaths.messaging,
           twiml_webhook: this.config.webhookPaths.twiml,
-          ws_websocket: this.config.webhookPaths.ws,
-          conversation_relay_callback: this.config.webhookPaths.conversationRelayCallback,
+          ws_websocket: this.tac.getConfig().voiceWebsocketPath,
+          conversation_relay_callback: this.tac.getConfig().voiceActionPath,
           ...(this.config.webhookPaths.cintel && {
             cintel_webhook: this.config.webhookPaths.cintel,
           }),

@@ -5,13 +5,13 @@ import { InterruptMessageSchema } from '@twilio/tac-core';
 
 describe('VoiceChannel', () => {
   const getTestConfig = () => ({
-
     accountSid: 'ACtest123',
     authToken: 'test_token_123',
     apiKey: 'test_api_key',
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'example.ngrok.app',
   });
 
   describe('connectConversationRelay()', () => {
@@ -286,66 +286,129 @@ describe('VoiceChannel', () => {
 
   });
 
-  describe('handleIncomingCall with conversationRelayConfig', () => {
-    it('should apply conversationRelayConfig to generated TwiML', async () => {
+  describe('handleIncomingCall', () => {
+    it('derives the WebSocket URL from voicePublicDomain + voiceWebsocketPath', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/conversation-relay',
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('url="wss://example.ngrok.app/ws"');
+    });
+
+    it('applies the default welcome greeting and conversationConfiguration', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('welcomeGreeting="Hello! How can I assist you today?"');
+      expect(twiml).toContain(
+        'conversationConfiguration="conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd"'
+      );
+    });
+
+    it('throws when voicePublicDomain is not set', async () => {
+      const config = getTestConfig();
+      delete (config as { voicePublicDomain?: string }).voicePublicDomain;
+      const tac = await createTestTAC(config);
+      const voiceChannel = new VoiceChannel(tac);
+
+      await expect(voiceChannel.handleIncomingCall()).rejects.toThrow(/WebSocket URL/);
+    });
+
+    it('applies defaultTwimlOptions from the channel config', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: {
           transcriptionProvider: 'Deepgram',
           interruptible: 'any',
           hints: 'technical support, billing',
         },
       });
 
+      const twiml = await voiceChannel.handleIncomingCall();
+
       expect(twiml).toContain('transcriptionProvider="Deepgram"');
       expect(twiml).toContain('interruptible="any"');
       expect(twiml).toContain('hints="technical support, billing"');
     });
 
-    it('should apply multi-language config to handleIncomingCall', async () => {
+    it('emits multi-language <Language> children from defaultTwimlOptions', async () => {
       const tac = await createTestTAC(getTestConfig());
-      const voiceChannel = new VoiceChannel(tac);
-
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/conversation-relay',
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: {
           language: 'en-US',
           languages: [
-            {
-              code: 'en-US',
-              ttsProvider: 'Google',
-              voice: 'en-US-Journey-O',
-            },
-            {
-              code: 'es-ES',
-              ttsProvider: 'Google',
-              voice: 'es-ES-Standard-A',
-            },
+            { code: 'en-US', ttsProvider: 'Google', voice: 'en-US-Journey-O' },
+            { code: 'es-ES', ttsProvider: 'Google', voice: 'es-ES-Standard-A' },
           ],
         },
       });
+
+      const twiml = await voiceChannel.handleIncomingCall();
 
       expect(twiml).toContain('language="en-US"');
       expect(twiml).toContain('<Language code="en-US"');
       expect(twiml).toContain('<Language code="es-ES"');
     });
 
-    it('should include welcomeGreeting in TwiML', async () => {
+    it('layers the inbound customizer over defaultTwimlOptions (per-field)', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: {
+          welcomeGreeting: 'Default greeting',
+          interruptible: 'speech',
+        },
+      });
+      voiceChannel.onInboundCallTwiml(req =>
+        req.callerCountry === 'MX'
+          ? { language: 'es-MX', welcomeGreeting: '¡Hola!' }
+          : {}
+      );
+
+      const mx = await voiceChannel.handleIncomingCall({ callerCountry: 'MX', extra: {} });
+      // customizer overrides welcomeGreeting + adds language; interruptible falls through
+      expect(mx).toContain('welcomeGreeting="¡Hola!"');
+      expect(mx).toContain('language="es-MX"');
+      expect(mx).toContain('interruptible="speech"');
+
+      const us = await voiceChannel.handleIncomingCall({ callerCountry: 'US', extra: {} });
+      // empty customizer output falls through to defaults
+      expect(us).toContain('welcomeGreeting="Default greeting"');
+      expect(us).not.toContain('language=');
+    });
+
+    it('resolves the default action URL from voicePublicDomain + voiceActionPath', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/conversation-relay',
-          welcomeGreeting: 'Hello! How can I help you today?',
-        },
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain(
+        'action="https://example.ngrok.app/conversation-relay-callback"'
+      );
+    });
+
+    it('lets a customizer actionUrl win over the default', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      voiceChannel.onInboundCallTwiml(() => ({ actionUrl: 'https://example.com/custom' }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ extra: {} });
+
+      expect(twiml).toContain('action="https://example.com/custom"');
+    });
+
+    it('emits extra attributes not yet typed on the schema', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { extra: { newRelayAttribute: 'value' } },
       });
 
-      // Verify the TwiML contains welcomeGreeting attribute
-      expect(twiml).toContain('welcomeGreeting="Hello! How can I help you today?"');
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('newRelayAttribute="value"');
     });
   });
 

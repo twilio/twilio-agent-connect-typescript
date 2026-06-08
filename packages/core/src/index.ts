@@ -47,8 +47,8 @@ export type {
   InitiateChatConversationOptions,
 } from './channels/chat';
 
-export { VoiceChannel } from './channels/voice';
-export type { VoiceChannelEvents, StreamTask } from './channels/voice';
+export { VoiceChannel, DEFAULT_WELCOME_GREETING } from './channels/voice';
+export type { VoiceChannelEvents, StreamTask, VoiceChannelConfig } from './channels/voice';
 
 // Studio handoff URL helpers
 export { studioExecutionsUrl, studioVoiceHandoffUrl } from './util/handoff-urls';

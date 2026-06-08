@@ -19,6 +19,7 @@ describe('Outbound Conversations', () => {
     apiSecret: 'test_api_secret',
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'example.ngrok.app',
   });
 
   /** Mock createConversation (with inline participants) + listParticipants + createAction */
@@ -782,8 +783,7 @@ describe('Outbound Conversations', () => {
 
       const result = await channel.initiateOutboundConversation({
         to: '+15559876543',
-        conversationRelayConfig: {
-          url: 'wss://example.com/ws',
+        twimlOptions: {
           welcomeGreeting: 'Hello, this is a call from our AI assistant.',
         },
       });
@@ -797,19 +797,58 @@ describe('Outbound Conversations', () => {
         twiml: expect.stringContaining('ConversationRelay'),
       });
 
-      // Verify TwiML contains conversationConfiguration
+      // Verify TwiML contains conversationConfiguration and the per-call greeting
       const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
       expect(twiml).toContain('conversationConfiguration');
+      expect(twiml).toContain(
+        'welcomeGreeting="Hello, this is a call from our AI assistant."'
+      );
+    });
+
+    it('derives the WebSocket URL from voicePublicDomain', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAwsurl' });
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('url="wss://example.ngrok.app/ws"');
+    });
+
+    it('accepts a per-call websocketUrl override', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAoverride' });
+
+      await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        websocketUrl: 'wss://custom.example.com/socket',
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('url="wss://custom.example.com/socket"');
+    });
+
+    it('layers twimlOptions over the channel defaultTwimlOptions', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAlayer' });
+      const layeredTac = await createTestTAC(getTestConfig());
+      const layeredChannel = new VoiceChannel(layeredTac, {
+        defaultTwimlOptions: { voice: 'en-US-Journey-D', welcomeGreeting: 'Default' },
+      });
+
+      await layeredChannel.initiateOutboundConversation({
+        to: '+15559876543',
+        twimlOptions: { welcomeGreeting: 'Per-call' },
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      // per-call welcomeGreeting wins; channel-level voice falls through
+      expect(twiml).toContain('welcomeGreeting="Per-call"');
+      expect(twiml).toContain('voice="en-US-Journey-D"');
     });
 
     it('should throw when calls.create fails', async () => {
       mockCallCreate.mockRejectedValue(new Error('Call placement failed'));
 
       await expect(
-        channel.initiateOutboundConversation({
-          to: '+15559876543',
-          conversationRelayConfig: { url: 'wss://example.com/ws' },
-        })
+        channel.initiateOutboundConversation({ to: '+15559876543' })
       ).rejects.toThrow('Call placement failed');
     });
 
@@ -819,9 +858,6 @@ describe('Outbound Conversations', () => {
       await channel.initiateOutboundConversation({
         to: '+15559876543',
         from: '+15550001111',
-        conversationRelayConfig: {
-          url: 'wss://example.com/ws',
-        },
       });
 
       expect(mockCallCreate).toHaveBeenCalledWith(
@@ -833,10 +869,7 @@ describe('Outbound Conversations', () => {
 
     it('should validate required options', async () => {
       await expect(
-        channel.initiateOutboundConversation({
-          to: '',
-          conversationRelayConfig: { url: 'wss://example.com/ws' },
-        })
+        channel.initiateOutboundConversation({ to: '' })
       ).rejects.toThrow();
     });
   });

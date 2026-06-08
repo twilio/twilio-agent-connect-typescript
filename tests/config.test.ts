@@ -22,7 +22,9 @@ describe('TACConfig', () => {
       TWILIO_API_SECRET: process.env.TWILIO_API_SECRET,
       TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
       TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
-      VOICE_PUBLIC_DOMAIN: process.env.VOICE_PUBLIC_DOMAIN,
+      TWILIO_VOICE_PUBLIC_DOMAIN: process.env.TWILIO_VOICE_PUBLIC_DOMAIN,
+      TWILIO_VOICE_WEBSOCKET_PATH: process.env.TWILIO_VOICE_WEBSOCKET_PATH,
+      TWILIO_VOICE_ACTION_PATH: process.env.TWILIO_VOICE_ACTION_PATH,
       TWILIO_REGION: process.env.TWILIO_REGION,
       TWILIO_STUDIO_HANDOFF_FLOW_SID: process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID,
       TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS,
@@ -146,13 +148,35 @@ describe('TACConfig', () => {
       expect(config.conversationConfigurationId).toBe('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
     });
 
-    it('should include optional voicePublicDomain when set', () => {
+    it('should include optional voicePublicDomain when set, normalizing scheme/slash', () => {
       setRequiredEnvVars();
-      process.env.VOICE_PUBLIC_DOMAIN = 'https://example.com';
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'https://example.com/';
 
       const config = TACConfig.fromEnv();
 
-      expect(config.voicePublicDomain).toBe('https://example.com');
+      // Scheme and trailing slash are stripped to a bare domain.
+      expect(config.voicePublicDomain).toBe('example.com');
+    });
+
+    it('should default voice paths and allow overrides via env', () => {
+      setRequiredEnvVars();
+      const defaults = TACConfig.fromEnv();
+      expect(defaults.voiceWebsocketPath).toBe('/ws');
+      expect(defaults.voiceActionPath).toBe('/conversation-relay-callback');
+
+      process.env.TWILIO_VOICE_WEBSOCKET_PATH = '/socket';
+      process.env.TWILIO_VOICE_ACTION_PATH = '/cr-callback';
+      const overridden = TACConfig.fromEnv();
+      expect(overridden.voiceWebsocketPath).toBe('/socket');
+      expect(overridden.voiceActionPath).toBe('/cr-callback');
+    });
+
+    it('normalizes a bare voicePublicDomain in the constructor', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        voicePublicDomain: 'wss://example.ngrok.app',
+      });
+      expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
     it('should throw error when TWILIO_ACCOUNT_SID is missing', () => {

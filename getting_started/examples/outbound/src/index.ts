@@ -71,7 +71,13 @@ config({ path: '../.env' });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const voiceChannel = new VoiceChannel(tac);
+const voiceChannel = new VoiceChannel(tac, {
+  // Channel-wide TwiML applied to every call (inbound + outbound).
+  defaultTwimlOptions: {
+    voice: 'en-US-Journey-D',
+    welcomeGreeting: 'Hi! How can I help?',
+  },
+});
 const smsChannel = new SMSChannel(tac);
 
 tac.registerChannel(voiceChannel);
@@ -210,18 +216,11 @@ server
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {
-      const publicDomain = process.env.VOICE_PUBLIC_DOMAIN?.replace(/^https?:\/\//, '');
-      if (!publicDomain) {
-        console.error('VOICE_PUBLIC_DOMAIN is required for voice calls. Set it in your .env file.');
-        process.exit(1);
-      }
-
+      // The WebSocket URL is derived from TACConfig.voicePublicDomain
+      // (TWILIO_VOICE_PUBLIC_DOMAIN). Per-call overrides go on twimlOptions.
       const result = await voiceChannel.initiateOutboundConversation({
         to,
-        conversationRelayConfig: {
-          url: `wss://${publicDomain}/ws`,
-          ...(welcomeGreeting ? { welcomeGreeting } : {}),
-        },
+        ...(welcomeGreeting ? { twimlOptions: { welcomeGreeting } } : {}),
       });
       console.log(`Call placed to ${to}`);
       console.log(`Call SID: ${result.callSid}`);
