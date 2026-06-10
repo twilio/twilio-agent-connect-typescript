@@ -4,15 +4,15 @@ from langflow.template import Output
 from langflow.field_typing import Tool
 
 
-class TwilioMemoraObservationWriter(Component):
-    display_name = "Twilio Memora Observation Writer"
+class TwilioConversationMemoryObservationWriter(Component):
+    display_name = "Twilio Conversation Memory Observation Writer"
     description = (
-        "Write a structured observation to a customer's Memora profile. "
+        "Write a structured observation to a customer's Conversation Memory profile. "
         "Used to record key moments — a stated preference, a commitment, a "
         "resolved issue — that future interactions should remember."
     )
     icon = "save"
-    name = "TwilioMemoraObservationWriter"
+    name = "TwilioConversationMemoryObservationWriter"
 
     inputs = [
         SecretStrInput(
@@ -28,7 +28,7 @@ class TwilioMemoraObservationWriter(Component):
         ),
         StrInput(
             name="memory_store_id",
-            display_name="Memora Store ID",
+            display_name="Conversation Memory Store ID",
             info="mem_store_... — get it from your TWILIO_CONVERSATION_CONFIGURATION_ID via GET https://conversations.twilio.com/v2/Configurations/<id>",
             required=True,
         ),
@@ -36,7 +36,7 @@ class TwilioMemoraObservationWriter(Component):
             name="source",
             display_name="Observation Source",
             value="tac-langflow-example",
-            info="Free-form tag for the observation source. Helps filter in the Memora UI.",
+            info="Free-form tag for the observation source. Helps filter in the Conversation Memory UI.",
         ),
         StrInput(
             name="tool_name",
@@ -49,7 +49,7 @@ class TwilioMemoraObservationWriter(Component):
             display_name="Tool Description",
             value=(
                 "Record an important observation about this customer to their "
-                "long-term Memora profile — for example a stated preference, a "
+                "long-term Conversation Memory profile — for example a stated preference, a "
                 "commitment, or a resolved issue. Use after a meaningful moment so "
                 "future conversations (even days later) remember it. Takes the "
                 "customer's phone number and a single, factual, self-contained "
@@ -108,18 +108,18 @@ class TwilioMemoraObservationWriter(Component):
                     timeout=15,
                 )
             except requests.exceptions.RequestException as e:
-                return f"Network error looking up the Memora profile: {e}"
+                return f"Network error looking up the Conversation Memory profile: {e}"
 
             if not resp.ok:
                 return (
-                    f"Error looking up the Memora profile. HTTP {resp.status_code}. "
+                    f"Error looking up the Conversation Memory profile. HTTP {resp.status_code}. "
                     f"Response: {resp.text}"
                 )
 
             profiles = resp.json().get("profiles", [])
             if not profiles:
                 return (
-                    f"No Memora profile found for {phone}. "
+                    f"No Conversation Memory profile found for {phone}. "
                     f"Observation not recorded — check that the customer has a profile."
                 )
 
@@ -129,7 +129,7 @@ class TwilioMemoraObservationWriter(Component):
             first = profiles[0]
             profile_id = first if isinstance(first, str) else first.get("id")
             if not profile_id:
-                return f"Memora profile found but its ID could not be extracted: {resp.text}"
+                return f"Conversation Memory profile found but its ID could not be extracted: {resp.text}"
 
             # 2. Create the observation
             now = datetime.now(timezone.utc)
@@ -153,7 +153,7 @@ class TwilioMemoraObservationWriter(Component):
 
             if not resp.ok:
                 return (
-                    f"Error writing the observation to Memora. HTTP {resp.status_code}. "
+                    f"Error writing the observation to Conversation Memory. HTTP {resp.status_code}. "
                     f"Response: {resp.text}"
                 )
 

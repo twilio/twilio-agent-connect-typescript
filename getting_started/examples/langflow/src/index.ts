@@ -17,7 +17,7 @@
  *
  * Limitations of this minimal integration (kept simple on purpose):
  *   - Tools live in the flow — TAC tools are not passed through.
- *   - Memory is prepended as context, not wired as a Memora node in the flow.
+ *   - Memory is prepended as context, not wired as a Conversation Memory node in the flow.
  *   - Voice streaming requires Stream enabled on the flow's model component.
  *   - Flow-driven actions (e.g. handoff) are not surfaced back to TAC here.
  *

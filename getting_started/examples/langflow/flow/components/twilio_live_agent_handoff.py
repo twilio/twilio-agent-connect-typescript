@@ -58,7 +58,7 @@ class TwilioLiveAgentHandoff(Component):
                 "Use when: (1) the customer explicitly asks for a human; (2) the "
                 "request is beyond your scope; (3) the customer is frustrated and the "
                 "conversation is not progressing. Takes the customer's phone number, "
-                "full name (from the Memora context), and the reason for the transfer. "
+                "full name (from the Conversation Memory context), and the reason for the transfer. "
                 "AFTER calling this tool, do NOT produce any further response — the "
                 "human agent takes over from here."
             ),
@@ -98,7 +98,7 @@ class TwilioLiveAgentHandoff(Component):
             )
             customer_name: str = Field(
                 description=(
-                    "The customer's full name (from the Memora context). Appears in "
+                    "The customer's full name (from the Conversation Memory context). Appears in "
                     "the Flex agent's queue. e.g. 'Jordan Rivera'."
                 )
             )

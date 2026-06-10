@@ -29,8 +29,10 @@ sequenceDiagram
 
 ## Prerequisites
 
-- A running Langflow instance (local `langflow run`, Docker, or hosted). This example was built against **Langflow 1.9.2**.
+- A running Langflow instance (local `langflow run`, Docker, or hosted). This example was built and tested against **Langflow 1.9.2**.
 - Standard TAC prerequisites — see the [getting started guide](../../README.md).
+
+> **Versions & security:** this example doesn't bundle or install Langflow — the flow's components run inside *your own* Langflow server, so running a supported, patched release is part of operating it (same as any Langflow deployment); see the [Langflow docs](https://docs.langflow.org). The custom components depend only on `requests` plus what already ships with Langflow.
 
 ## Setup
 
@@ -104,19 +106,19 @@ Customization lands in one of two places: **the flow** (visual, no code) or **[`
 
 When in doubt: anything about *what the agent says or knows* belongs in the flow; anything about *how the conversation is carried* (channels, voice, memory, continuity) belongs in `src/index.ts`.
 
-## Advanced flow: Knowledge, Memora & handoff
+## Advanced flow: Knowledge, Conversation Memory & handoff
 
 [`flow/tac-langflow-advanced.json`](flow/tac-langflow-advanced.json) is a second, more capable flow that gives back the tools you lose when the brain moves into Langflow. It's an **Agent** wired to three custom Twilio components:
 
 | Component | What it does | Twilio API |
 |---|---|---|
 | **Twilio Knowledge Search** | RAG over a Twilio Enterprise Knowledge base | `knowledge.twilio.com` |
-| **Twilio Memora Observation Writer** | Writes structured observations to the caller's Memora profile | `memory.twilio.com` |
+| **Twilio Conversation Memory Observation Writer** | Writes structured observations to the caller's Conversation Memory profile | `memory.twilio.com` |
 | **Twilio Live Agent Handoff** | Hands off to a human via a Studio Flow → Flex | `studio.twilio.com` |
 
 The handoff is **flow-initiated** — the component calls Twilio directly from inside Langflow — so it works even though TAC can't observe flow actions (see [Limitations](#limitations)). **No code changes:** [`src/index.ts`](src/index.ts) drives this flow exactly like the minimal one (`flow.run` / `flow.stream`); the Agent inside the flow does the tool-calling. Just point `LANGFLOW_FLOW_ID` at this flow instead.
 
-The observation and handoff tools need the caller's exact phone number. `index.ts` injects it into the context on a labeled `Customer phone:` line (from `session.authorInfo.address`), and the Agent prompt tells the model to use that value verbatim — otherwise the model tends to pass a made-up placeholder and the Memora lookup fails.
+The observation and handoff tools need the caller's exact phone number. `index.ts` injects it into the context on a labeled `Customer phone:` line (from `session.authorInfo.address`), and the Agent prompt tells the model to use that value verbatim — otherwise the model tends to pass a made-up placeholder and the Conversation Memory lookup fails.
 
 ### Setup
 
@@ -147,7 +149,7 @@ Everything else (TAC `.env`, channels, run command) is identical to the minimal 
 This example keeps the integration minimal. Compared to a fuller build:
 
 - **Tools live in the flow.** TAC tools are not passed through — add any tool calls as Langflow components inside the flow.
-- **Memory is prepended as context**, not wired as a Customer Memory node in the flow.
+- **Memory is prepended as context**, not wired as a Conversation Memory node in the flow.
 - **Voice streaming requires Stream enabled** on the flow's Language Model component (it's pre-enabled in the bundled flow).
 - **Flow-driven actions** (e.g. handoff) are not surfaced back to TAC here.
 
