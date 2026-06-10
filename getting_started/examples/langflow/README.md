@@ -131,7 +131,7 @@ The observation and handoff tools need the caller's exact phone number. `index.t
    | `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` | all three Twilio tools |
    | `TWILIO_STUDIO_HANDOFF_FLOW_SID` | Handoff |
 
-3. **Set the non-secret component inputs** (placeholders in the shipped flow): the Knowledge component's **Knowledge Base ID** (`kb_id`), the Memora component's **Memora Store ID** (`memory_store_id`), and the handoff component's **WhatsApp From** sender.
+3. **Set the non-secret component inputs** (placeholders in the shipped flow): the Knowledge component's **Knowledge Base ID** (`kb_id`), the Conversation Memory component's **Conversation Memory Store ID** (`memory_store_id`), and the handoff component's **WhatsApp From** sender.
 
 Everything else (TAC `.env`, channels, run command) is identical to the minimal example above.
 
