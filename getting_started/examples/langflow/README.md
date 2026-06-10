@@ -9,7 +9,7 @@ The flow owns the system prompt, tools, and any knowledge/RAG — you build it v
 - **Voice** streams the flow's tokens straight to ConversationRelay (`flow.stream(...)` → `voiceChannel.sendStreamingResponse(...)`) for low-latency TTS.
 - **SMS / WhatsApp** use the simple non-streaming pattern (`flow.run(...)` → return text, TAC auto-sends).
 - The TAC `conversationId` is passed as Langflow's `session_id`, so the flow keeps per-conversation chat memory across turns **and** across channels.
-- When `memoryMode: 'always'` returns memory, it's prepended to the user's message as labeled `[Context]` so the flow can tell context from input. The flow itself needs no Memora node.
+- When `memoryMode: 'always'` returns memory, it's prepended to the user's message as labeled `[Context]` so the flow can tell context from input. The flow itself needs no Conversation Memory node.
 
 ```mermaid
 sequenceDiagram
