@@ -147,7 +147,7 @@ Everything else (TAC `.env`, channels, run command) is identical to the minimal 
 This example keeps the integration minimal. Compared to a fuller build:
 
 - **Tools live in the flow.** TAC tools are not passed through — add any tool calls as Langflow components inside the flow.
-- **Memory is prepended as context**, not wired as a Memora node in the flow.
+- **Memory is prepended as context**, not wired as a Customer Memory node in the flow.
 - **Voice streaming requires Stream enabled** on the flow's Language Model component (it's pre-enabled in the bundled flow).
 - **Flow-driven actions** (e.g. handoff) are not surfaced back to TAC here.
 
