@@ -41,16 +41,15 @@ import {
 // Load environment variables from the shared examples/.env file
 config({ path: '../.env' });
 
-const baseUrl = process.env.LANGFLOW_BASE_URL;
-const flowId = process.env.LANGFLOW_FLOW_ID;
-const apiKey = process.env.LANGFLOW_API_KEY;
+const baseUrl = process.env.LANGFLOW_BASE_URL?.trim();
+const flowId = process.env.LANGFLOW_FLOW_ID?.trim();
+const apiKey = process.env.LANGFLOW_API_KEY?.trim() || undefined;
 
 if (!baseUrl) throw new Error('LANGFLOW_BASE_URL is not set');
 if (!flowId) throw new Error('LANGFLOW_FLOW_ID is not set');
 
 // apiKey is optional — Langflow allows unauthenticated access in local dev.
-const client = new LangflowClient(apiKey !== undefined ? { baseUrl, apiKey } : { baseUrl });
-const flow = client.flow(flowId);
+const client = new LangflowClient(apiKey ? { baseUrl, apiKey } : { baseUrl });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
