@@ -2,7 +2,7 @@
 
 Use a [Langflow](https://www.langflow.org/) flow as the agent "brain" while Twilio Agent Connect owns everything around it: the **Voice, SMS, and WhatsApp** channels, memory injection, token-by-token voice streaming via ConversationRelay, and conversation continuity.
 
-The flow owns the system prompt, tools, and any knowledge/RAG — you build it visually in Langflow. TAC handles the telephony and messaging. This example is intentionally minimal: ~80 lines in [`src/index.ts`](src/index.ts).
+The flow owns the system prompt, tools, and any knowledge/RAG — you build it visually in Langflow. TAC handles the telephony and messaging. The whole integration is one small file: [`src/index.ts`](src/index.ts).
 
 ## How it works
 
@@ -89,7 +89,7 @@ Two independent layers control language:
 
 ## Customizing the experience
 
-Customization lands in one of two places: **the flow** (visual, no code) or **[`src/index.ts`](src/index.ts)** (the ~95-line handler).
+Customization lands in one of two places: **the flow** (visual, no code) or **[`src/index.ts`](src/index.ts)** (the integration handler).
 
 **In Langflow — the agent's brain, no code changes:**
 
@@ -129,7 +129,6 @@ The observation and handoff tools need the caller's exact phone number. `index.t
    | Global variable | Used by |
    |---|---|
    | `OPENAI_API_KEY` | Agent / Language Model |
-   | `TWILIO_ACCOUNT_SID` | Handoff |
    | `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` | all three Twilio tools |
    | `TWILIO_STUDIO_HANDOFF_FLOW_SID` | Handoff |
 

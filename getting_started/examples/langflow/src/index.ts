@@ -43,6 +43,8 @@ config({ path: '../.env' });
 
 const baseUrl = process.env.LANGFLOW_BASE_URL?.trim();
 const flowId = process.env.LANGFLOW_FLOW_ID?.trim();
+// Treat a blank/whitespace LANGFLOW_API_KEY (e.g. `LANGFLOW_API_KEY=` in .env) as
+// unset, so we don't send an empty key and fail auth.
 const apiKey = process.env.LANGFLOW_API_KEY?.trim() || undefined;
 
 if (!baseUrl) throw new Error('LANGFLOW_BASE_URL is not set');
@@ -50,6 +52,7 @@ if (!flowId) throw new Error('LANGFLOW_FLOW_ID is not set');
 
 // apiKey is optional — Langflow allows unauthenticated access in local dev.
 const client = new LangflowClient(apiKey ? { baseUrl, apiKey } : { baseUrl });
+const flow = client.flow(flowId);
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
@@ -73,9 +76,11 @@ tac.onMessageReady(async ({ conversationId, message, memory, session, channel, a
   // invent a placeholder). The flow owns the system prompt, so the base
   // instruction here is empty.
   const memoryContext = MemoryPromptBuilder.compose('', memory, session);
-  const customerAddress = session.authorInfo?.address;
+  // Channel addresses arrive as 'whatsapp:+E164' on WhatsApp and bare '+E164' on
+  // voice/SMS — strip the prefix so tools always receive a clean E.164 number.
+  const customerPhone = session.authorInfo?.address?.replace(/^whatsapp:/, '');
   const contextParts: string[] = [];
-  if (customerAddress) contextParts.push(`Customer phone: ${customerAddress}`);
+  if (customerPhone) contextParts.push(`Customer phone: ${customerPhone}`);
   if (memoryContext) contextParts.push(memoryContext);
   const context = contextParts.join('\n\n');
   const input = context ? `[Context]\n${context}\n\n[Message]\n${message}` : message;

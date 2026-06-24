@@ -15,12 +15,6 @@ class TwilioLiveAgentHandoff(Component):
     name = "TwilioLiveAgentHandoff"
 
     inputs = [
-        StrInput(
-            name="account_sid",
-            display_name="Twilio Account SID",
-            info="AC...",
-            required=True,
-        ),
         SecretStrInput(
             name="api_key_sid",
             display_name="Twilio API Key SID",
@@ -74,7 +68,6 @@ class TwilioLiveAgentHandoff(Component):
         from pydantic import BaseModel, Field
         from langchain_core.tools import StructuredTool
 
-        account_sid = self.account_sid
         api_key_sid = self.api_key_sid
         api_key_secret = self.api_key_secret
         flow_sid = self.studio_flow_sid
