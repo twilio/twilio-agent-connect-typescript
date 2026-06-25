@@ -10,7 +10,7 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ${{ github.repository_owner == 'twilio' && 'ubuntu-x64' || 'ubuntu-latest' }}
+    runs-on: ubuntu-x64
     if: github.repository_owner == 'twilio'
     permissions:
       contents: read
@@ -39,7 +39,7 @@ jobs:
   deploy:
     name: Publish to npm
     needs: [test]
-    runs-on: ${{ github.repository_owner == 'twilio' && 'ubuntu-x64' || 'ubuntu-latest' }}
+    runs-on: ubuntu-x64
     if: github.repository_owner == 'twilio'
     environment: npm
     permissions:
