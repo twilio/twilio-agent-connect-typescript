@@ -4,6 +4,9 @@ on:
   release:
     types: [published]
 
+env:
+  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
+
 jobs:
   test:
     name: Test

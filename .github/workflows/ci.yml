@@ -10,6 +10,9 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
+
 jobs:
   lint:
     name: Linting
