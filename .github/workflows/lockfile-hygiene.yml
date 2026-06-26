@@ -41,12 +41,14 @@ jobs:
           # or npm_config_* env that silently redirect to Artifactory — which
           # would FALSELY pass a lockfile an external consumer can't resolve.
           # So we don't trust the runner: we force npm to read ONLY our file.
-          CLEAN="$RUNNER_TEMP/clean.npmrc"
-          echo "registry=https://registry.npmjs.org/" > "$CLEAN"
-          echo "NPM_CONFIG_USERCONFIG=$CLEAN"   >> "$GITHUB_ENV"   # ignore ~/.npmrc
-          echo "NPM_CONFIG_GLOBALCONFIG=$CLEAN"  >> "$GITHUB_ENV"   # ignore /etc + prefix npmrc
+          # Use TWO separate files: npm refuses to load the same path as both
+          # user and global config ("double-loading config ... as global").
+          echo "registry=https://registry.npmjs.org/" > "$RUNNER_TEMP/user.npmrc"
+          echo "registry=https://registry.npmjs.org/" > "$RUNNER_TEMP/global.npmrc"
+          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/user.npmrc"     >> "$GITHUB_ENV"  # ignore ~/.npmrc
+          echo "NPM_CONFIG_GLOBALCONFIG=$RUNNER_TEMP/global.npmrc" >> "$GITHUB_ENV"  # ignore /etc + prefix npmrc
           # Neutralize any inherited redirect env vars for all later steps.
-          echo "npm_config_registry=https://registry.npmjs.org/" >> "$GITHUB_ENV"
+          echo "npm_config_registry=https://registry.npmjs.org/"  >> "$GITHUB_ENV"
 
       - name: Prove the clean room is actually public
         run: |
