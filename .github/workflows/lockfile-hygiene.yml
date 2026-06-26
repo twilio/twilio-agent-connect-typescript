@@ -34,18 +34,36 @@ jobs:
         with:
           node-version: "22.13"
 
-      - name: Strip any resolver config (simulate an external consumer)
+      - name: Build a hermetic npm config (ignore ALL ambient config)
         run: |
-          # Guarantee no Twilio redirect is in effect: no user/global .npmrc,
-          # registry pinned to public npm for this job only.
-          rm -f ~/.npmrc "$HOME/.npmrc" || true
-          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
-          echo "Effective npm registry:"
-          npm config get registry
+          # On a fork's stock runner this is already clean. On Twilio's internal
+          # runner the image MAY carry a global/system .npmrc, scoped registries,
+          # or npm_config_* env that silently redirect to Artifactory — which
+          # would FALSELY pass a lockfile an external consumer can't resolve.
+          # So we don't trust the runner: we force npm to read ONLY our file.
+          CLEAN="$RUNNER_TEMP/clean.npmrc"
+          echo "registry=https://registry.npmjs.org/" > "$CLEAN"
+          echo "NPM_CONFIG_USERCONFIG=$CLEAN"   >> "$GITHUB_ENV"   # ignore ~/.npmrc
+          echo "NPM_CONFIG_GLOBALCONFIG=$CLEAN"  >> "$GITHUB_ENV"   # ignore /etc + prefix npmrc
+          # Neutralize any inherited redirect env vars for all later steps.
+          echo "npm_config_registry=https://registry.npmjs.org/" >> "$GITHUB_ENV"
+
+      - name: Prove the clean room is actually public
+        run: |
+          echo "userconfig : $(npm config get userconfig)"
+          echo "globalconfig: $(npm config get globalconfig)"
+          REG="$(npm config get registry)"
+          echo "registry   : $REG"
+          case "$REG" in
+            https://registry.npmjs.org*) echo "✓ resolving against public npm" ;;
+            *) echo "::error::clean room is not public — registry=$REG (ambient Twilio config leaked in)"; exit 1 ;;
+          esac
+          # Belt-and-suspenders: fail if any scoped/twilio registry survived.
+          if npm config list 2>/dev/null | grep -iE 'jfrog|artifactory|:registry'; then
+            echo "::error::a scoped or Artifactory registry is still configured in the clean room"; exit 1
+          fi
 
       - name: Clean-room install from the committed lockfile
-        env:
-          npm_config_registry: https://registry.npmjs.org/
         run: |
           set -e
           echo "Resolving the root package against the public registry..."
@@ -53,8 +71,6 @@ jobs:
           echo "✓ Root lockfile resolves publicly."
 
       - name: Clean-room install for getting_started examples
-        env:
-          npm_config_registry: https://registry.npmjs.org/
         run: |
           set -e
           shopt -s nullglob
