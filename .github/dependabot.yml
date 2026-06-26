@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/getting_started/examples/chat"
+      - "/getting_started/examples/handoff"
+      - "/getting_started/examples/openai"
+      - "/getting_started/examples/openai-streaming"
+      - "/getting_started/examples/outbound"
+      - "/getting_started/examples/rcs"
+      - "/getting_started/examples/relay-only"
+      - "/getting_started/examples/whatsapp"
+    schedule:
+      interval: "weekly"
