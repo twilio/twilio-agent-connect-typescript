@@ -1,0 +1,67 @@
+name: Lockfile Hygiene
+
+# ADR 1634 Rule 3b — keep public SDK repos resolvable by external consumers.
+# Both jobs are secret-less and run identically on fork PRs and same-repo PRs:
+# they MUST resolve from the public registry only (no Artifactory, no OIDC).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect Artifactory hosts
+    # Forks can't use the larger runner group; fall back to ubuntu-latest.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Scan committed lockfiles & resolver config
+        run: bash .github/scripts/lockfile-hygiene.sh
+
+  clean-room-resolve:
+    name: Clean-room public resolve
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "22.13"
+
+      - name: Strip any resolver config (simulate an external consumer)
+        run: |
+          # Guarantee no Twilio redirect is in effect: no user/global .npmrc,
+          # registry pinned to public npm for this job only.
+          rm -f ~/.npmrc "$HOME/.npmrc" || true
+          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+          echo "Effective npm registry:"
+          npm config get registry
+
+      - name: Clean-room install from the committed lockfile
+        env:
+          npm_config_registry: https://registry.npmjs.org/
+        run: |
+          set -e
+          echo "Resolving the root package against the public registry..."
+          npm ci --ignore-scripts --no-audit --fund=false
+          echo "✓ Root lockfile resolves publicly."
+
+      - name: Clean-room install for getting_started examples
+        env:
+          npm_config_registry: https://registry.npmjs.org/
+        run: |
+          set -e
+          shopt -s nullglob
+          fail=0
+          for dir in getting_started/examples/*/; do
+            [ -f "${dir}package-lock.json" ] || continue
+            echo "── ${dir}"
+            ( cd "$dir" && npm ci --ignore-scripts --no-audit --fund=false ) || { echo "::error::${dir} failed public resolve"; fail=1; }
+          done
+          [ "$fail" -eq 0 ] && echo "✓ All example lockfiles resolve publicly." || exit 1
