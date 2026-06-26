@@ -17,7 +17,7 @@ jobs:
   detect:
     name: Detect Artifactory hosts
     # Forks can't use the larger runner group; fall back to ubuntu-latest.
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Scan committed lockfiles & resolver config
@@ -25,7 +25,7 @@ jobs:
 
   clean-room-resolve:
     name: Clean-room public resolve
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 

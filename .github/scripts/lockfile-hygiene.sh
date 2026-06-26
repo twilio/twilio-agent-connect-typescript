@@ -29,11 +29,12 @@ echo "hygiene: scanning ${count} file(s) for Twilio Artifactory hosts..."
 violations=0
 while IFS= read -r f; do
   [ -n "$f" ] || continue
-  if hits=$(grep -nEi "$PATTERNS" "$f" 2>/dev/null); then
+  if grep -qEi "$PATTERNS" "$f" 2>/dev/null; then
     violations=1
     echo "::error file=$f::Artifactory host found in $f — public consumers cannot resolve this. Regenerate against the public registry."
     echo "  ── $f"
-    echo "$hits" | sed 's/^/     /' | head -8
+    # Print only a small sample (avoids capturing a huge lockfile into memory).
+    grep -nEi "$PATTERNS" "$f" 2>/dev/null | head -8 | sed 's/^/     /'
   fi
   # npm-shrinkwrap.json ships inside the published tarball — extra-loud.
   case "$f" in
