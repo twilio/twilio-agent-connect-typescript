@@ -1443,4 +1443,116 @@ describe('VoiceChannel', () => {
     });
   });
 
+  describe('webhook processing', () => {
+    it('should clean up session when conversation is closed', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      // Simulate a voice conversation started (normally happens via WebSocket)
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
+
+      // Process CONVERSATION_UPDATED webhook with CLOSED status
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          id: 'CHtest123456789',
+          status: 'CLOSED',
+        },
+      });
+
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(false);
+    });
+
+    it('should trigger onConversationEnded callback when closed', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(voiceChannel);
+
+      // Start conversation
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+
+      // Close conversation
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHtest123456789', status: 'CLOSED' },
+      });
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversationId).toBe('CHtest123456789');
+      expect(captured[0].channel).toBe('voice');
+    });
+
+    it('should handle duplicate webhooks via idempotency token', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      // Start conversation
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+
+      const idempotencyToken = 'idempotency-token-123';
+
+      // First webhook should process
+      await voiceChannel.processWebhook(
+        {
+          eventType: 'CONVERSATION_UPDATED',
+          data: { id: 'CHtest123456789', status: 'CLOSED' },
+        },
+        idempotencyToken
+      );
+
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(false);
+
+      // Restart the same conversation to test duplicate webhook
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
+
+      // Duplicate webhook should be ignored (same idempotency token)
+      await voiceChannel.processWebhook(
+        {
+          eventType: 'CONVERSATION_UPDATED',
+          data: { id: 'CHtest123456789', status: 'CLOSED' },
+        },
+        idempotencyToken
+      );
+
+      // Conversation should still be active (duplicate was ignored)
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
+    });
+
+    it('should ignore webhook for unknown conversation', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      // No error should be thrown for unknown conversation
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHunknown', status: 'CLOSED' },
+      });
+    });
+
+    it('should ignore unhandled event types', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      // Start conversation
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+
+      // Process unhandled event type (should not throw)
+      await voiceChannel.processWebhook({
+        eventType: 'UNKNOWN_EVENT_TYPE',
+        data: { id: 'CHtest123456789' },
+      });
+
+      // Conversation should still be active
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
+    });
+  });
+
 });

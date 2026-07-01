@@ -42,7 +42,12 @@ export interface TACServerConfig {
 
   /** Custom webhook paths */
   webhookPaths?: {
+    /**
+     * @deprecated Use `conversation` instead. This field will be removed in a future version.
+     * If both `messaging` and `conversation` are set, `conversation` takes precedence.
+     */
     messaging?: string;
+    conversation?: string;
     twiml?: string;
     ws?: string;
     conversationRelayCallback?: string;
@@ -67,7 +72,7 @@ const DEFAULT_CONFIG = {
   host: '0.0.0.0',
   port: 8000,
   webhookPaths: {
-    messaging: '/webhook',
+    conversation: '/webhook',
     twiml: '/twiml',
     ws: '/ws',
     conversationRelayCallback: '/conversation-relay-callback',
@@ -109,21 +114,33 @@ export class TACServer {
   private readonly config: Required<
     Omit<TACServerConfig, 'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'>
   >;
-  /** All enabled messaging channels — webhooks are fanned out to each one */
+  /** All enabled messaging channels */
   private readonly messagingChannels: MessagingChannel[];
   /** Voice channel instance */
   private readonly voiceChannel: VoiceChannel | undefined;
+  /** All channels that need webhook processing (voice + messaging) */
+  private readonly webhookChannels: (VoiceChannel | MessagingChannel)[];
 
   constructor(tac: TAC, config: TACServerConfig = {}) {
     this.tac = tac;
+
+    // Handle deprecated `messaging` field: log warning and apply fallback if needed
+    const webhookPaths = { ...DEFAULT_CONFIG.webhookPaths, ...config.webhookPaths };
+    if (config.webhookPaths?.messaging) {
+      console.warn(
+        'TACServer: The "webhookPaths.messaging" field is deprecated and will be removed in a future version. ' +
+          'Please update your configuration to use "webhookPaths.conversation" instead.'
+      );
+      // If conversation isn't explicitly set, use messaging value as fallback
+      if (!config.webhookPaths.conversation) {
+        webhookPaths.conversation = config.webhookPaths.messaging;
+      }
+    }
+
     this.config = {
       ...DEFAULT_CONFIG,
       ...config,
-      // Deep merge webhookPaths to preserve defaults while allowing overrides
-      webhookPaths: {
-        ...DEFAULT_CONFIG.webhookPaths,
-        ...config.webhookPaths,
-      },
+      webhookPaths,
       // Deep merge conversationRelayConfig to preserve defaults while allowing overrides
       conversationRelayConfig: {
         ...DEFAULT_CONFIG.conversationRelayConfig,
@@ -144,10 +161,16 @@ export class TACServer {
         ] as (MessagingChannel | undefined)[]
       ).filter((ch): ch is MessagingChannel => ch != null);
 
-    if (this.messagingChannels.length === 0) {
-      // eslint-disable-next-line no-console -- Fastify logger not yet initialized
+    // Gather all channels that need webhook processing
+    this.webhookChannels = [];
+    if (this.voiceChannel) {
+      this.webhookChannels.push(this.voiceChannel);
+    }
+    this.webhookChannels.push(...this.messagingChannels);
+
+    if (this.webhookChannels.length === 0) {
       console.warn(
-        'TACServer: No messaging channels configured. Messaging webhooks will be disabled. Register a MessagingChannel (e.g., "sms", "rcs", "chat", or "whatsapp") with TAC to enable messaging.'
+        'TACServer: No channels configured for webhook processing. Register channels with TAC to enable webhooks.'
       );
     }
     // Use the user-supplied Fastify instance if provided; otherwise create
@@ -224,22 +247,25 @@ export class TACServer {
       },
     };
 
-    // Messaging webhook — fan out to all enabled messaging channels (each self-filters)
-    if (this.messagingChannels.length > 0) {
+    // Conversation Orchestrator webhook — fan out to all enabled channels
+    if (this.webhookChannels.length > 0) {
       this.fastify.post(
-        this.config.webhookPaths.messaging || '/webhook',
+        this.config.webhookPaths.conversation || '/webhook',
         validateSignature,
         async (request: FastifyRequest, reply: FastifyReply) => {
           const rawHeader = request.headers['i-twilio-idempotency-token'];
           const idempotencyToken = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-          for (const channel of this.messagingChannels) {
+
+          // Fan out to all channels
+          for (const channel of this.webhookChannels) {
             channel.processWebhook(request.body, idempotencyToken).catch((err: unknown) => {
               this.fastify.log.error(
                 { err, channel: channel.channelType },
-                'Messaging webhook processing error'
+                'Webhook processing error'
               );
             });
           }
+
           await reply.code(200).send({ status: 'ok' });
         }
       );
@@ -487,7 +513,7 @@ export class TACServer {
         {
           host: this.config.host,
           port: this.config.port,
-          messaging_webhook: this.config.webhookPaths.messaging,
+          conversation_webhook: this.config.webhookPaths.conversation,
           twiml_webhook: this.config.webhookPaths.twiml,
           ws_websocket: this.config.webhookPaths.ws,
           conversation_relay_callback: this.config.webhookPaths.conversationRelayCallback,

@@ -88,7 +88,7 @@ The `TACServer` class (`packages/server/src/lib/server.ts`) provides a productio
   host: '0.0.0.0',
   port: 8000,
   webhookPaths: {
-    sms: '/webhook',
+    conversation: '/webhook',
     twiml: '/twiml',
     ws: '/ws',
     conversationRelayCallback: '/conversation-relay-callback',
