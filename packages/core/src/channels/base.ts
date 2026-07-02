@@ -32,7 +32,8 @@ export interface BaseChannelOptions {
    * Memory retrieval mode for this channel. Default is "never".
    *
    * - "never": Memory is not automatically retrieved. Use the memory TAC tool or manually call `tac.retrieveMemory()` in callbacks for conditional retrieval.
-   * - "always": Memory is automatically retrieved for every inbound message and available in `onMessageReady` callback.
+   * - "always": Memory is automatically retrieved (using the message as query) for every inbound message and available in `onMessageReady` callback.
+   * - "once": Memory is retrieved once at conversation start with an empty query and cached on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE.
    */
   memoryMode?: MemoryMode;
 
@@ -79,7 +80,9 @@ export abstract class BaseChannel {
     const modeToValidate = providedMode === undefined ? 'never' : providedMode;
     const parseResult = MemoryModeSchema.safeParse(modeToValidate);
     if (!parseResult.success) {
-      throw new Error(`Invalid memoryMode: "${modeToValidate}". Must be "always" or "never".`);
+      throw new Error(
+        `Invalid memoryMode: "${modeToValidate}". Must be "always", "once", or "never".`
+      );
     }
     this.memoryMode = parseResult.data;
 
@@ -407,22 +410,47 @@ export abstract class BaseChannel {
   }
 
   /**
-   * Retrieve memory only when memoryMode === 'always'.
+   * Retrieve memory according to the channel's memoryMode.
    *
    * This method handles the common logic for memory retrieval across all channels,
-   * including error handling and debug logging. If memoryMode is 'never',
-   * automatic memory retrieval is skipped.
+   * including error handling and debug logging.
+   *
+   * Modes:
+   * - "always": Fetch with the provided query on every message.
+   * - "once": Fetch once with an empty query and cache the result on the
+   *   session. Subsequent calls reuse the cache until it is invalidated on the
+   *   INACTIVE transition. Concurrent first-fetches are not serialized: if two
+   *   messages arrive before the first fetch resolves, both fetch and the last
+   *   write wins — a rare, harmless extra request rather than a bug.
+   * - "never": Skip retrieval.
+   *
+   * Memory retrieval failures are logged and swallowed so message processing
+   * continues without memory context.
    */
   protected async retrieveMemoryIfEnabled(
     session: ConversationSession,
     query?: string
   ): Promise<TACMemoryResponse | undefined> {
-    if (this.memoryMode !== 'always') {
+    // "never" and any unexpected value: no automatic retrieval
+    if (this.memoryMode !== 'always' && this.memoryMode !== 'once') {
       return undefined;
     }
 
+    // "once" mode reuses cached memory across messages.
+    if (this.memoryMode === 'once' && session.cachedMemory !== undefined) {
+      this.logger.debug({ conversation_id: session.conversationId }, 'Using cached memory');
+      return session.cachedMemory;
+    }
+
     try {
-      const memory = await this.tac.retrieveMemory(session, query);
+      // "always" uses the message as query; "once" fetches with an empty query.
+      const memory = await this.tac.retrieveMemory(
+        session,
+        this.memoryMode === 'always' ? query : undefined
+      );
+      if (this.memoryMode === 'once') {
+        session.cachedMemory = memory;
+      }
       this.logger.debug(
         { conversation_id: session.conversationId },
         'Memory retrieved successfully'
@@ -435,6 +463,27 @@ export abstract class BaseChannel {
       );
       // Continue without memory rather than failing entire message processing
       return undefined;
+    }
+  }
+
+  /**
+   * Invalidate cached memory for "once" mode when a conversation becomes
+   * INACTIVE. Conversation Orchestrator updates memory on the INACTIVE
+   * transition, so the next message re-fetches fresh memory. No-op for other
+   * memory modes.
+   */
+  protected invalidateCachedMemory(conversationId: ConversationId): void {
+    if (this.memoryMode !== 'once') {
+      return;
+    }
+
+    const session = this.activeConversations.get(conversationId);
+    if (session?.cachedMemory !== undefined) {
+      session.cachedMemory = undefined;
+      this.logger.debug(
+        { conversation_id: conversationId },
+        'Invalidated cached memory on INACTIVE status'
+      );
     }
   }
 

@@ -1,9 +1,14 @@
 import { z } from 'zod';
 
 /**
- * Memory retrieval mode for channels
+ * Memory retrieval mode for channels.
+ *
+ * - "always": Fetch memory with the message as query on every inbound message.
+ * - "once": Fetch memory once at conversation start with an empty query and
+ *   cache it. The cache is invalidated when the conversation becomes INACTIVE.
+ * - "never": Never automatically fetch memory (default).
  */
-export const MemoryModeSchema = z.enum(['always', 'never']);
+export const MemoryModeSchema = z.enum(['always', 'never', 'once']);
 export type MemoryMode = z.infer<typeof MemoryModeSchema>;
 
 /**

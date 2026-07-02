@@ -127,7 +127,8 @@ const voiceChannel = new VoiceChannel(tac, { memoryMode: 'never' }); // default
 ```
 
 - **`"never"` (default)**: No automatic fetching. Use `tac.retrieveMemory()` in callbacks for conditional retrieval.
-- **`"always"`**: Automatically fetches memory for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
+- **`"always"`**: Automatically fetches memory (using the message as query) for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
+- **`"once"`**: Fetches memory once at conversation start with an empty query and caches it on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE (Conversation Orchestrator refreshes memory on that transition), after which the next message re-fetches.
 
 ## Pull Requests
 
