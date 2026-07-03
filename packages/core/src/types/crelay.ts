@@ -292,8 +292,8 @@ export const TwiMLOptionsSchema = z
      * attribute). Leave unset (the default) to use the URL the channel derives
      * from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`. Set it only for
      * a per-call URL — e.g. an affinity-routed host that appends a token to the
-     * upgrade URL — typically from an `onInboundCallTwiml` customizer. Like every
-     * other field, it layers customizer > defaultTwimlOptions > TAC default.
+     * upgrade URL — typically from an `onInboundCallTwiml` customizer. Layers
+     * per-field like every other field.
      */
     websocketUrl: z.string().optional(),
 

@@ -32,22 +32,9 @@ const DEFAULT_WELCOME_GREETING = 'Hello! How can I assist you today?';
 /**
  * Configuration for the Voice channel.
  *
- * TwiML configuration layers (highest precedence first):
- *
- *   Inbound calls (`handleIncomingCall`):
- *     1. Output of the customizer registered via
- *        `VoiceChannel.onInboundCallTwiml(...)` [optional]
- *     2. `defaultTwimlOptions`                  [optional]
- *     3. TAC defaults
- *
- *   Outbound calls (`initiateOutboundConversation`):
- *     1. `InitiateVoiceConversationOptions.twimlOptions` [optional]
- *     2. `defaultTwimlOptions`                           [optional]
- *     3. TAC defaults
- *
- * All layers merge per-field — only fields a layer explicitly sets override
- * lower layers. Arrays (`languages`) and nested objects (`customParameters`,
- * `extra`) replace wholesale when set.
+ * `defaultTwimlOptions` is one of several TwiML layers that merge per-field;
+ * see `handleIncomingCall` (inbound) and `initiateOutboundConversation`
+ * (outbound) for the full precedence order.
  */
 export interface VoiceChannelConfig extends BaseChannelOptions {
   /**
@@ -801,7 +788,7 @@ export class VoiceChannel extends BaseChannel {
       if (key === 'actionUrl') {
         continue;
       }
-      // Index assignment across a heterogeneous record; validated upstream by Zod.
+      // Index assignment across a heterogeneous record; both sides are TwiMLOptions.
       (target as Record<string, unknown>)[key] = (source as Record<string, unknown>)[key];
     }
   }
@@ -1101,12 +1088,10 @@ export class VoiceChannel extends BaseChannel {
     }
 
     // `extra` is the escape hatch for attributes not yet typed. The schema's
-    // shadow-guard already rejects keys that collide with typed fields, so we
-    // can pass everything through as-is — except `url`, which is not a
-    // TwiMLOptions field (so the shadow-guard can't see it) but IS the resolved
-    // WebSocket endpoint. Let `extra.url` win here and it would silently point
-    // the call at the wrong socket; the intended per-call override is
-    // `websocketUrl`.
+    // shadow-guard rejects keys colliding with typed fields, so pass them
+    // through as-is — except `url`: it's not a TwiMLOptions field (invisible to
+    // the shadow-guard) but IS the resolved WebSocket endpoint, so letting
+    // `extra.url` through would silently point the call at the wrong socket.
     if (options.extra) {
       for (const [key, value] of Object.entries(options.extra)) {
         if (key === 'url') {

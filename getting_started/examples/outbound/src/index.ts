@@ -212,10 +212,7 @@ server
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {
-      // The WebSocket URL is derived from TACConfig.voicePublicDomain
-      // (TWILIO_VOICE_PUBLIC_DOMAIN) + voiceWebsocketPath. Per-call TwiML
-      // overrides go on twimlOptions; they merge over
-      // VoiceChannelConfig.defaultTwimlOptions and TAC defaults.
+      // No websocketUrl needed — it's derived from TWILIO_VOICE_PUBLIC_DOMAIN.
       const result = await voiceChannel.initiateOutboundConversation({
         to,
         ...(welcomeGreeting ? { twimlOptions: { welcomeGreeting } } : {}),
