@@ -23,17 +23,6 @@ class TestChannel extends BaseChannel {
     // Test implementation
   }
 
-  protected extractConversationId(payload: unknown): ConversationId | null {
-    const webhookData = payload as ConversationWebhookPayload;
-    const conversationId = webhookData.data?.conversationId || webhookData.data?.id;
-    return conversationId ? (conversationId as ConversationId) : null;
-  }
-
-  protected extractProfileId(payload: unknown): ProfileId | null {
-    const webhookData = payload as ConversationWebhookPayload;
-    return webhookData.data?.profileId ? (webhookData.data.profileId as ProfileId) : null;
-  }
-
   // Expose protected methods for testing
   public testIsDuplicateWebhook(token: string): boolean {
     return this.isDuplicateWebhook(token);

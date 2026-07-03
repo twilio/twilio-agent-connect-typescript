@@ -6,15 +6,26 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
+
 jobs:
   lint:
     name: Linting
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Artifactory OIDC Auth
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: ./.github/actions/artifactory-oidc
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.13"
           cache: "npm"
@@ -42,12 +53,16 @@ jobs:
 
   type-check:
     name: Type Check
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Artifactory OIDC Auth
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: ./.github/actions/artifactory-oidc
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.13"
           cache: "npm"
@@ -69,12 +84,16 @@ jobs:
 
   test-node-24:
     name: Test - Node 24
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Artifactory OIDC Auth
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: ./.github/actions/artifactory-oidc
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "24.x"
           cache: "npm"
@@ -87,12 +106,16 @@ jobs:
 
   test-node-22:
     name: Test - Node 22
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Artifactory OIDC Auth
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: ./.github/actions/artifactory-oidc
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.13"
           cache: "npm"
@@ -105,12 +128,16 @@ jobs:
 
   getting-started-example:
     name: Getting Started Example
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Artifactory OIDC Auth
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: ./.github/actions/artifactory-oidc
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.13"
           cache: "npm"
@@ -151,12 +178,16 @@ jobs:
 
   build:
     name: Build Package
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Artifactory OIDC Auth
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        uses: ./.github/actions/artifactory-oidc
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: "22.13"
           cache: "npm"
@@ -176,7 +207,7 @@ jobs:
           node --input-type=module -e "import('./dist/index.js').then((tac) => { console.log('Successfully imported package'); console.log('Exports:', Object.keys(tac).slice(0, 10).join(', '), '...'); });"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
           path: dist/
@@ -184,7 +215,7 @@ jobs:
   all-checks:
     name: All Checks Passed
     needs: [lint, type-check, test-node-22, test-node-24, getting-started-example, build]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     if: always()
     steps:
       - name: Check all job statuses

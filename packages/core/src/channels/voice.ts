@@ -18,6 +18,7 @@ import {
   InitiateVoiceConversationOptionsSchema,
   TwiMLOptions,
   TwiMLRequest,
+  ConversationWebhookPayload,
 } from '../types/index';
 import type { InitiateVoiceConversationResult } from '../types/conversation';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
@@ -228,12 +229,74 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Process webhook - Voice channel doesn't use traditional webhooks,
-   * but this method is required by the base class
+   * Process conversation webhooks for cleanup.
+   *
+   * Voice channel processes CONVERSATION_UPDATED events:
+   * - CLOSED status: Clean up local session state
+   *
+   * Note: Conversation tracking uses instance-local memory. In multi-instance
+   * deployments, webhooks may route to a different instance, preventing cleanup.
+   *
+   * @param payload - Raw webhook event data from Twilio
+   * @param idempotencyToken - Optional Twilio idempotency token from request headers
    */
-  public processWebhook(_payload: unknown): Promise<void> {
-    this.logger.warn('processWebhook called but Voice channel uses WebSocket connections');
-    return Promise.resolve();
+  public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
+    try {
+      const result = this.preprocessWebhook(payload, idempotencyToken);
+      if (!result) {
+        return;
+      }
+
+      const { webhookData, eventType, conversationId } = result;
+
+      switch (eventType) {
+        case 'CONVERSATION_UPDATED':
+          this.logger.debug(
+            { conversation_id: conversationId, status: webhookData.data?.status },
+            'Handling CONVERSATION_UPDATED'
+          );
+          await this.handleConversationUpdated(webhookData);
+          break;
+
+        default:
+          this.logger.debug(
+            {
+              event_type: eventType,
+              raw_event_type: webhookData.eventType,
+              conversation_id: conversationId,
+            },
+            'Unhandled event type - this event will be ignored'
+          );
+      }
+
+      this.logger.debug({ event_type: eventType }, 'Webhook processing completed');
+    } catch (error) {
+      // Remove the token so retries are not blocked
+      if (idempotencyToken) {
+        this.removeWebhookToken(idempotencyToken);
+      }
+      this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
+    }
+  }
+
+  /**
+   * Handle conversation updated event
+   */
+  private async handleConversationUpdated(payload: ConversationWebhookPayload): Promise<void> {
+    const conversationId = this.extractConversationId(payload);
+
+    if (!conversationId) {
+      throw new Error('Missing conversation ID in conversation.updated event');
+    }
+
+    // Check if conversation is closed
+    if (payload.data?.status === 'CLOSED') {
+      this.logger.debug(
+        { conversation_id: conversationId, status: payload.data.status },
+        'Conversation closed, cleaning up'
+      );
+      await this.endConversation(conversationId);
+    }
   }
 
   /**
@@ -1196,22 +1259,6 @@ export class VoiceChannel extends BaseChannel {
       }
     }
     return filtered;
-  }
-
-  /**
-   * Extract conversation ID - Not applicable for Voice channel
-   */
-  protected extractConversationId(_payload: unknown): ConversationId | null {
-    // Voice channel doesn't use traditional webhooks
-    return null;
-  }
-
-  /**
-   * Extract profile ID - Not applicable for Voice channel
-   */
-  protected extractProfileId(_payload: unknown): ProfileId | null {
-    // Voice channel doesn't use traditional webhooks
-    return null;
   }
 
   /**
