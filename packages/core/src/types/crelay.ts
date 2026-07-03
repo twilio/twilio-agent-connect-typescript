@@ -287,6 +287,15 @@ export const TwiMLOptionsSchema = z
      * conversation creation and participants.
      */
     conversationConfiguration: z.string().optional(),
+    /**
+     * ConversationRelay WebSocket URL (the `<ConversationRelay url=...>`
+     * attribute). Leave unset (the default) to use the URL the channel derives
+     * from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`. Set it only for
+     * a per-call URL — e.g. an affinity-routed host that appends a token to the
+     * upgrade URL — typically from an `onInboundCallTwiml` customizer. Like every
+     * other field, it layers customizer > defaultTwimlOptions > TAC default.
+     */
+    websocketUrl: z.string().optional(),
 
     // Language, TTS, STT
     /**
@@ -432,6 +441,7 @@ const TwiMLOptionsShape = {
   welcomeGreetingInterruptible: true,
   actionUrl: true,
   conversationConfiguration: true,
+  websocketUrl: true,
   language: true,
   ttsLanguage: true,
   transcriptionLanguage: true,

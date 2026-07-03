@@ -709,48 +709,67 @@ export class VoiceChannel extends BaseChannel {
    * TwiML fields are merged per-field, highest precedence first:
    *   1. Output of the customizer registered via
    *      `VoiceChannel.onInboundCallTwiml(...)` if configured and `twimlRequest`
-   *      is given.
+   *      is given. (Application-owned.)
    *   2. `VoiceChannelConfig.defaultTwimlOptions` — per-channel defaults.
-   *   3. TAC defaults: a fixed default welcomeGreeting, `conversationConfiguration`
-   *      from `TACConfig`, and `actionUrl` resolved via Studio handoff (when
+   *   3. `hostTwimlOptions` — per-call transport facts supplied by the host (the
+   *      code owning the route), e.g. a per-call `websocketUrl` with an affinity
+   *      token.
+   *   4. TAC defaults: a fixed default welcomeGreeting, `conversationConfiguration`
+   *      from `TACConfig`, `actionUrl` resolved via Studio handoff (when
    *      `studioHandoffFlowSid` is configured), else derived from
-   *      `TACConfig.voicePublicDomain` + `voiceActionPath`.
+   *      `TACConfig.voicePublicDomain` + `voiceActionPath`, and the `websocketUrl`
+   *      derived from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`.
    *
    * Fields not set at a layer fall through to lower layers. Arrays (`languages`)
    * and nested objects (`customParameters`) replace wholesale when set at a
-   * higher-priority layer.
+   * higher-priority layer. `websocketUrl` falls back to the `TACConfig`-derived
+   * URL if unset at every layer.
    *
    * @param twimlRequest - Parsed Twilio webhook fields. Passed to the customizer
    *   if one is configured on the channel.
+   * @param options - Additional per-call inputs.
+   * @param options.hostTwimlOptions - Per-call TwiML supplied by a custom
+   *   in-process host (e.g. an affinity-routed deployment injecting a per-call
+   *   `websocketUrl`), layered below `defaultTwimlOptions` and the application
+   *   customizer but above the TAC defaults.
    * @returns TwiML XML string for call connection.
    */
-  public async handleIncomingCall(twimlRequest?: TwiMLRequest): Promise<string> {
-    const websocketUrl = this.resolveWebsocketUrl('handleIncomingCall');
-
+  public async handleIncomingCall(
+    twimlRequest?: TwiMLRequest,
+    options?: { hostTwimlOptions?: TwiMLOptions }
+  ): Promise<string> {
     let customized: TwiMLOptions | undefined;
     if (this.onInboundCallTwimlHandler && twimlRequest) {
       customized = await this.onInboundCallTwimlHandler(twimlRequest);
     }
 
-    const merged = this.buildTwimlOptions(customized);
+    const merged = this.buildTwimlOptions(options?.hostTwimlOptions, customized);
+    const websocketUrl = merged.websocketUrl ?? this.resolveWebsocketUrl('handleIncomingCall');
     return this.generateTwiml(websocketUrl, merged);
   }
 
   /**
-   * Layer TwiML options: TAC defaults → channel `defaultTwimlOptions` →
-   * `perCall` (customizer output for inbound, or
+   * Layer TwiML options, lowest precedence first: TAC defaults → `host`
+   * (calling host's per-call values) → channel `defaultTwimlOptions` → `perCall`
+   * (application customizer output for inbound, or
    * `InitiateVoiceConversationOptions.twimlOptions` for outbound).
    */
-  private buildTwimlOptions(perCall: TwiMLOptions | undefined): TwiMLOptions {
+  private buildTwimlOptions(
+    host: TwiMLOptions | undefined,
+    perCall: TwiMLOptions | undefined
+  ): TwiMLOptions {
     const merged: TwiMLOptions = {
       welcomeGreeting: DEFAULT_WELCOME_GREETING,
       ...(this.tac.isOrchestratorEnabled() && this.config.conversationConfigurationId !== undefined
         ? { conversationConfiguration: this.config.conversationConfigurationId }
         : {}),
     };
-    const resolvedActionUrl = this.resolveActionUrl(perCall);
+    const resolvedActionUrl = this.resolveActionUrl(host, perCall);
     if (resolvedActionUrl !== undefined) {
       merged.actionUrl = resolvedActionUrl;
+    }
+    if (host) {
+      this.overlayFields(merged, host);
     }
     if (this.voiceConfig.defaultTwimlOptions) {
       this.overlayFields(merged, this.voiceConfig.defaultTwimlOptions);
@@ -791,10 +810,11 @@ export class VoiceChannel extends BaseChannel {
    * Resolve the TwiML `<Connect action=...>` URL.
    *
    * Precedence (highest to lowest):
-   *   1. customizer
+   *   1. application customizer
    *   2. channel `defaultTwimlOptions`
-   *   3. Studio handoff (when `studioHandoffFlowSid` is configured)
-   *   4. Channel default — derived from `TACConfig.voicePublicDomain` +
+   *   3. `host` (calling host's per-call options)
+   *   4. Studio handoff (when `studioHandoffFlowSid` is configured)
+   *   5. Channel default — derived from `TACConfig.voicePublicDomain` +
    *      `TACConfig.voiceActionPath`.
    *
    * User-expressed intent (Studio handoff is configured explicitly on
@@ -804,7 +824,10 @@ export class VoiceChannel extends BaseChannel {
    * suppresses `<Connect action=...>` entirely — all lower layers are skipped.
    * `actionUrl` left absent (key not present) falls through to the next layer.
    */
-  private resolveActionUrl(customized: TwiMLOptions | undefined): string | undefined {
+  private resolveActionUrl(
+    host: TwiMLOptions | undefined,
+    customized: TwiMLOptions | undefined
+  ): string | undefined {
     if (customized && 'actionUrl' in customized) {
       return customized.actionUrl;
     }
@@ -813,6 +836,9 @@ export class VoiceChannel extends BaseChannel {
       'actionUrl' in this.voiceConfig.defaultTwimlOptions
     ) {
       return this.voiceConfig.defaultTwimlOptions.actionUrl;
+    }
+    if (host && 'actionUrl' in host) {
+      return host.actionUrl;
     }
     if (this.config.studioHandoffFlowSid) {
       return studioVoiceHandoffUrl(this.config.accountSid, this.config.studioHandoffFlowSid);
@@ -847,8 +873,6 @@ export class VoiceChannel extends BaseChannel {
     options: InitiateVoiceConversationOptions
   ): Promise<InitiateVoiceConversationResult> {
     const validated = InitiateVoiceConversationOptionsSchema.parse(options);
-    const websocketUrl =
-      validated.websocketUrl ?? this.resolveWebsocketUrl('initiateOutboundConversation');
     const fromNumber = this.config.phoneNumber;
 
     this.logger.info(
@@ -857,10 +881,17 @@ export class VoiceChannel extends BaseChannel {
     );
 
     try {
-      // Same layering as handleIncomingCall, minus the customizer (customizers
-      // receive a TwiMLRequest from an inbound webhook; there is no equivalent
-      // for outbound).
-      const merged = this.buildTwimlOptions(validated.twimlOptions);
+      // Outbound has no inbound customizer and no host layer; the per-call
+      // override is options.twimlOptions.
+      const merged = this.buildTwimlOptions(undefined, validated.twimlOptions);
+
+      // `options.websocketUrl` is the dedicated per-call outbound override and
+      // wins over any websocketUrl that came through the layered twimlOptions
+      // merge; both fall back to the TACConfig-derived URL.
+      const websocketUrl =
+        validated.websocketUrl ??
+        merged.websocketUrl ??
+        this.resolveWebsocketUrl('initiateOutboundConversation');
       const twiml = this.generateTwiml(websocketUrl, merged);
 
       // Place the outbound call with inline TwiML
@@ -992,7 +1023,8 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Field names on {@link TwiMLOptions} that map directly to `<ConversationRelay>`
    * attributes (camelCase, emitted as-is). Excludes the fields handled specially
-   * by {@link generateTwiml}: actionUrl, languages, customParameters, extra.
+   * by {@link generateTwiml}: websocketUrl (resolved through the layered merge and
+   * emitted as the `url` attribute), actionUrl, languages, customParameters, extra.
    */
   private static readonly RELAY_ATTR_FIELDS: readonly (keyof TwiMLOptions)[] = [
     'welcomeGreeting',
@@ -1027,14 +1059,24 @@ export class VoiceChannel extends BaseChannel {
    *
    * This is the low-level emitter used by `handleIncomingCall` and
    * `initiateOutboundConversation` after layering. It mirrors the Python SDK's
-   * `generate_twiml`: the WebSocket URL is a required positional argument and
-   * all other ConversationRelay attributes come from `options`.
+   * `generate_twiml`. The WebSocket URL may be passed as `websocketUrl` or via
+   * `options.websocketUrl` (the explicit argument wins when both are given), so a
+   * channel-less caller can pass everything in one object.
    *
    * @param websocketUrl - Public WebSocket URL (e.g. 'wss://example.ngrok.app/ws').
+   *   Optional if `options.websocketUrl` is set.
    * @param options - Merged TwiMLOptions to emit.
    * @returns TwiML XML string ready to return to Twilio.
+   * @throws {Error} if no WebSocket URL is provided via either source.
    */
-  private generateTwiml(websocketUrl: string, options: TwiMLOptions): string {
+  private generateTwiml(websocketUrl: string | undefined, options: TwiMLOptions): string {
+    const resolvedWebsocketUrl = websocketUrl || options.websocketUrl;
+    if (!resolvedWebsocketUrl) {
+      throw new Error(
+        'generateTwiml requires a WebSocket URL — pass it explicitly or set options.websocketUrl.'
+      );
+    }
+
     const response = new VoiceResponse();
 
     // <Connect action=...> — actionUrl undefined means no action attribute.
@@ -1043,7 +1085,7 @@ export class VoiceChannel extends BaseChannel {
     // Build ConversationRelay attributes. Keys on TwiMLOptions are already
     // camelCase; the Twilio SDK serializes booleans/numbers as TwiML attribute
     // values.
-    const relayAttrs: Record<string, unknown> = { url: websocketUrl };
+    const relayAttrs: Record<string, unknown> = { url: resolvedWebsocketUrl };
     for (const field of VoiceChannel.RELAY_ATTR_FIELDS) {
       let value = options[field];
       if (value === undefined) {
@@ -1060,9 +1102,21 @@ export class VoiceChannel extends BaseChannel {
 
     // `extra` is the escape hatch for attributes not yet typed. The schema's
     // shadow-guard already rejects keys that collide with typed fields, so we
-    // can pass everything through as-is.
+    // can pass everything through as-is — except `url`, which is not a
+    // TwiMLOptions field (so the shadow-guard can't see it) but IS the resolved
+    // WebSocket endpoint. Let `extra.url` win here and it would silently point
+    // the call at the wrong socket; the intended per-call override is
+    // `websocketUrl`.
     if (options.extra) {
-      Object.assign(relayAttrs, options.extra);
+      for (const [key, value] of Object.entries(options.extra)) {
+        if (key === 'url') {
+          this.logger.warn(
+            'Ignoring `url` in TwiMLOptions.extra; set `websocketUrl` to override the ConversationRelay URL.'
+          );
+          continue;
+        }
+        relayAttrs[key] = value;
+      }
     }
 
     const relay = connect.conversationRelay(

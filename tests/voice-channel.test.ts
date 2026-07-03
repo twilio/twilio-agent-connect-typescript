@@ -497,6 +497,167 @@ describe('VoiceChannel', () => {
     });
   });
 
+  describe('handleIncomingCall websocketUrl layering', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    // websocketUrl is a normal TwiMLOptions field, so it rides the same layered
+    // merge as every other attribute. This is the affinity-routed-host case
+    // (e.g. Azure Hosted Agents) appending a per-call token to the upgrade URL —
+    // done through the existing customizer, no new API surface.
+    it('should let a customizer override websocketUrl per call', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Welcome!' },
+      });
+      voiceChannel.onInboundCallTwiml(async req => ({
+        websocketUrl: `wss://example.com/ws?agent_session_id=${req.callSid}`,
+      }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ callSid: 'CA123' });
+
+      // The customizer's URL is emitted verbatim...
+      expect(twiml).toContain('url="wss://example.com/ws?agent_session_id=CA123"');
+      // ...and the bare derived URL (without the query string) is NOT used.
+      expect(twiml).not.toContain('url="wss://example.com/ws"');
+      // The override only changes the URL; other layered fields still apply.
+      expect(twiml).toContain('welcomeGreeting="Welcome!"');
+      expect(twiml).toContain('conversationConfiguration=');
+    });
+
+    it('should let defaultTwimlOptions.websocketUrl override the derived URL', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const override = 'wss://static.example.com/socket';
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { websocketUrl: override },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain(`url="${override}"`);
+      expect(twiml).not.toContain('url="wss://example.com/ws"');
+      // websocketUrl feeds the `url` attribute; it must not leak as its own attr.
+      expect(twiml).not.toContain('websocketUrl=');
+    });
+
+    it('should let a customizer websocketUrl win over defaultTwimlOptions', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { websocketUrl: 'wss://static.example.com/socket' },
+      });
+      voiceChannel.onInboundCallTwiml(async () => ({
+        websocketUrl: 'wss://per-call.example.com/ws',
+      }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ callSid: 'CA999' });
+
+      expect(twiml).toContain('url="wss://per-call.example.com/ws"');
+      expect(twiml).not.toContain('static.example.com');
+    });
+
+    it('should derive the URL when no layer sets websocketUrl', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('url="wss://example.com/ws"');
+    });
+
+    it('should ignore a `url` key in extra and keep the resolved URL', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { extra: { url: 'wss://attacker.example.com/ws' } },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('url="wss://example.com/ws"');
+      expect(twiml).not.toContain('attacker.example.com');
+    });
+  });
+
+  describe('handleIncomingCall hostTwimlOptions', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    it('should set a per-call websocketUrl via hostTwimlOptions', async () => {
+      // A custom in-process host passes per-call transport facts via
+      // hostTwimlOptions — e.g. an affinity URL — without registering a
+      // customizer.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const affinityUrl = 'wss://example.com/ws?agent_session_id=CA123';
+      const twiml = await voiceChannel.handleIncomingCall(undefined, {
+        hostTwimlOptions: {
+          websocketUrl: affinityUrl,
+          customParameters: { agent_session_id: 'CA123' },
+        },
+      });
+
+      expect(twiml).toContain(`url="${affinityUrl}"`);
+      expect(twiml).not.toContain('url="wss://example.com/ws"'); // not the derived URL
+      // conversationConfiguration still populated from TACConfig (not clobbered).
+      expect(twiml).toContain('conversationConfiguration=');
+    });
+
+    it('should let the app customizer beat hostTwimlOptions on contested fields', async () => {
+      // Precedence: the application's onInboundCallTwiml customizer sits ABOVE
+      // hostTwimlOptions — a developer's explicit choice wins for fields the dev
+      // sets, while the host's uncontested websocketUrl still applies.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      voiceChannel.onInboundCallTwiml(async () => ({ welcomeGreeting: 'App wins' }));
+
+      const twiml = await voiceChannel.handleIncomingCall(
+        { extra: {} },
+        {
+          hostTwimlOptions: {
+            websocketUrl: 'wss://example.com/ws?agent_session_id=CA1',
+            welcomeGreeting: 'Host loses',
+          },
+        }
+      );
+
+      expect(twiml).toContain('welcomeGreeting="App wins"');
+      expect(twiml).not.toContain('Host loses');
+      // ...but the host's websocketUrl (dev didn't set it) still applies.
+      expect(twiml).toContain('url="wss://example.com/ws?agent_session_id=CA1"');
+    });
+
+    it('should let defaultTwimlOptions beat hostTwimlOptions on contested fields', async () => {
+      // Precedence: channel `defaultTwimlOptions` sits ABOVE hostTwimlOptions,
+      // so a contested field set on both resolves to the channel default.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Channel default' },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall(undefined, {
+        hostTwimlOptions: { welcomeGreeting: 'Host loses' },
+      });
+
+      expect(twiml).toContain('welcomeGreeting="Channel default"');
+      expect(twiml).not.toContain('Host loses');
+    });
+
+    it('should keep the host websocketUrl when defaultTwimlOptions does not set it', async () => {
+      // Uncontested host fields still apply even though defaultTwimlOptions
+      // outranks the host layer.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Channel default' },
+      });
+
+      const affinityUrl = 'wss://example.com/ws?agent_session_id=CA7';
+      const twiml = await voiceChannel.handleIncomingCall(undefined, {
+        hostTwimlOptions: { websocketUrl: affinityUrl },
+      });
+
+      expect(twiml).toContain(`url="${affinityUrl}"`);
+      expect(twiml).toContain('welcomeGreeting="Channel default"');
+    });
+  });
+
   describe('conversation ended callback', () => {
     const createMockWebSocket = () => {
       const handlers: Record<string, ((...args: any[]) => void)[]> = {};

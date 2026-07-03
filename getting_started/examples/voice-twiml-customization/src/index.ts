@@ -44,6 +44,10 @@ async function customizeTwiml(req: TwiMLRequest): Promise<TwiMLOptions> {
   if (req.callerCountry === 'FR') {
     return { language: 'fr-FR', welcomeGreeting: 'Bonjour ! Comment puis-je vous aider ?' };
   }
+  // `websocketUrl` is a normal per-call field too: an affinity-routed host can
+  // append a per-call token to the upgrade URL. Leave it unset to fall back to
+  // the URL derived from TACConfig.voicePublicDomain + voiceWebsocketPath.
+  // return { websocketUrl: `wss://${host}/ws?agent_session_id=${req.callSid}` };
   return {}; // fall through to defaultTwimlOptions
 }
 

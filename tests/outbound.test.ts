@@ -691,6 +691,32 @@ describe('Outbound Conversations', () => {
       expect(twiml).toContain('url="wss://example.com/ws"');
     });
 
+    it('should use twimlOptions.websocketUrl when top-level websocketUrl is absent', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAtwimlurl' });
+
+      await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        twimlOptions: { websocketUrl: 'wss://example.com/ws?agent_session_id=CA1' },
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('url="wss://example.com/ws?agent_session_id=CA1"');
+    });
+
+    it('should let top-level websocketUrl win over twimlOptions.websocketUrl', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAtoplevel' });
+
+      await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        websocketUrl: 'wss://top-level.example.com/ws',
+        twimlOptions: { websocketUrl: 'wss://twiml-opts.example.com/ws' },
+      });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('url="wss://top-level.example.com/ws"');
+      expect(twiml).not.toContain('twiml-opts.example.com');
+    });
+
     it('should apply VoiceChannelConfig.defaultTwimlOptions to outbound TwiML', async () => {
       mockCallCreate.mockResolvedValue({ sid: 'CAchan' });
       const chan = new VoiceChannel(tac, {

@@ -94,6 +94,18 @@ describe('TwiMLOptions validation', () => {
     const result = TwiMLOptionsSchema.safeParse({ extra: { futureFeature: 'on' } });
     expect(result.success).toBe(true);
   });
+
+  it('accepts a websocketUrl field', () => {
+    const result = TwiMLOptionsSchema.safeParse({
+      websocketUrl: 'wss://example.com/ws?agent_session_id=CA1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects extra.websocketUrl (shadows the typed field)', () => {
+    const result = TwiMLOptionsSchema.safeParse({ extra: { websocketUrl: 'wss://x/ws' } });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('LanguageConfig', () => {
