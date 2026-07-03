@@ -212,7 +212,6 @@ server
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'voice') {
-      // No websocketUrl needed — it's derived from TWILIO_VOICE_PUBLIC_DOMAIN.
       const result = await voiceChannel.initiateOutboundConversation({
         to,
         ...(welcomeGreeting ? { twimlOptions: { welcomeGreeting } } : {}),
