@@ -28,6 +28,19 @@ export const TwilioMemoryConfigSchema = z.object({
 export type TwilioMemoryConfig = z.infer<typeof TwilioMemoryConfigSchema>;
 
 /**
+ * Schema for a voice route path (e.g. voiceWebsocketPath). Trims whitespace,
+ * maps an empty string to undefined so the `.default` applies, and requires a
+ * leading '/' so path concatenation onto the domain can't produce a malformed
+ * URL (e.g. `wss://example.comws`).
+ */
+const voicePathSchema = (defaultPath: string): z.ZodType<string> =>
+  z.preprocess(v => {
+    if (typeof v !== 'string') return v;
+    const trimmed = v.trim();
+    return trimmed.length === 0 ? undefined : trimmed;
+  }, z.string().startsWith('/', 'Path must start with "/"').default(defaultPath));
+
+/**
  * TAC configuration schema
  */
 export const TACConfigSchema = z.object({
@@ -92,15 +105,16 @@ export const TACConfigSchema = z.object({
    * Path the voice WebSocket is served at. Combined with voicePublicDomain to
    * build the public WebSocket URL the voice channel hands to Twilio in TwiML;
    * TACServer also registers its WebSocket route at this path. Override only if
-   * you mount the route at a non-default path.
+   * you mount the route at a non-default path. Must start with '/'.
    */
-  voiceWebsocketPath: z.string().default('/ws'),
+  voiceWebsocketPath: voicePathSchema('/ws'),
 
   /**
    * Path the ConversationRelay action callback is served at. Same role as
    * voiceWebsocketPath but for the `<Connect action=...>` cleanup callback.
+   * Must start with '/'.
    */
-  voiceActionPath: z.string().default('/conversation-relay-callback'),
+  voiceActionPath: voicePathSchema('/conversation-relay-callback'),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),

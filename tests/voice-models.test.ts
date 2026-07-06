@@ -106,6 +106,18 @@ describe('TwiMLOptions validation', () => {
     const result = TwiMLOptionsSchema.safeParse({ extra: { websocketUrl: 'wss://x/ws' } });
     expect(result.success).toBe(false);
   });
+
+  it('rejects an empty-string actionUrl (would silently drop the action)', () => {
+    expect(TwiMLOptionsSchema.safeParse({ actionUrl: '' }).success).toBe(false);
+  });
+
+  it('rejects an empty-string websocketUrl', () => {
+    expect(TwiMLOptionsSchema.safeParse({ websocketUrl: '' }).success).toBe(false);
+  });
+
+  it('still accepts an explicit undefined actionUrl (suppresses the action)', () => {
+    expect(TwiMLOptionsSchema.safeParse({ actionUrl: undefined }).success).toBe(true);
+  });
 });
 
 describe('LanguageConfig', () => {

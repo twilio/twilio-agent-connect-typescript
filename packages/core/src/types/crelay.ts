@@ -280,8 +280,13 @@ export const TwiMLOptionsSchema = z
      * Defaults to 'any' on Twilio.
      */
     welcomeGreetingInterruptible: InterruptModeSchema.optional(),
-    /** URL for Twilio to request when the call ends (`<Connect action>`) */
-    actionUrl: z.string().optional(),
+    /**
+     * URL for Twilio to request when the call ends (`<Connect action>`). Set to
+     * a non-empty URL, or leave unset. An explicit `undefined` suppresses the
+     * action entirely (see `VoiceChannel`'s actionUrl resolution); an empty
+     * string is rejected so it can't silently drop the action.
+     */
+    actionUrl: z.string().min(1, 'actionUrl must not be empty').optional(),
     /**
      * Conversation Service SID. When set, ConversationRelay will manage
      * conversation creation and participants.
@@ -293,9 +298,9 @@ export const TwiMLOptionsSchema = z
      * from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`. Set it only for
      * a per-call URL — e.g. an affinity-routed host that appends a token to the
      * upgrade URL — typically from an `onInboundCallTwiml` customizer. Layers
-     * per-field like every other field.
+     * per-field like every other field. Must be non-empty when set.
      */
-    websocketUrl: z.string().optional(),
+    websocketUrl: z.string().min(1, 'websocketUrl must not be empty').optional(),
 
     // Language, TTS, STT
     /**

@@ -319,6 +319,29 @@ describe('TACConfig', () => {
       delete process.env.TWILIO_VOICE_ACTION_PATH;
     });
 
+    it('should apply defaults when voice path env vars are empty/whitespace', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_WEBSOCKET_PATH = '   ';
+      process.env.TWILIO_VOICE_ACTION_PATH = '';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voiceWebsocketPath).toBe('/ws');
+      expect(config.voiceActionPath).toBe('/conversation-relay-callback');
+
+      delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
+      delete process.env.TWILIO_VOICE_ACTION_PATH;
+    });
+
+    it('should reject a voice path without a leading slash', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_WEBSOCKET_PATH = 'ws';
+
+      expect(() => TACConfig.fromEnv()).toThrow(/start with/);
+
+      delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
+    });
+
     it('should throw error when TWILIO_ACCOUNT_SID is missing', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_ACCOUNT_SID;
