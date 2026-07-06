@@ -137,11 +137,11 @@ When Memory is configured and channels are set to `memoryMode: 'always'`, TAC au
 The example configures channels with automatic memory retrieval:
 
 ```typescript
-const voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
 const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
 ```
 
-To disable automatic memory retrieval (default is `'never'`), omit the `memoryMode` option or use `tac.retrieveMemory()` in your callback for conditional retrieval.
+Voice uses `'once'` (fetch once per conversation and reuse the cache across calls until the conversation becomes INACTIVE), while SMS uses `'always'` (fetch on every message). To disable automatic memory retrieval (default is `'never'`), omit the `memoryMode` option or use `tac.retrieveMemory()` in your callback for conditional retrieval.
 
 ### MemoryPromptBuilder
 

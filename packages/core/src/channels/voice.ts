@@ -191,9 +191,7 @@ export class VoiceChannel extends BaseChannel {
       );
       await this.endConversation(conversationId);
     } else if (payload.data?.status === 'INACTIVE') {
-      // Invalidate cached memory ("once" mode) when the conversation becomes
-      // inactive. Memory is updated by Conversation Orchestrator on the
-      // INACTIVE transition, so the next message re-fetches fresh memory.
+      // "once" mode: drop the cache so the next message re-fetches.
       this.invalidateCachedMemory(conversationId);
     }
   }
@@ -500,7 +498,9 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Handle WebSocket disconnection
+   * Handle WebSocket disconnection. In orchestrated mode the conversation stays
+   * tracked until the CLOSED webhook (so a follow-up call can reuse it); in
+   * voice-only mode there is no such webhook, so it ends here.
    */
   private async handleWebSocketDisconnect(conversationId: ConversationId): Promise<void> {
     this.cancelStreamTask(conversationId);
@@ -511,8 +511,9 @@ export class VoiceChannel extends BaseChannel {
       this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
 
-    // End conversation (endConversation is async in BaseChannel)
-    await this.endConversation(conversationId);
+    if (!this.tac.isOrchestratorEnabled()) {
+      await this.endConversation(conversationId);
+    }
   }
 
   /**
@@ -746,7 +747,8 @@ export class VoiceChannel extends BaseChannel {
   // =========================================================================
 
   /**
-   * Handle ConversationRelay callback from Twilio
+   * Handle ConversationRelay callback from Twilio. Cleans up on call completion
+   * in voice-only mode; in orchestrated mode the CO webhook owns cleanup.
    *
    * @param payload - Callback payload from Twilio
    * @returns Response with status, content, and content type
@@ -767,7 +769,7 @@ export class VoiceChannel extends BaseChannel {
       return { status: 403, content: 'Forbidden', contentType: 'text/plain' };
     }
 
-    if (payload.CallStatus === 'completed') {
+    if (payload.CallStatus === 'completed' && !this.tac.isOrchestratorEnabled()) {
       const conversationId = this.callSidToConversationId.get(payload.CallSid);
       if (conversationId) {
         this.callSidToConversationId.delete(payload.CallSid);

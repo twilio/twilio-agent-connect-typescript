@@ -436,7 +436,7 @@ export abstract class BaseChannel {
 
     // "once" mode reuses cached memory across messages.
     if (this.memoryMode === 'once' && session.cachedMemory !== undefined) {
-      this.logger.debug({ conversation_id: session.conversationId }, 'Using cached memory');
+      this.logger.debug({ conversation_id: session.conversationId }, 'Reusing cached memory');
       return session.cachedMemory;
     }
 
@@ -450,8 +450,8 @@ export abstract class BaseChannel {
         session.cachedMemory = memory;
       }
       this.logger.debug(
-        { conversation_id: session.conversationId },
-        'Memory retrieved successfully'
+        { conversation_id: session.conversationId, memory_mode: this.memoryMode },
+        'Memory retrieved'
       );
       return memory;
     } catch (error) {

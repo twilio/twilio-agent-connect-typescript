@@ -30,7 +30,7 @@ const openai = new OpenAI({
 });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const voiceChannel = new VoiceChannel(tac, { memoryMode: 'always' });
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
 const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
 
 // Register channels
