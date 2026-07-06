@@ -1465,6 +1465,52 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(false);
     });
 
+    it('invalidates cached memory on INACTIVE for "once" mode, then re-fetches', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
+      const spy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
+
+      // Simulate a voice conversation started (normally happens via WebSocket)
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+      const session = voiceChannel.getConversationSession('CHtest123456789' as any);
+
+      // Prime the cache the way the first inbound prompt would.
+      await (voiceChannel as any).retrieveMemoryIfEnabled(session);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(session?.cachedMemory).toBeDefined();
+
+      // Conversation goes INACTIVE -> cache cleared.
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHtest123456789', status: 'INACTIVE' },
+      });
+      expect(session?.cachedMemory).toBeUndefined();
+
+      // Next retrieval re-fetches fresh memory.
+      await (voiceChannel as any).retrieveMemoryIfEnabled(session);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not invalidate cached memory on non-INACTIVE status updates', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
+
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+      const session = voiceChannel.getConversationSession('CHtest123456789' as any);
+
+      await (voiceChannel as any).retrieveMemoryIfEnabled(session);
+      const cachedBefore = session?.cachedMemory;
+      expect(cachedBefore).toBeDefined();
+
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHtest123456789', status: 'ACTIVE' },
+      });
+
+      expect(session?.cachedMemory).toBe(cachedBefore);
+    });
+
     it('should trigger onConversationEnded callback when closed', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);

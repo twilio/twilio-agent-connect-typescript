@@ -419,9 +419,7 @@ export abstract class BaseChannel {
    * - "always": Fetch with the provided query on every message.
    * - "once": Fetch once with an empty query and cache the result on the
    *   session. Subsequent calls reuse the cache until it is invalidated on the
-   *   INACTIVE transition. Concurrent first-fetches are not serialized: if two
-   *   messages arrive before the first fetch resolves, both fetch and the last
-   *   write wins — a rare, harmless extra request rather than a bug.
+   *   INACTIVE transition.
    * - "never": Skip retrieval.
    *
    * Memory retrieval failures are logged and swallowed so message processing
