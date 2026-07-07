@@ -48,6 +48,7 @@ getting_started/  # Example apps (OpenAI integration)
 - **TAC class** (`packages/core/src/lib/tac.ts`): Central orchestrator managing config, channels, callbacks, and API clients
 - **Channel abstraction** (`packages/core/src/channels/base.ts`): `BaseChannel` abstract base class extended by messaging channels (`SMSChannel`, `RCSChannel`, `WhatsAppChannel`, `ChatChannel`) via the shared `MessagingChannel` and by `VoiceChannel` (WebSocket). `RCSChannel` uses the RCS Sender ID configured on `TACConfig` (`TWILIO_RCS_SENDER_ID`); `WhatsAppChannel` uses `TWILIO_WHATSAPP_NUMBER`.
 - **Voice channel initialization**: In orchestrated mode, VoiceChannel waits for the first prompt message to initialize the conversation (polls Conversation Orchestrator using `callSid`, extracts `profileId` from participants, then starts local session). In voice-only mode (no `conversationConfigurationId`), uses `callSid` directly as the conversation ID without polling.
+- **Voice conversation lifecycle**: In orchestrated mode, a WebSocket disconnect (call hangup) tears down only the WebSocket; the session stays tracked until the `CONVERSATION_UPDATED`/`CLOSED` webhook arrives, so a follow-up call reusing the same conversation can reuse `"once"`-mode cached memory. In voice-only mode there is no such webhook, so disconnect ends the conversation directly.
 - **Callback pattern**: Simple callbacks (`onMessageReady`, `onInterrupt`, `onConversationEnded`) instead of EventEmitter
 - **Callback responses**: `onMessageReady` callbacks return `string` (auto-sent), `void`/`null` (manual `channel.sendResponse()`)
 - **Tool system** (`packages/tools/src/lib/builder.ts`): `defineTool()` with JSON schema; supports conversion to OpenAI and Anthropic formats
@@ -127,7 +128,8 @@ const voiceChannel = new VoiceChannel(tac, { memoryMode: 'never' }); // default
 ```
 
 - **`"never"` (default)**: No automatic fetching. Use `tac.retrieveMemory()` in callbacks for conditional retrieval.
-- **`"always"`**: Automatically fetches memory for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
+- **`"always"`**: Automatically fetches memory (using the message as query) for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
+- **`"once"`**: Fetches memory once at conversation start with an empty query and caches it on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE (Conversation Orchestrator refreshes memory on that transition), after which the next message re-fetches.
 
 ## Pull Requests
 

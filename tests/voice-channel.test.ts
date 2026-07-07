@@ -392,12 +392,9 @@ describe('VoiceChannel', () => {
       last: true,
     });
 
-    it('should fire onConversationEnded on WebSocket disconnect', async () => {
-      const tac = await createTestTAC(getTestConfig());
-      const voiceChannel = new VoiceChannel(tac);
-      const captured: ConversationSession[] = [];
-
-      // Mock conversation client methods for initialization
+    // Helper: mock init APIs, connect a WS, and drive setup + first prompt so
+    // the conversation is initialized and tracked.
+    const initConversation = async (tac: TAC, voiceChannel: VoiceChannel) => {
       vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
         { id: 'CHcb_test12345', status: 'ACTIVE' },
       ] as any);
@@ -408,76 +405,79 @@ describe('VoiceChannel', () => {
         },
       ] as any);
 
-      const ended = new Promise<void>(resolve => {
-        tac.onConversationEnded(({ session }) => {
-          captured.push(session);
-          resolve();
-        });
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return mockWs;
+    };
+
+    it('keeps the conversation tracked on WebSocket disconnect in orchestrated mode', async () => {
+      // Teardown is owned by the CLOSED webhook, so a follow-up call can reuse it.
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
       });
       tac.registerChannel(voiceChannel);
 
-      const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
-
-      // Trigger setup
-      mockWs._emit('message', Buffer.from(setupMessage));
-
-      // Trigger first prompt (initializes conversation)
-      mockWs._emit('message', Buffer.from(promptMessage));
-
-      // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
-
+      const mockWs = await initConversation(tac, voiceChannel);
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
-      // Trigger close and wait for callback
       mockWs._emit('close');
-      await ended;
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // Conversation is still tracked and the callback did NOT fire on disconnect.
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(captured).toHaveLength(0);
+      // The WebSocket connection itself is torn down.
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
+    });
+
+    it('fires onConversationEnded when the CLOSED webhook arrives', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = await initConversation(tac, voiceChannel);
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      // CLOSED webhook is the mechanism that ends the conversation.
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHcb_test12345', status: 'CLOSED' },
+      });
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHcb_test12345');
       expect(captured[0].channel).toBe('voice');
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
     });
 
     it('should still clean up session if callback throws', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      // Mock conversation client methods for initialization
-      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
-        { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
-      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
-        {
-          profileId: 'mem_profile_cb_test',
-          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
-        },
-      ] as any);
-
-      const ended = new Promise<void>(resolve => {
-        tac.onConversationEnded(() => {
-          resolve();
-          throw new Error('boom');
-        });
+      tac.onConversationEnded(() => {
+        throw new Error('boom');
       });
       tac.registerChannel(voiceChannel);
 
-      const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
-
-      // Trigger setup and first prompt
-      mockWs._emit('message', Buffer.from(setupMessage));
-      mockWs._emit('message', Buffer.from(promptMessage));
-
-      // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
-
+      await initConversation(tac, voiceChannel);
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
-      mockWs._emit('close');
-      await ended;
-      // Allow microtasks to finish cleanup after the thrown error
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // A throwing callback must not prevent the CLOSED webhook from cleaning up.
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHcb_test12345', status: 'CLOSED' },
+      });
 
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
     });
@@ -487,37 +487,17 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const captured: ConversationSession[] = [];
 
-      // Mock conversation client methods for initialization
-      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
-        { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
-      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
-        {
-          profileId: 'mem_profile_cb_test',
-          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
-        },
-      ] as any);
-
-      const ended = new Promise<void>(resolve => {
-        tac.onConversationEnded(async ({ session }) => {
-          captured.push(session);
-          resolve();
-        });
+      tac.onConversationEnded(async ({ session }) => {
+        captured.push(session);
       });
       tac.registerChannel(voiceChannel);
 
-      const mockWs = createMockWebSocket();
-      voiceChannel.handleWebSocketConnection(mockWs as any);
+      await initConversation(tac, voiceChannel);
 
-      // Trigger setup and first prompt
-      mockWs._emit('message', Buffer.from(setupMessage));
-      mockWs._emit('message', Buffer.from(promptMessage));
-
-      // Wait for async initialization
-      await new Promise(resolve => setTimeout(resolve, 10));
-
-      mockWs._emit('close');
-      await ended;
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHcb_test12345', status: 'CLOSED' },
+      });
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHcb_test12345');
@@ -527,34 +507,44 @@ describe('VoiceChannel', () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      // Mock conversation client methods for initialization
-      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
-        { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
-      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
-        {
-          profileId: 'mem_profile_cb_test',
-          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
-        },
-      ] as any);
+      await initConversation(tac, voiceChannel);
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHcb_test12345', status: 'CLOSED' },
+      });
+
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+    });
+
+    it('ends the conversation on WebSocket disconnect in voice-only mode', async () => {
+      // No CLOSED webhook in voice-only mode, so disconnect must end the call.
+      // The callSid is used directly as the conversation ID.
+      const { conversationConfigurationId: _omit, ...voiceOnlyConfig } = getTestConfig();
+      const tac = await createTestTAC(voiceOnlyConfig);
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(voiceChannel);
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
-
-      // Trigger setup and first prompt
       mockWs._emit('message', Buffer.from(setupMessage));
       mockWs._emit('message', Buffer.from(promptMessage));
-
-      // Wait for async initialization
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      // In voice-only mode the conversation ID is the callSid from setup.
+      expect(voiceChannel.isConversationActive('CA_cb_test' as any)).toBe(true);
 
       mockWs._emit('close');
-      // Flush microtask-based async chain (no callback to hook into)
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      expect(voiceChannel.isConversationActive('CA_cb_test' as any)).toBe(false);
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversationId).toBe('CA_cb_test');
     });
 
     it('should call onError when initialization fails and not close WebSocket', async () => {
@@ -875,12 +865,31 @@ describe('VoiceChannel', () => {
       expect(result.contentType).toBe('text/plain');
     });
 
-    it('should not close conversations on call completion (CO handles this)', async () => {
+    it('returns 403 on AccountSid mismatch without cleaning up', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
+      const endSpy = vi.spyOn(voiceChannel as any, 'endConversation');
 
-      const listSpy = vi.spyOn(tac.getConversationClient(), 'listConversations');
-      const updateSpy = vi.spyOn(tac.getConversationClient(), 'updateConversation');
+      const result = await voiceChannel.handleConversationRelayCallback({
+        AccountSid: 'ACwrong999',
+        CallSid: 'CA123',
+        CallStatus: 'completed',
+        From: '+15551234567',
+        To: '+15559876543',
+      });
+
+      expect(result.status).toBe(403);
+      expect(endSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not end the conversation on completion in orchestrated mode (CO handles it)', async () => {
+      // conversationConfigurationId is set -> orchestrator enabled.
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
+
+      // Simulate an established call mapping so the guard is what prevents cleanup.
+      (voiceChannel as any).callSidToConversationId.set('CA123', 'CH123');
 
       const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACtest123',
@@ -891,8 +900,32 @@ describe('VoiceChannel', () => {
       });
 
       expect(result.status).toBe(200);
-      expect(listSpy).not.toHaveBeenCalled();
-      expect(updateSpy).not.toHaveBeenCalled();
+      expect(endSpy).not.toHaveBeenCalled();
+      // Mapping is left intact; CO webhook cleanup owns teardown.
+      expect((voiceChannel as any).callSidToConversationId.has('CA123')).toBe(true);
+    });
+
+    it('ends the conversation on completion in voice-only mode', async () => {
+      // No conversationConfigurationId -> orchestrator disabled (voice-only).
+      const { conversationConfigurationId: _omit, ...voiceOnlyConfig } = getTestConfig();
+      const tac = await createTestTAC(voiceOnlyConfig);
+      const voiceChannel = new VoiceChannel(tac);
+      const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
+
+      (voiceChannel as any).callSidToConversationId.set('CA123', 'CH123');
+
+      const result = await voiceChannel.handleConversationRelayCallback({
+        AccountSid: 'ACtest123',
+        CallSid: 'CA123',
+        CallStatus: 'completed',
+        From: '+15551234567',
+        To: '+15559876543',
+      });
+
+      expect(result.status).toBe(200);
+      expect(endSpy).toHaveBeenCalledWith('CH123');
+      // Mapping is cleared as part of cleanup.
+      expect((voiceChannel as any).callSidToConversationId.has('CA123')).toBe(false);
     });
   });
 
@@ -1463,6 +1496,52 @@ describe('VoiceChannel', () => {
       });
 
       expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(false);
+    });
+
+    it('invalidates cached memory on INACTIVE for "once" mode, then re-fetches', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
+      const spy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
+
+      // Simulate a voice conversation started (normally happens via WebSocket)
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+      const session = voiceChannel.getConversationSession('CHtest123456789' as any);
+
+      // Prime the cache the way the first inbound prompt would.
+      await (voiceChannel as any).retrieveMemoryIfEnabled(session);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(session?.cachedMemory).toBeDefined();
+
+      // Conversation goes INACTIVE -> cache cleared.
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHtest123456789', status: 'INACTIVE' },
+      });
+      expect(session?.cachedMemory).toBeUndefined();
+
+      // Next retrieval re-fetches fresh memory.
+      await (voiceChannel as any).retrieveMemoryIfEnabled(session);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not invalidate cached memory on non-INACTIVE status updates', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
+      vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
+
+      (voiceChannel as any).startConversation('CHtest123456789', undefined);
+      const session = voiceChannel.getConversationSession('CHtest123456789' as any);
+
+      await (voiceChannel as any).retrieveMemoryIfEnabled(session);
+      const cachedBefore = session?.cachedMemory;
+      expect(cachedBefore).toBeDefined();
+
+      await voiceChannel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: { id: 'CHtest123456789', status: 'ACTIVE' },
+      });
+
+      expect(session?.cachedMemory).toBe(cachedBefore);
     });
 
     it('should trigger onConversationEnded callback when closed', async () => {

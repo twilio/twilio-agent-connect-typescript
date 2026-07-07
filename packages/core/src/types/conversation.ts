@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ChannelTypeSchema } from './config';
 import { PendingHandoffDataSchema } from './handoff';
+import type { TACMemoryResponse } from '../lib/tac-memory-response';
 
 /**
  * Participant address type for different communication channels
@@ -232,6 +233,11 @@ export const ConversationSessionSchema = z.object({
    * this as a WS "end" message after the LLM's final response.
    */
   pendingHandoffData: PendingHandoffDataSchema.optional(),
+  /**
+   * Cached memory for "once" mode. Set on the first retrieval, cleared when
+   * the conversation becomes INACTIVE. Not persisted/serialized.
+   */
+  cachedMemory: z.custom<TACMemoryResponse>().optional(),
 });
 
 export type ConversationSession = z.infer<typeof ConversationSessionSchema>;

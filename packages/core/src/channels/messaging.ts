@@ -418,6 +418,11 @@ export abstract class MessagingChannel extends BaseChannel {
         'Conversation closed, cleaning up'
       );
       await this.endConversation(conversationId);
+    } else if (payload.data?.status === 'INACTIVE') {
+      // Invalidate cached memory ("once" mode) when the conversation becomes
+      // inactive. Memory is updated by Conversation Orchestrator on the
+      // INACTIVE transition, so the next message re-fetches fresh memory.
+      this.invalidateCachedMemory(conversationId);
     }
   }
 

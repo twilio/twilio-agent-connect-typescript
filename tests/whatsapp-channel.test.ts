@@ -88,7 +88,7 @@ describe('WhatsApp Channel', () => {
 
     it('should reject invalid memoryMode', () => {
       expect(() => new WhatsAppChannel(tac, { memoryMode: 'invalid' as any })).toThrow(
-        'Invalid memoryMode: "invalid". Must be "always" or "never".'
+        'Invalid memoryMode: "invalid". Must be "always", "once", or "never".'
       );
     });
   });
