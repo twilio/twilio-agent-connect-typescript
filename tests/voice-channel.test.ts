@@ -5,7 +5,6 @@ import { InterruptMessageSchema } from '@twilio/tac-core';
 
 describe('VoiceChannel', () => {
   const getTestConfig = () => ({
-
     accountSid: 'ACtest123',
     authToken: 'test_token_123',
     apiKey: 'test_api_key',
@@ -39,7 +38,6 @@ describe('VoiceChannel', () => {
       expect(twiml).toContain('url="wss://example.com/conversation-relay"');
       expect(twiml).toContain('welcomeGreeting="Hello! How can I help you today?"');
     });
-
 
     it('should handle undefined welcomeGreeting', async () => {
       const tac = await createTestTAC(getTestConfig());
@@ -283,69 +281,380 @@ describe('VoiceChannel', () => {
         });
       }).toThrow('Invalid ConversationRelay configuration');
     });
-
   });
 
-  describe('handleIncomingCall with conversationRelayConfig', () => {
-    it('should apply conversationRelayConfig to generated TwiML', async () => {
+  describe('handleIncomingCall', () => {
+    // handleIncomingCall now derives the WebSocket URL from
+    // TACConfig.voicePublicDomain and layers in VoiceChannelConfig.defaultTwimlOptions.
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    it('should derive the WebSocket URL from voicePublicDomain', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('url="wss://example.com/ws"');
+      expect(twiml).toContain('conversationConfiguration=');
+    });
+
+    it('should throw when voicePublicDomain is not set', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/conversation-relay',
+      await expect(voiceChannel.handleIncomingCall()).rejects.toThrow('voicePublicDomain');
+    });
+
+    it('should apply defaultTwimlOptions to generated TwiML', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: {
           transcriptionProvider: 'Deepgram',
           interruptible: 'any',
           hints: 'technical support, billing',
         },
       });
 
+      const twiml = await voiceChannel.handleIncomingCall();
+
       expect(twiml).toContain('transcriptionProvider="Deepgram"');
       expect(twiml).toContain('interruptible="any"');
       expect(twiml).toContain('hints="technical support, billing"');
     });
 
-    it('should apply multi-language config to handleIncomingCall', async () => {
-      const tac = await createTestTAC(getTestConfig());
-      const voiceChannel = new VoiceChannel(tac);
-
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/conversation-relay',
+    it('should apply multi-language defaultTwimlOptions', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: {
           language: 'en-US',
           languages: [
-            {
-              code: 'en-US',
-              ttsProvider: 'Google',
-              voice: 'en-US-Journey-O',
-            },
-            {
-              code: 'es-ES',
-              ttsProvider: 'Google',
-              voice: 'es-ES-Standard-A',
-            },
+            { code: 'en-US', ttsProvider: 'Google', voice: 'en-US-Journey-O' },
+            { code: 'es-ES', ttsProvider: 'Google', voice: 'es-ES-Standard-A' },
           ],
         },
       });
+
+      const twiml = await voiceChannel.handleIncomingCall();
 
       expect(twiml).toContain('language="en-US"');
       expect(twiml).toContain('<Language code="en-US"');
       expect(twiml).toContain('<Language code="es-ES"');
     });
 
-    it('should include welcomeGreeting in TwiML', async () => {
-      const tac = await createTestTAC(getTestConfig());
+    it('should include welcomeGreeting from defaultTwimlOptions', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Hello! How can I help you today?' },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('welcomeGreeting="Hello! How can I help you today?"');
+    });
+
+    it('should apply the fixed default welcomeGreeting when no layer sets one', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      const twiml = voiceChannel.handleIncomingCall({
-        conversationRelayConfig: {
-          url: 'wss://example.com/conversation-relay',
-          welcomeGreeting: 'Hello! How can I help you today?',
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('welcomeGreeting="Hello! How can I assist you today?"');
+    });
+  });
+
+  describe('handleIncomingCall TwiML merge layers', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    it('should let defaultTwimlOptions override conversationConfiguration', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: {
+          conversationConfiguration: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5custm',
         },
       });
 
-      // Verify the TwiML contains welcomeGreeting attribute
-      expect(twiml).toContain('welcomeGreeting="Hello! How can I help you today?"');
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain(
+        'conversationConfiguration="conv_configuration_01kbjqhn79f0fvwfsxqzd5custm"'
+      );
+      expect(twiml).not.toContain('conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd');
+    });
+
+    it('should derive the action URL from voicePublicDomain by default', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('action="https://example.com/conversation-relay-callback"');
+    });
+
+    it('should let a static action URL beat the derived default', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { actionUrl: 'https://static.example.com/end' },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('action="https://static.example.com/end"');
+      expect(twiml).not.toContain('conversation-relay-callback');
+    });
+
+    it('should use the Studio handoff URL when configured', async () => {
+      const flowSid = 'FW' + 'a'.repeat(32);
+      const tac = await createTestTAC({ ...getVoiceConfig(), studioHandoffFlowSid: flowSid });
+      const voiceChannel = new VoiceChannel(tac);
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain(
+        `action="https://webhooks.twilio.com/v1/Accounts/ACtest123/Flows/${flowSid}?Trigger=incomingCall"`
+      );
+      // The default cleanup URL must not also appear.
+      expect(twiml).not.toContain('conversation-relay-callback');
+    });
+
+    it('should run a registered customizer and let its output beat static options', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { voice: 'en-US-Journey-D' },
+      });
+      voiceChannel.onInboundCallTwiml(async () => ({ voice: 'es-MX-Neural2-A' }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ extra: {} });
+
+      expect(twiml).toContain('voice="es-MX-Neural2-A"');
+      expect(twiml).not.toContain('en-US-Journey-D');
+    });
+
+    it('should skip the customizer when no TwiMLRequest is passed', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      let called = false;
+      voiceChannel.onInboundCallTwiml(async () => {
+        called = true;
+        return { voice: 'en-US-Journey-D' };
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(called).toBe(false);
+      expect(twiml).not.toContain('voice=');
+    });
+
+    it('should keep lower-layer fields the customizer did not set', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Channel default' },
+      });
+      voiceChannel.onInboundCallTwiml(async () => ({ voice: 'en-US-Journey-D' }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ extra: {} });
+
+      expect(twiml).toContain('welcomeGreeting="Channel default"');
+      expect(twiml).toContain('voice="en-US-Journey-D"');
+    });
+
+    it('should not let a customizer that omits actionUrl clobber a static actionUrl', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { actionUrl: 'https://static.example.com/end' },
+      });
+      voiceChannel.onInboundCallTwiml(async () => ({ voice: 'en-US-Journey-D' }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ extra: {} });
+
+      expect(twiml).toContain('action="https://static.example.com/end"');
+      expect(twiml).toContain('voice="en-US-Journey-D"');
+    });
+
+    it('should let an explicit actionUrl undefined on the customizer suppress the action', async () => {
+      const flowSid = 'FW' + 'a'.repeat(32);
+      const tac = await createTestTAC({ ...getVoiceConfig(), studioHandoffFlowSid: flowSid });
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { actionUrl: 'https://static.example.com/end' },
+      });
+      voiceChannel.onInboundCallTwiml(async () => ({ actionUrl: undefined }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ extra: {} });
+
+      expect(twiml).not.toContain('action=');
+    });
+
+    it('should let a customizer actionUrl beat the Studio handoff URL', async () => {
+      const flowSid = 'FW' + 'a'.repeat(32);
+      const tac = await createTestTAC({ ...getVoiceConfig(), studioHandoffFlowSid: flowSid });
+      const voiceChannel = new VoiceChannel(tac);
+      voiceChannel.onInboundCallTwiml(async () => ({
+        actionUrl: 'https://customizer.example.com/end',
+      }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ extra: {} });
+
+      expect(twiml).toContain('action="https://customizer.example.com/end"');
+    });
+  });
+
+  describe('handleIncomingCall websocketUrl layering', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    // websocketUrl is a normal TwiMLOptions field, so it rides the same layered
+    // merge as every other attribute. This is the affinity-routed-host case
+    // (e.g. Azure Hosted Agents) appending a per-call token to the upgrade URL —
+    // done through the existing customizer, no new API surface.
+    it('should let a customizer override websocketUrl per call', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Welcome!' },
+      });
+      voiceChannel.onInboundCallTwiml(async req => ({
+        websocketUrl: `wss://example.com/ws?agent_session_id=${req.callSid}`,
+      }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ callSid: 'CA123' });
+
+      // The customizer's URL is emitted verbatim...
+      expect(twiml).toContain('url="wss://example.com/ws?agent_session_id=CA123"');
+      // ...and the bare derived URL (without the query string) is NOT used.
+      expect(twiml).not.toContain('url="wss://example.com/ws"');
+      // The override only changes the URL; other layered fields still apply.
+      expect(twiml).toContain('welcomeGreeting="Welcome!"');
+      expect(twiml).toContain('conversationConfiguration=');
+    });
+
+    it('should let defaultTwimlOptions.websocketUrl override the derived URL', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const override = 'wss://static.example.com/socket';
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { websocketUrl: override },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain(`url="${override}"`);
+      expect(twiml).not.toContain('url="wss://example.com/ws"');
+      // websocketUrl feeds the `url` attribute; it must not leak as its own attr.
+      expect(twiml).not.toContain('websocketUrl=');
+    });
+
+    it('should let a customizer websocketUrl win over defaultTwimlOptions', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { websocketUrl: 'wss://static.example.com/socket' },
+      });
+      voiceChannel.onInboundCallTwiml(async () => ({
+        websocketUrl: 'wss://per-call.example.com/ws',
+      }));
+
+      const twiml = await voiceChannel.handleIncomingCall({ callSid: 'CA999' });
+
+      expect(twiml).toContain('url="wss://per-call.example.com/ws"');
+      expect(twiml).not.toContain('static.example.com');
+    });
+
+    it('should derive the URL when no layer sets websocketUrl', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('url="wss://example.com/ws"');
+    });
+
+    it('should ignore a `url` key in extra and keep the resolved URL', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { extra: { url: 'wss://attacker.example.com/ws' } },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall();
+
+      expect(twiml).toContain('url="wss://example.com/ws"');
+      expect(twiml).not.toContain('attacker.example.com');
+    });
+  });
+
+  describe('handleIncomingCall hostTwimlOptions', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    it('should set a per-call websocketUrl via hostTwimlOptions', async () => {
+      // A custom in-process host passes per-call transport facts via
+      // hostTwimlOptions — e.g. an affinity URL — without registering a
+      // customizer.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const affinityUrl = 'wss://example.com/ws?agent_session_id=CA123';
+      const twiml = await voiceChannel.handleIncomingCall(undefined, {
+        hostTwimlOptions: {
+          websocketUrl: affinityUrl,
+          customParameters: { agent_session_id: 'CA123' },
+        },
+      });
+
+      expect(twiml).toContain(`url="${affinityUrl}"`);
+      expect(twiml).not.toContain('url="wss://example.com/ws"'); // not the derived URL
+      // conversationConfiguration still populated from TACConfig (not clobbered).
+      expect(twiml).toContain('conversationConfiguration=');
+    });
+
+    it('should let the app customizer beat hostTwimlOptions on contested fields', async () => {
+      // Precedence: the application's onInboundCallTwiml customizer sits ABOVE
+      // hostTwimlOptions — a developer's explicit choice wins for fields the dev
+      // sets, while the host's uncontested websocketUrl still applies.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      voiceChannel.onInboundCallTwiml(async () => ({ welcomeGreeting: 'App wins' }));
+
+      const twiml = await voiceChannel.handleIncomingCall(
+        { extra: {} },
+        {
+          hostTwimlOptions: {
+            websocketUrl: 'wss://example.com/ws?agent_session_id=CA1',
+            welcomeGreeting: 'Host loses',
+          },
+        }
+      );
+
+      expect(twiml).toContain('welcomeGreeting="App wins"');
+      expect(twiml).not.toContain('Host loses');
+      // ...but the host's websocketUrl (dev didn't set it) still applies.
+      expect(twiml).toContain('url="wss://example.com/ws?agent_session_id=CA1"');
+    });
+
+    it('should let defaultTwimlOptions beat hostTwimlOptions on contested fields', async () => {
+      // Precedence: channel `defaultTwimlOptions` sits ABOVE hostTwimlOptions,
+      // so a contested field set on both resolves to the channel default.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Channel default' },
+      });
+
+      const twiml = await voiceChannel.handleIncomingCall(undefined, {
+        hostTwimlOptions: { welcomeGreeting: 'Host loses' },
+      });
+
+      expect(twiml).toContain('welcomeGreeting="Channel default"');
+      expect(twiml).not.toContain('Host loses');
+    });
+
+    it('should keep the host websocketUrl when defaultTwimlOptions does not set it', async () => {
+      // Uncontested host fields still apply even though defaultTwimlOptions
+      // outranks the host layer.
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { welcomeGreeting: 'Channel default' },
+      });
+
+      const affinityUrl = 'wss://example.com/ws?agent_session_id=CA7';
+      const twiml = await voiceChannel.handleIncomingCall(undefined, {
+        hostTwimlOptions: { websocketUrl: affinityUrl },
+      });
+
+      expect(twiml).toContain(`url="${affinityUrl}"`);
+      expect(twiml).toContain('welcomeGreeting="Channel default"');
     });
   });
 
@@ -744,12 +1053,17 @@ describe('VoiceChannel', () => {
         capturedPrompts.push(transcript);
       });
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'prompt',
-        voicePrompt: 'Test prompt after success',
-        lang: 'en-US',
-        last: true,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'prompt',
+            voicePrompt: 'Test prompt after success',
+            lang: 'en-US',
+            last: true,
+          })
+        )
+      );
       await new Promise(resolve => setTimeout(resolve, 50));
 
       expect(capturedPrompts).toContain('Test prompt after success');
@@ -841,7 +1155,6 @@ describe('VoiceChannel', () => {
       // WebSocket should NOT be closed
       expect(mockWs.close).not.toHaveBeenCalled();
     });
-
   });
 
   describe('handleConversationRelayCallback()', () => {
@@ -993,7 +1306,10 @@ describe('VoiceChannel', () => {
         { id: 'CHstream_test', status: 'ACTIVE' },
       ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
-        { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
+        {
+          profileId: 'mem_profile_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
       ] as any);
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
 
@@ -1002,24 +1318,34 @@ describe('VoiceChannel', () => {
       const mockWs = createStreamingMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'setup',
-        sessionId: 'sess_stream',
-        callSid: 'CA_stream',
-        from: '+15551234567',
-        to: '+15559876543',
-        direction: 'inbound',
-        callType: 'PSTN',
-        callStatus: 'ringing',
-        accountSid: 'ACtest123',
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'setup',
+            sessionId: 'sess_stream',
+            callSid: 'CA_stream',
+            from: '+15551234567',
+            to: '+15559876543',
+            direction: 'inbound',
+            callType: 'PSTN',
+            callStatus: 'ringing',
+            accountSid: 'ACtest123',
+          })
+        )
+      );
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'prompt',
-        voicePrompt: 'Hello',
-        lang: 'en-US',
-        last: true,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'prompt',
+            voicePrompt: 'Hello',
+            lang: 'en-US',
+            last: true,
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -1037,7 +1363,7 @@ describe('VoiceChannel', () => {
 
       const result = await voiceChannel.sendStreamingResponse(
         'CHstream_test' as any,
-        makeTokenStream(['Hello', ' ', 'world']),
+        makeTokenStream(['Hello', ' ', 'world'])
       );
 
       expect(result).toBe('Hello world');
@@ -1076,7 +1402,7 @@ describe('VoiceChannel', () => {
       const result = await voiceChannel.sendStreamingResponse(
         'CHstream_test' as any,
         abortableStream(),
-        { signal: controller.signal },
+        { signal: controller.signal }
       );
 
       expect(result).toBe('First');
@@ -1089,9 +1415,7 @@ describe('VoiceChannel', () => {
       const hasSecondToken = textMessages.some((m: any) => m.token === 'Second');
       expect(hasSecondToken).toBe(false);
 
-      const hasFinalMarker = textMessages.some(
-        (m: any) => m.last === true && m.token === ''
-      );
+      const hasFinalMarker = textMessages.some((m: any) => m.last === true && m.token === '');
       expect(hasFinalMarker).toBe(false);
     });
 
@@ -1108,7 +1432,7 @@ describe('VoiceChannel', () => {
 
       const result = await voiceChannel.sendStreamingResponse(
         'CHstream_test' as any,
-        makeTokenStream(['One', 'Two', 'Three']),
+        makeTokenStream(['One', 'Two', 'Three'])
       );
 
       expect(result).toBe('OneTwo');
@@ -1126,10 +1450,7 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
 
       await expect(
-        voiceChannel.sendStreamingResponse(
-          'CH_nonexistent' as any,
-          makeTokenStream(['test']),
-        )
+        voiceChannel.sendStreamingResponse('CH_nonexistent' as any, makeTokenStream(['test']))
       ).rejects.toThrow('No active WebSocket connection');
     });
 
@@ -1137,13 +1458,12 @@ describe('VoiceChannel', () => {
       const { voiceChannel, mockWs } = await setupForStreaming();
 
       voiceChannel.startStreamTask('CHstream_test' as any);
-      mockWs.send = vi.fn(() => { throw new Error('socket write failed'); });
+      mockWs.send = vi.fn(() => {
+        throw new Error('socket write failed');
+      });
 
       await expect(
-        voiceChannel.sendStreamingResponse(
-          'CHstream_test' as any,
-          makeTokenStream(['boom']),
-        )
+        voiceChannel.sendStreamingResponse('CHstream_test' as any, makeTokenStream(['boom']))
       ).rejects.toThrow('socket write failed');
 
       expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(false);
@@ -1155,10 +1475,7 @@ describe('VoiceChannel', () => {
       voiceChannel.startStreamTask('CHstream_test' as any);
       expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(true);
 
-      await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
-        makeTokenStream(['test']),
-      );
+      await voiceChannel.sendStreamingResponse('CHstream_test' as any, makeTokenStream(['test']));
 
       expect(voiceChannel.hasActiveStreamTask('CHstream_test' as any)).toBe(false);
     });
@@ -1174,10 +1491,7 @@ describe('VoiceChannel', () => {
         yield 'Second';
       }
 
-      const result = await voiceChannel.sendStreamingResponse(
-        'CHstream_test' as any,
-        slowStream(),
-      );
+      const result = await voiceChannel.sendStreamingResponse('CHstream_test' as any, slowStream());
 
       expect(result).toBe('First');
 
@@ -1207,7 +1521,7 @@ describe('VoiceChannel', () => {
       const result = await voiceChannel.sendStreamingResponse(
         'CHstream_test' as any,
         slowStream(),
-        { signal: task.controller.signal },
+        { signal: task.controller.signal }
       );
 
       expect(result).toBe('First');
@@ -1219,9 +1533,7 @@ describe('VoiceChannel', () => {
       const hasSecondToken = textMessages.some((m: any) => m.token === 'Second');
       expect(hasSecondToken).toBe(false);
 
-      const hasFinalMarker = textMessages.some(
-        (m: any) => m.last === true && m.token === ''
-      );
+      const hasFinalMarker = textMessages.some((m: any) => m.last === true && m.token === '');
       expect(hasFinalMarker).toBe(false);
     });
   });
@@ -1261,7 +1573,10 @@ describe('VoiceChannel', () => {
         { id: 'CHinterrupt_test', status: 'ACTIVE' },
       ] as any);
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
-        { profileId: 'mem_profile_test', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
+        {
+          profileId: 'mem_profile_test',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
       ] as any);
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
 
@@ -1270,24 +1585,34 @@ describe('VoiceChannel', () => {
       const mockWs = createInterruptMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'setup',
-        sessionId: 'sess_int',
-        callSid: 'CA_int',
-        from: '+15551234567',
-        to: '+15559876543',
-        direction: 'inbound',
-        callType: 'PSTN',
-        callStatus: 'ringing',
-        accountSid: 'ACtest123',
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'setup',
+            sessionId: 'sess_int',
+            callSid: 'CA_int',
+            from: '+15551234567',
+            to: '+15559876543',
+            direction: 'inbound',
+            callType: 'PSTN',
+            callStatus: 'ringing',
+            accountSid: 'ACtest123',
+          })
+        )
+      );
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'prompt',
-        voicePrompt: 'Hello',
-        lang: 'en-US',
-        last: true,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'prompt',
+            voicePrompt: 'Hello',
+            lang: 'en-US',
+            last: true,
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -1300,18 +1625,28 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
 
       // Actually send a streaming token so the stream is considered active
-      voiceChannel.sendStreamingResponse(
-        'CHinterrupt_test' as any,
-        (async function* () { yield 'Hello'; yield new Promise(() => {}) as never; })(),
-      ).catch(() => {});
+      voiceChannel
+        .sendStreamingResponse(
+          'CHinterrupt_test' as any,
+          (async function* () {
+            yield 'Hello';
+            yield new Promise(() => {}) as never;
+          })()
+        )
+        .catch(() => {});
 
       await new Promise(resolve => setTimeout(resolve, 10));
       mockWs.send.mockClear();
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'interrupt',
-        utteranceUntilInterrupt: 'Hello, I was',
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'interrupt',
+            utteranceUntilInterrupt: 'Hello, I was',
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -1329,10 +1664,15 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(true);
       mockWs.send.mockClear();
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'interrupt',
-        utteranceUntilInterrupt: 'Hello',
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'interrupt',
+            utteranceUntilInterrupt: 'Hello',
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -1351,10 +1691,15 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
       mockWs.send.mockClear();
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'interrupt',
-        utteranceUntilInterrupt: 'Hello again',
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'interrupt',
+            utteranceUntilInterrupt: 'Hello again',
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -1369,7 +1714,10 @@ describe('VoiceChannel', () => {
     it('should pass utteranceUntilInterrupt through onInterrupt callback', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
-      const captured: { utteranceUntilInterrupt: string | undefined; durationUntilInterruptMs: number | undefined }[] = [];
+      const captured: {
+        utteranceUntilInterrupt: string | undefined;
+        durationUntilInterruptMs: number | undefined;
+      }[] = [];
       voiceChannel.on('interrupt', (data: any) => {
         captured.push({
           utteranceUntilInterrupt: data.utteranceUntilInterrupt,
@@ -1377,11 +1725,16 @@ describe('VoiceChannel', () => {
         });
       });
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'interrupt',
-        utteranceUntilInterrupt: 'Hello, I was say',
-        durationUntilInterruptMs: 2500,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'interrupt',
+            utteranceUntilInterrupt: 'Hello, I was say',
+            durationUntilInterruptMs: 2500,
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -1393,16 +1746,24 @@ describe('VoiceChannel', () => {
     it('should propagate utteranceUntilInterrupt through tac.onInterrupt callback', async () => {
       const { tac, mockWs } = await setupForInterrupt();
 
-      const captured: { utteranceUntilInterrupt: string | undefined; durationUntilInterruptMs: number | undefined }[] = [];
+      const captured: {
+        utteranceUntilInterrupt: string | undefined;
+        durationUntilInterruptMs: number | undefined;
+      }[] = [];
       tac.onInterrupt(({ utteranceUntilInterrupt, durationUntilInterruptMs }) => {
         captured.push({ utteranceUntilInterrupt, durationUntilInterruptMs });
       });
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'interrupt',
-        utteranceUntilInterrupt: 'Hello, I was saying',
-        durationUntilInterruptMs: 3200,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'interrupt',
+            utteranceUntilInterrupt: 'Hello, I was saying',
+            durationUntilInterruptMs: 3200,
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -1419,12 +1780,17 @@ describe('VoiceChannel', () => {
         capturedSignals.push(data.abortSignal);
       });
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'prompt',
-        voicePrompt: 'Another prompt',
-        lang: 'en-US',
-        last: true,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'prompt',
+            voicePrompt: 'Another prompt',
+            lang: 'en-US',
+            last: true,
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -1441,22 +1807,32 @@ describe('VoiceChannel', () => {
         capturedSignals.push(data.abortSignal);
       });
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'prompt',
-        voicePrompt: 'Start talking',
-        lang: 'en-US',
-        last: true,
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'prompt',
+            voicePrompt: 'Start talking',
+            lang: 'en-US',
+            last: true,
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 50));
 
       expect(capturedSignals).toHaveLength(1);
       expect(capturedSignals[0].aborted).toBe(false);
 
-      mockWs._emit('message', Buffer.from(JSON.stringify({
-        type: 'interrupt',
-        utteranceUntilInterrupt: 'Hello',
-      })));
+      mockWs._emit(
+        'message',
+        Buffer.from(
+          JSON.stringify({
+            type: 'interrupt',
+            utteranceUntilInterrupt: 'Hello',
+          })
+        )
+      );
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
@@ -1473,6 +1849,172 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
+    });
+  });
+
+  describe('ConversationRelay attribute emission', () => {
+    // Exercises the merged-TwiMLOptions emit path via handleIncomingCall +
+    // defaultTwimlOptions. The widened TwiMLOptions surface should emit every
+    // documented attribute.
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    const emit = async (defaultTwimlOptions: Record<string, unknown>): Promise<string> => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac, { defaultTwimlOptions } as never);
+      return voiceChannel.handleIncomingCall();
+    };
+
+    it('emits voice / language / provider attributes', async () => {
+      const twiml = await emit({
+        voice: 'en-US-Journey-D',
+        language: 'en-US',
+        transcriptionProvider: 'deepgram',
+        ttsProvider: 'elevenlabs',
+      });
+      expect(twiml).toContain('voice="en-US-Journey-D"');
+      expect(twiml).toContain('language="en-US"');
+      expect(twiml).toContain('transcriptionProvider="deepgram"');
+      expect(twiml).toContain('ttsProvider="elevenlabs"');
+    });
+
+    it('emits interruptible / dtmfDetection / debug', async () => {
+      const twiml = await emit({
+        interruptible: 'speech',
+        dtmfDetection: true,
+        debug: 'speaker-events',
+      });
+      expect(twiml).toContain('interruptible="speech"');
+      expect(twiml).toContain('dtmfDetection="true"');
+      expect(twiml).toContain('debug="speaker-events"');
+    });
+
+    it('normalizes a boolean interruptible to the documented enum', async () => {
+      const twimlTrue = await emit({ interruptible: true });
+      const twimlFalse = await emit({ interruptible: false });
+      expect(twimlTrue).toContain('interruptible="any"');
+      expect(twimlFalse).toContain('interruptible="none"');
+    });
+
+    it('emits <Language> children', async () => {
+      const twiml = await emit({
+        languages: [
+          {
+            code: 'es-MX',
+            voice: 'es-MX-Neural2-A',
+            ttsProvider: 'google',
+            transcriptionProvider: 'google',
+            speechModel: 'long',
+          },
+          { code: 'fr-FR' },
+        ],
+      });
+      expect(twiml).toContain('<Language code="es-MX"');
+      expect(twiml).toContain('voice="es-MX-Neural2-A"');
+      expect(twiml).toContain('ttsProvider="google"');
+      expect(twiml).toContain('speechModel="long"');
+      expect(twiml).toContain('<Language code="fr-FR"/>');
+    });
+
+    it('emits welcomeGreetingInterruptible and language overrides', async () => {
+      const twiml = await emit({
+        welcomeGreeting: 'Hi',
+        welcomeGreetingInterruptible: 'dtmf',
+        ttsLanguage: 'en-US',
+        transcriptionLanguage: 'fr-FR',
+      });
+      expect(twiml).toContain('welcomeGreetingInterruptible="dtmf"');
+      expect(twiml).toContain('ttsLanguage="en-US"');
+      expect(twiml).toContain('transcriptionLanguage="fr-FR"');
+    });
+
+    it('emits speechModel and elevenlabs normalization', async () => {
+      const twiml = await emit({
+        speechModel: 'nova-3-general',
+        elevenlabsTextNormalization: 'on',
+      });
+      expect(twiml).toContain('speechModel="nova-3-general"');
+      expect(twiml).toContain('elevenlabsTextNormalization="on"');
+    });
+
+    it('emits turn-detection attributes', async () => {
+      const twiml = await emit({
+        eotThreshold: 0.75,
+        partialPrompts: true,
+        deepgramSmartFormat: false,
+        speechTimeout: 1500,
+      });
+      expect(twiml).toContain('eotThreshold="0.75"');
+      expect(twiml).toContain('partialPrompts="true"');
+      expect(twiml).toContain('deepgramSmartFormat="false"');
+      expect(twiml).toContain('speechTimeout="1500"');
+    });
+
+    it('emits interruptSensitivity / reportInputDuringAgentSpeech', async () => {
+      const twiml = await emit({
+        interruptSensitivity: 'medium',
+        reportInputDuringAgentSpeech: 'speech',
+      });
+      expect(twiml).toContain('interruptSensitivity="medium"');
+      expect(twiml).toContain('reportInputDuringAgentSpeech="speech"');
+    });
+
+    it('emits ignoreBackchannel / preemptible', async () => {
+      const twiml = await emit({ ignoreBackchannel: true, preemptible: true });
+      expect(twiml).toContain('ignoreBackchannel="true"');
+      expect(twiml).toContain('preemptible="true"');
+    });
+
+    it('emits hints / events / intelligenceService', async () => {
+      const twiml = await emit({
+        hints: 'TwiML,ConversationRelay',
+        events: 'speaker-events tokens-played',
+        intelligenceService: 'GAaabbcc',
+      });
+      expect(twiml).toContain('hints="TwiML,ConversationRelay"');
+      expect(twiml).toContain('events="speaker-events tokens-played"');
+      expect(twiml).toContain('intelligenceService="GAaabbcc"');
+    });
+
+    it('accepts the literal "auto" speechTimeout', async () => {
+      const twiml = await emit({ speechTimeout: 'auto' });
+      expect(twiml).toContain('speechTimeout="auto"');
+    });
+
+    it('omits unset attributes from output', async () => {
+      const twiml = await emit({});
+      for (const attr of [
+        'voice=',
+        'transcriptionProvider=',
+        'ttsProvider=',
+        'interruptible=',
+        'dtmfDetection=',
+        'debug=',
+        'welcomeGreetingInterruptible=',
+        'ttsLanguage=',
+        'transcriptionLanguage=',
+        'speechModel=',
+        'elevenlabsTextNormalization=',
+        'eotThreshold=',
+        'partialPrompts=',
+        'deepgramSmartFormat=',
+        'speechTimeout=',
+        'interruptSensitivity=',
+        'reportInputDuringAgentSpeech=',
+        'ignoreBackchannel=',
+        'preemptible=',
+        'hints=',
+        'events=',
+        'intelligenceService=',
+        '<Language',
+      ]) {
+        expect(twiml).not.toContain(attr);
+      }
+    });
+
+    it('emits extra attributes as-is', async () => {
+      const twiml = await emit({ extra: { futureFeature: 'on', anotherAttr: true } });
+      expect(twiml).toContain('futureFeature="on"');
+      expect(twiml).toContain('anotherAttr="true"');
     });
   });
 
@@ -1633,5 +2175,4 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
     });
   });
-
 });
