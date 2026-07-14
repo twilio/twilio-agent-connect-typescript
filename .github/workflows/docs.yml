@@ -4,15 +4,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to publish (e.g. 2.1.0). Defaults to package.json version."
-        required: false
 
 env:
   ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
 
-# Serialize doc deployments so concurrent releases don't clobber gh-pages.
+# Serialize doc deployments so concurrent releases don't clobber the gh-pages
+# branch (each run appends a new version folder to the existing history).
 concurrency:
   group: docs-deploy
   cancel-in-progress: false
@@ -23,12 +20,10 @@ jobs:
     runs-on: ${{ github.repository_owner == 'twilio' && 'ubuntu-x64' || 'ubuntu-latest' }}
     if: github.repository_owner == 'twilio'
     permissions:
-      contents: write # mike pushes the built site to the gh-pages branch
+      contents: write # peaceiris/actions-gh-pages pushes to the gh-pages branch
       id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0 # mike needs full history of the gh-pages branch
 
       - name: Artifactory OIDC Auth
         uses: ./.github/actions/artifactory-oidc
@@ -38,49 +33,21 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-
       - run: npm ci
 
-      - name: Install docs tooling
-        run: pip install -r requirements-docs.txt
+      # @shipgirl/typedoc-plugin-versions writes this release into docs/<version>/
+      # and regenerates the version dropdown. keep_files below preserves the
+      # previously published version folders already on the gh-pages branch, so
+      # the dropdown keeps its full history.
+      - name: Build docs
+        run: npm run docs
 
-      - name: Generate API reference
-        run: npm run docs:api
-
-      - name: Verify docs build (strict)
-        run: mkdocs build --strict
-
-      - name: Resolve version
-        id: version
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          if [ "$EVENT_NAME" = "release" ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          elif [ -n "$INPUT_VERSION" ]; then
-            VERSION="$INPUT_VERSION"
-          else
-            VERSION=$(node -p "require('./package.json').version")
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing docs for version $VERSION"
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Deploy versioned docs
-        # --alias-type=copy writes real files for the "latest" alias instead of a
-        # symlink; GitHub Pages' legacy branch builder rejects symlinks.
-        # VERSION is passed via env: (not interpolated into the script) so a
-        # crafted workflow_dispatch input can't inject shell commands.
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          mike deploy --push --update-aliases --alias-type=copy "$VERSION" latest
-          mike set-default --push latest
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          keep_files: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "docs: publish ${{ github.ref_name }}"

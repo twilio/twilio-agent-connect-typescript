@@ -27,10 +27,8 @@
     "format": "prettier --write packages/*/src/**/*.ts src/**/*.ts getting_started/**/*.ts",
     "format:check": "prettier --check packages/*/src/**/*.ts src/**/*.ts getting_started/**/*.ts",
     "typecheck": "tsc --noEmit",
-    "docs:api": "typedoc",
-    "docs:build": "npm run docs:api && mkdocs build",
-    "docs:serve": "npm run docs:api && mkdocs serve",
-    "docs:versions": "mike list",
+    "docs": "typedoc",
+    "docs:watch": "typedoc --watch",
     "example:getting-started": "cd getting_started/examples/openai && npm install && npm run dev",
     "example:chat": "cd getting_started/examples/chat && npm install && npm run dev"
   },
@@ -49,6 +47,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@shipgirl/typedoc-plugin-versions": "^0.3.2",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.2",
@@ -59,7 +58,7 @@
     "rimraf": "^5.0.0",
     "tsup": "^8.5.1",
     "typedoc": "^0.28.20",
-    "typedoc-plugin-markdown": "^4.12.0",
+    "typedoc-material-theme": "^1.4.1",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^4.1.2"
