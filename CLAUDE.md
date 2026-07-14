@@ -15,6 +15,9 @@ npm run lint:fix       # ESLint with auto-fix
 npm run format         # Prettier format
 npm run format:check   # Prettier check only
 npm run typecheck      # tsc --noEmit
+npm run docs:api       # Generate API reference Markdown (TypeDoc) into docs/api/
+npm run docs:build     # Build the docs site into site/ (TypeDoc + MkDocs)
+npm run docs:serve     # Serve docs locally with live reload (requires pip install -r requirements-docs.txt)
 ```
 
 ## Package Structure
@@ -42,6 +45,7 @@ getting_started/  # Example apps (OpenAI integration)
 - **ESLint**: `@typescript-eslint` with type-checking; unused vars prefixed `_` are allowed; explicit return types warned
 - **Naming**: PascalCase classes, camelCase functions/variables
 - **Logging**: Pino with hierarchical child loggers tagged by component
+- **Documentation**: The API reference is generated from TSDoc comments by TypeDoc + MkDocs Material, so **TSDoc comments are published documentation** — write them for both source readers and the rendered site. Tag internal-facing public members (ones consumers shouldn't call) with `@internal` so `excludeInternal` drops them from the published reference; keep those tags accurate when adding, renaming, or changing the visibility of such members. See `DEVELOPMENT.md` for building the docs locally.
 
 ## Key Architecture
 

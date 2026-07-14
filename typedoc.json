@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "docs/api",
+  "readme": "none",
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "excludeExternals": true,
+  "githubPages": false,
+  "hideBreadcrumbs": true,
+  "hidePageHeader": true,
+  "useCodeBlocks": true,
+  "expandObjects": true,
+  "parametersFormat": "table",
+  "sort": ["source-order"],
+  "intentionallyNotExported": [
+    "InitiateChatConversationOptionsSchema",
+    "HandoffParams",
+    "KnowledgeSearchParams",
+    "KnowledgeToolConfig",
+    "MemoryRetrievalParams",
+    "SendMessageParams",
+    "SendMessageResult"
+  ]
+}

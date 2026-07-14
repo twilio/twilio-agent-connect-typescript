@@ -13,15 +13,16 @@
 
   <div align="center">
     <a href="https://github.com/twilio/twilio-agent-connect-typescript"><img alt="Node.js" src="https://img.shields.io/badge/Node.js-22.13+-339933.svg"/></a>
-    <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
+    <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
     <a href="https://www.twilio.com/docs/conversations/agent-connect/quickstart"><img alt="Getting Started" src="https://img.shields.io/badge/Getting%20Started-Quickstart-F22F46.svg"/></a>
   </div>
   
   <p>
     <a href="https://www.twilio.com/docs/conversations/agent-connect">Documentation</a>
+    ◆ <a href="https://twilio.github.io/twilio-agent-connect-typescript/">API Reference</a>
     ◆ <a href="https://github.com/twilio/twilio-agent-connect-python">Python SDK</a>
     ◆ <a href="https://github.com/twilio/twilio-agent-connect-typescript">TypeScript SDK</a>
-    ◆ <a href="getting_started/examples">Examples</a>
+    ◆ <a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples">Examples</a>
   </p>
 </div>
 
@@ -151,7 +152,7 @@ const server = new TACServer(tac);
 await server.start();
 ```
 
-> **Note**: See the [getting started guide](getting_started/README.md) for complete setup instructions and `.env` configuration details.
+> **Note**: See the [getting started guide](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/getting_started/README.md) for complete setup instructions and `.env` configuration details.
 
 **That's it!** The server automatically:
 - Creates Fastify app with `/twiml`, `/ws`, and `/webhook` endpoints
@@ -159,7 +160,7 @@ await server.start();
 - Routes responses to the appropriate channel
 - Provides conversation memory and user profile in the callback
 
-For configuration details and environment variables, see the [getting started guide](getting_started/README.md).
+For configuration details and environment variables, see the [getting started guide](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/getting_started/README.md).
 
 ## How It Works
 
@@ -173,17 +174,18 @@ TAC simplifies building AI agents by handling the integration between Twilio's c
 4. **Callback Invoked**: Your `onMessageReady` callback receives user message, context, and optional memory response
 5. **Response Handling**: Your callback returns a response string that TAC routes to the appropriate channel
 
-For detailed architecture and advanced usage, see [CLAUDE.md](CLAUDE.md).
+For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md).
 
 ## Learn More
 
 **Examples & Guides:**
-- **[Getting Started Guide](getting_started/)** - Examples and comprehensive documentation
-- **[OpenAI SDK Example](getting_started/examples/openai/)** - Complete multi-channel example with Voice, SMS, and Chat
-- **[WhatsApp Example](getting_started/examples/whatsapp/)** - WhatsApp channel with memory integration
-- **[Chat Example](getting_started/examples/chat/)** - Web chat integration example
-- **[ConversationRelay-Only Mode](getting_started/examples/relay-only/)** - Get started with voice using just ConversationRelay
-- **[Outbound Conversations](getting_started/examples/outbound/)** - Agent-initiated conversations example
+- **[API Reference](https://twilio.github.io/twilio-agent-connect-typescript/)** - Full API documentation generated from the source
+- **[Getting Started Guide](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/)** - Examples and comprehensive documentation
+- **[OpenAI SDK Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/openai/)** - Complete multi-channel example with Voice, SMS, and Chat
+- **[WhatsApp Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/whatsapp/)** - WhatsApp channel with memory integration
+- **[Chat Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/chat/)** - Web chat integration example
+- **[ConversationRelay-Only Mode](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/relay-only/)** - Get started with voice using just ConversationRelay
+- **[Outbound Conversations](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/outbound/)** - Agent-initiated conversations example
 - More examples coming soon
 
 **AWS and Microsoft connectors:**
@@ -191,8 +193,8 @@ For detailed architecture and advanced usage, see [CLAUDE.md](CLAUDE.md).
 - **[TAC for Microsoft](https://github.com/twilio/twilio-agent-connect-microsoft)** — `AgentFrameworkConnector` and `VoiceLiveConnector` for Microsoft Agent Framework, Azure AI Foundry (including Voice Live), and Azure OpenAI
 
 **Documentation:**
-- **[CLAUDE.md](CLAUDE.md)** - Architecture, development guide, and API reference
-- **[Getting Started Guide](getting_started/README.md)** - Setup instructions, environment variables, and troubleshooting
+- **[CLAUDE.md](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md)** - Architecture, development guide, and API reference
+- **[Getting Started Guide](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/getting_started/README.md)** - Setup instructions, environment variables, and troubleshooting
 
 ---
 

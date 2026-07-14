@@ -91,6 +91,42 @@ npm run test:coverage
 npm run example:getting-started  # OpenAI example (SMS + Voice)
 ```
 
+## API Reference Documentation
+
+The API reference site is generated from the TSDoc comments in the source and
+published to GitHub Pages on each release. [TypeDoc](https://typedoc.org)
+extracts the reference into Markdown, and [MkDocs](https://www.mkdocs.org) with
+the Material theme renders it into the published site (versioned via
+[mike](https://github.com/jimporter/mike)).
+
+TSDoc comments are treated as published documentation — keep them accurate and
+tag internal-only public members with `@internal` so they are excluded from the
+reference.
+
+Building and serving the docs locally requires Python (3.10+ recommended) in
+addition to Node:
+
+```bash
+# One-time: install the Python doc tooling (ideally in a virtualenv)
+pip install -r requirements-docs.txt
+
+# Generate the API reference Markdown into docs/api/ (TypeDoc)
+npm run docs:api
+
+# Build the full static site into site/
+npm run docs:build
+
+# Serve locally with live reload at http://127.0.0.1:8000
+npm run docs:serve
+
+# List the versions published to the gh-pages branch
+npm run docs:versions
+```
+
+The generated `docs/api/` and the `site/` build output are gitignored — only the
+docs shell (`mkdocs.yml`, `docs/index.md`, `docs/.pages`, `docs/assets/`) is
+committed.
+
 ## Common Issues
 
 ### "Cannot find module 'twilio-agent-connect'"
