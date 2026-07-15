@@ -4,9 +4,6 @@ on:
   release:
     types: [published]
 
-env:
-  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
-
 jobs:
   test:
     name: Test
@@ -23,7 +20,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        uses: ./.github/actions/artifactory-oidc
+        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
+        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -49,7 +47,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        uses: ./.github/actions/artifactory-oidc
+        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
+        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
 
       # Node 24+ required for npm OIDC trusted publisher support (npm >= 11.5.1)
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -58,21 +57,8 @@ jobs:
 
       - run: npm ci
 
-      - name: Validate tag format and version match
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::Release tag must be in the form v1.2.3 (got '$TAG')"
-            exit 1
-          fi
-          VERSION="${TAG#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag $TAG does not match package.json version $PKG_VERSION"
-            exit 1
-          fi
-
       - run: npm run build
 
-      - name: Publish to npm
-        run: npm publish --registry https://registry.npmjs.org --ignore-scripts --provenance --access public
+      - name: Validate tag + publish to npm
+        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
+        uses: twilio/sdk-actions/npm-publish@2026de8ed6bedd91b6527323c93b1a2711a66e83
