@@ -267,6 +267,8 @@ export class TACConfig {
   /**
    * Whether Conversation Orchestrator is configured.
    * Returns false in voice-only mode (no conversationConfigurationId).
+   *
+   * @internal
    */
   public isOrchestratorEnabled(): boolean {
     return this.conversationConfigurationId !== undefined;

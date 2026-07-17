@@ -1,0 +1,27 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.json",
+  "name": "Twilio Agent Connect (TypeScript)",
+  "readme": "README.md",
+  "out": "docs",
+  "plugin": ["typedoc-material-theme", "@shipgirl/typedoc-plugin-versions"],
+  "themeColor": "#F22F46",
+  "excludeInternal": true,
+  "excludePrivate": true,
+  "excludeExternals": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/twilio/twilio-agent-connect-typescript",
+    "Twilio Docs": "https://www.twilio.com/docs/conversations/agent-connect"
+  },
+  "sort": ["source-order"],
+  "intentionallyNotExported": [
+    "InitiateChatConversationOptionsSchema",
+    "HandoffParams",
+    "KnowledgeSearchParams",
+    "KnowledgeToolConfig",
+    "MemoryRetrievalParams",
+    "SendMessageParams",
+    "SendMessageResult"
+  ]
+}

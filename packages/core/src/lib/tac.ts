@@ -410,6 +410,8 @@ export class TAC {
   /**
    * Whether Conversation Orchestrator is configured.
    * Returns false in voice-only mode.
+   *
+   * @internal
    */
   public isOrchestratorEnabled(): boolean {
     return this.config.isOrchestratorEnabled();
