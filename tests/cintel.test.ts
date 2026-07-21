@@ -269,7 +269,7 @@ describe('OperatorResultProcessor', () => {
           {
             id: 'result_123',
             operator: {
-              id: 'LY_OBS_456',
+              id: 'LY_SUM_789',
             },
             outputFormat: 'JSON',
             result: null,
@@ -299,10 +299,10 @@ describe('OperatorResultProcessor', () => {
           {
             id: 'result_123',
             operator: {
-              id: 'LY_OBS_456',
+              id: 'LY_SUM_789',
             },
             outputFormat: 'JSON',
-            result: { observations: ['test observation'] },
+            result: { summaries: ['test summary'] },
             dateCreated: '2024-01-15T10:00:00Z',
             executionDetails: {
               participants: [{ type: 'CUSTOMER' }], // No profileId
@@ -317,7 +317,7 @@ describe('OperatorResultProcessor', () => {
       expect(result.skipped).toBe(true);
     });
 
-    it('should process observation operator results successfully', async () => {
+    it('should skip observation operator results (auto-creation removed)', async () => {
       mockAdapter.onPost(/\/Observations$/).reply(200, {
         message: 'Observations created',
       });
@@ -348,10 +348,9 @@ describe('OperatorResultProcessor', () => {
       const result = await processor.processEvent(event);
 
       expect(result.success).toBe(true);
-      expect(result.skipped).toBe(false);
-      expect(result.eventType).toBe('observation');
-      expect(result.createdCount).toBe(2);
-      expect(mockAdapter.history.post.length).toBe(2);
+      expect(result.skipped).toBe(true);
+      expect(result.createdCount).toBe(0);
+      expect(mockAdapter.history.post.length).toBe(0);
     });
 
     it('should process summary operator results successfully', async () => {
@@ -391,7 +390,7 @@ describe('OperatorResultProcessor', () => {
     });
 
     it('should handle API errors gracefully', async () => {
-      mockAdapter.onPost(/\/Observations$/).reply(500, {
+      mockAdapter.onPost(/\/ConversationSummaries$/).reply(500, {
         error: 'Internal Server Error',
       });
 
@@ -406,10 +405,10 @@ describe('OperatorResultProcessor', () => {
           {
             id: 'result_123',
             operator: {
-              id: 'LY_OBS_456',
+              id: 'LY_SUM_789',
             },
             outputFormat: 'JSON',
-            result: { observations: ['test observation'] },
+            result: { summaries: ['test summary'] },
             dateCreated: '2024-01-15T10:00:00Z',
             executionDetails: {
               participants: [{ type: 'CUSTOMER', profileId: 'profile_123' }],
@@ -421,12 +420,12 @@ describe('OperatorResultProcessor', () => {
       const result = await processor.processEvent(event);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Failed to create observation');
+      expect(result.error).toContain('Failed to create summaries');
     });
 
     it('should process multiple profiles', async () => {
-      mockAdapter.onPost(/\/Observations$/).reply(200, {
-        message: 'Observations created',
+      mockAdapter.onPost(/\/ConversationSummaries$/).reply(200, {
+        message: 'Summaries created',
       });
 
       const event = {
@@ -440,10 +439,10 @@ describe('OperatorResultProcessor', () => {
           {
             id: 'result_123',
             operator: {
-              id: 'LY_OBS_456',
+              id: 'LY_SUM_789',
             },
             outputFormat: 'JSON',
-            result: { observations: ['User prefers email'] },
+            result: { summaries: ['Customer requested a refund'] },
             dateCreated: '2024-01-15T10:00:00Z',
             executionDetails: {
               participants: [
@@ -458,7 +457,7 @@ describe('OperatorResultProcessor', () => {
       const result = await processor.processEvent(event);
 
       expect(result.success).toBe(true);
-      expect(result.createdCount).toBe(2); // 1 observation x 2 profiles
+      expect(result.createdCount).toBe(2); // 1 summary x 2 profiles
     });
 
     it('should handle missing memory store ID', async () => {

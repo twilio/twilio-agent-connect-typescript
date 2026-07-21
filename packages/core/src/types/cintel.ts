@@ -94,6 +94,9 @@ export type OperatorProcessingResult = z.infer<typeof OperatorProcessingResultSc
  */
 export const ConversationIntelligenceConfigSchema = z.object({
   configurationId: z.string(),
+  /**
+   * @deprecated Observation auto-creation has been removed; this field is now ignored.
+   */
   observationOperatorSid: z.string().optional(),
   summaryOperatorSid: z.string().optional(),
 });

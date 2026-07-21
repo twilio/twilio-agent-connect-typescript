@@ -51,33 +51,6 @@ function generateContent(operatorResult: OperatorResult): string | undefined {
 }
 
 /**
- * Parse observations content from JSON result
- *
- * Expects format: { "observations": ["obs1", "obs2", ...] }
- *
- * @param jsonContent - JSON string to parse
- * @returns Array of observation strings
- */
-function parseObservationsContent(jsonContent: string): string[] {
-  try {
-    const parsed = JSON.parse(jsonContent) as unknown;
-
-    if (typeof parsed === 'object' && parsed !== null && 'observations' in parsed) {
-      const observations = (parsed as { observations: unknown }).observations;
-      if (Array.isArray(observations)) {
-        return observations.filter(
-          (obs): obs is string => typeof obs === 'string' && obs.trim() !== ''
-        );
-      }
-    }
-
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Parse summaries content from JSON result
  *
  * Expects format: { "summaries": ["summary1", "summary2", ...] }
@@ -105,8 +78,8 @@ function parseSummariesContent(jsonContent: string): string[] {
 /**
  * Processor for Conversation Intelligence operator result webhooks
  *
- * Processes operator results from CI and creates observations or summaries
- * in the Memory service based on the operator configuration.
+ * Processes operator results from CI and creates conversation summaries in the
+ * Memory service based on the operator configuration.
  */
 export class OperatorResultProcessor {
   private readonly memoryClient: MemoryClient;
@@ -265,14 +238,12 @@ export class OperatorResultProcessor {
     const operatorSid = operatorResult.operator.id;
 
     // Check if this is a configured operator
-    const isObservationOperator = this.config.observationOperatorSid === operatorSid;
     const isSummaryOperator = this.config.summaryOperatorSid === operatorSid;
 
-    if (!isObservationOperator && !isSummaryOperator) {
+    if (!isSummaryOperator) {
       this.logger.debug(
         {
           operator_sid: operatorSid,
-          observation_operator_sid: this.config.observationOperatorSid,
           summary_operator_sid: this.config.summaryOperatorSid,
         },
         'Skipping unconfigured operator'
@@ -317,89 +288,7 @@ export class OperatorResultProcessor {
       };
     }
 
-    // Process based on operator type
-    if (isObservationOperator) {
-      return this.processObservationEvent(event, operatorResult, content, profileIds);
-    } else {
-      return this.processSummaryEvent(event, operatorResult, content, profileIds);
-    }
-  }
-
-  /**
-   * Process an observation operator result
-   */
-  private async processObservationEvent(
-    event: OperatorResultEvent,
-    operatorResult: OperatorResult,
-    content: string,
-    profileIds: string[]
-  ): Promise<OperatorProcessingResult> {
-    // Parse observations from JSON content
-    const observations = parseObservationsContent(content);
-
-    if (observations.length === 0) {
-      this.logger.debug(
-        { operator_sid: operatorResult.operator.id },
-        'No observations found in content'
-      );
-      return {
-        success: true,
-        eventType: 'observation',
-        skipped: true,
-        skipReason: 'No observations found in operator result content',
-        createdCount: 0,
-      };
-    }
-
-    let createdCount = 0;
-
-    // Create observations for each profile
-    for (const profileId of profileIds) {
-      for (const observation of observations) {
-        try {
-          await this.memoryClient.createObservation(
-            profileId,
-            observation,
-            'conversation-intelligence',
-            [event.conversationId],
-            operatorResult.dateCreated
-          );
-          createdCount++;
-
-          this.logger.debug(
-            {
-              profile_id: profileId,
-              conversation_id: event.conversationId,
-              observation_preview: observation.substring(0, 100),
-            },
-            'Created observation'
-          );
-        } catch (error) {
-          this.logger.error(
-            {
-              err: error,
-              profile_id: profileId,
-              conversation_id: event.conversationId,
-            },
-            'Failed to create observation'
-          );
-          return {
-            success: false,
-            eventType: 'observation',
-            skipped: false,
-            error: `Failed to create observation: ${error instanceof Error ? error.message : String(error)}`,
-            createdCount,
-          };
-        }
-      }
-    }
-
-    return {
-      success: true,
-      eventType: 'observation',
-      skipped: false,
-      createdCount,
-    };
+    return this.processSummaryEvent(event, operatorResult, content, profileIds);
   }
 
   /**
