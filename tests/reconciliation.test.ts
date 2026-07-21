@@ -298,6 +298,34 @@ describe('Reconcile participants', () => {
     expect(putBody.profileId).toBeUndefined();
   });
 
+  it('surfaces reconcile failure via onError instead of silently dropping the inbound', async () => {
+    // Reconcile fails (listParticipants unreachable) so the inbound can't be
+    // matched to sendable participants. The message is intentionally not
+    // delivered to the LLM (any reply would fail too), but the drop must be
+    // observable by the app via the error callback — not swallowed.
+    mockAdapter.onGet(`/v2/Conversations/${CONV_ID}/Participants`).networkError();
+
+    const errors: { error: Error; context?: Record<string, unknown> }[] = [];
+    channel.on('error', data => errors.push(data));
+
+    const messageCallback = vi.fn();
+    channel.on('messageReceived', messageCallback);
+
+    await channel.processWebhook({
+      eventType: 'COMMUNICATION_CREATED',
+      data: {
+        id: 'comms_communication_01test',
+        conversationId: CONV_ID,
+        content: { type: 'TEXT', text: 'hello' },
+        author: { address: CUSTOMER_ADDR, channel: 'SMS', participantId: 'PA_C' },
+      },
+    });
+
+    expect(messageCallback).not.toHaveBeenCalled();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.context?.conversation_id).toBe(CONV_ID);
+  });
+
   it('reconciliation lifts customer profileId onto session.profileId', async () => {
     // When reconcile resolves a CUSTOMER that already has a profileId
     // (set by a prior reconciliation / Conversation Memory identity-resolution), the
