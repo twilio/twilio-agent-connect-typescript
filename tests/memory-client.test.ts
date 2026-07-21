@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TACConfig } from '@twilio/tac-core';
 import { MemoryClient } from '../packages/core/src/clients/memory';
 import { ProfileLookupResponse, ProfileResponse } from '@twilio/tac-core';
@@ -212,6 +212,65 @@ describe('MemoryClient', () => {
       expect(result.observations[0]!.id).toBe('obs_valid');
       expect(result.communications).toHaveLength(1);
       expect(result.communications[0]!.id).toBe('comm_valid');
+    });
+
+    it('should warn when a present field is not an array', async () => {
+      const warnSpy = vi.spyOn((memoryClient as any).logger, 'warn');
+      const mockResponse = {
+        observations: { unexpected: 'shape' },
+        summaries: [],
+        communications: [],
+      };
+
+      mockAdapter.onPost(recallUrl).reply(200, mockResponse);
+
+      const result = await memoryClient.retrieveMemories(
+        'mem_profile_00000000000000000000000001'
+      );
+
+      expect(result.observations).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item_type: 'observation',
+          received_type: 'object',
+        }),
+        expect.stringContaining('non-array value')
+      );
+    });
+
+    it('should cap per-item warnings and emit an invalid_count summary', async () => {
+      const warnSpy = vi.spyOn((memoryClient as any).logger, 'warn');
+      const invalidObservations = Array.from({ length: 15 }, (_, i) => ({
+        id: `obs_${i}`,
+        createdAt: 'not-a-date',
+      }));
+      const mockResponse = {
+        observations: invalidObservations,
+        summaries: [],
+        communications: [],
+      };
+
+      mockAdapter.onPost(recallUrl).reply(200, mockResponse);
+
+      const result = await memoryClient.retrieveMemories(
+        'mem_profile_00000000000000000000000001'
+      );
+
+      expect(result.observations).toHaveLength(0);
+
+      const perItemWarnings = warnSpy.mock.calls.filter(
+        ([, msg]) => msg === 'Dropping invalid memory item'
+      );
+      expect(perItemWarnings).toHaveLength(10);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          item_type: 'observation',
+          invalid_count: 15,
+          total_count: 15,
+        }),
+        'Dropped invalid memory items'
+      );
     });
   });
 

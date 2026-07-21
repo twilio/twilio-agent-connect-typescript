@@ -152,26 +152,50 @@ export class MemoryClient extends BaseClient {
     }
   }
 
+  /** Cap on per-item validation warnings logged per response, to avoid flooding logs. */
+  private static readonly MAX_INVALID_ITEM_LOGS = 10;
+
   /**
    * Validate an array of memory items one at a time, dropping (and logging)
    * any that fail validation while keeping the rest.
+   *
+   * Per-item warnings are capped at {@link MemoryClient.MAX_INVALID_ITEM_LOGS}
+   * and followed by a single summary warning with the total `invalid_count`.
    */
   private parseItems<T>(
     value: unknown,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<T, unknown>,
     itemType: string,
     profileId: string
   ): T[] {
+    if (value === undefined) {
+      return [];
+    }
+
     if (!Array.isArray(value)) {
+      this.logger.warn(
+        {
+          profile_id: profileId,
+          memory_store_id: this.storeId,
+          item_type: itemType,
+          received_type: typeof value,
+        },
+        'Expected an array of memory items but received a non-array value'
+      );
       return [];
     }
 
     const parsed: T[] = [];
+    let invalidCount = 0;
     for (const [index, item] of value.entries()) {
       const result = schema.safeParse(item);
       if (result.success) {
         parsed.push(result.data);
-      } else {
+        continue;
+      }
+
+      invalidCount += 1;
+      if (invalidCount <= MemoryClient.MAX_INVALID_ITEM_LOGS) {
         this.logger.warn(
           {
             profile_id: profileId,
@@ -184,6 +208,20 @@ export class MemoryClient extends BaseClient {
         );
       }
     }
+
+    if (invalidCount > 0) {
+      this.logger.warn(
+        {
+          profile_id: profileId,
+          memory_store_id: this.storeId,
+          item_type: itemType,
+          invalid_count: invalidCount,
+          total_count: value.length,
+        },
+        'Dropped invalid memory items'
+      );
+    }
+
     return parsed;
   }
 
