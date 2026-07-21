@@ -227,14 +227,18 @@ export class MemoryClient extends BaseClient {
   }
 
   /**
-   * Create an observation for a profile
+   * Create an observation for a profile.
+   *
+   * The Memory API Observations endpoint is a batch create: the observation is
+   * wrapped in an `observations` array and `occurredAt` is required, so it
+   * defaults to the current time (ISO 8601) when not supplied.
    *
    * @param profileId - The profile ID to create the observation for
    * @param content - The observation content
    * @param source - Source of the observation (default: 'conversation-intelligence')
    * @param conversationIds - Optional array of conversation IDs associated with this observation
-   * @param occurredAt - Optional timestamp when the observation occurred
-   * @returns Promise containing the created observation
+   * @param occurredAt - Timestamp when the observation occurred (ISO 8601); defaults to now
+   * @returns Promise containing the API confirmation message
    */
   public async createObservation(
     profileId: string,
@@ -245,18 +249,17 @@ export class MemoryClient extends BaseClient {
   ): Promise<CreateObservationResponse> {
     const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}/Observations`;
 
-    const requestBody: Record<string, unknown> = {
+    const observation: Record<string, unknown> = {
       content,
       source,
+      occurredAt: occurredAt ?? new Date().toISOString(),
     };
 
     if (conversationIds && conversationIds.length > 0) {
-      requestBody.conversationIds = conversationIds;
+      observation.conversationIds = conversationIds;
     }
 
-    if (occurredAt) {
-      requestBody.occurredAt = occurredAt;
-    }
+    const requestBody = { observations: [observation] };
 
     try {
       const data = await this.makeRequest<CreateObservationResponse>(url, 'POST', requestBody);

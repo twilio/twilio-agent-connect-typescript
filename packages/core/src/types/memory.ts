@@ -228,13 +228,13 @@ export const EMPTY_MEMORY_RESPONSE: MemoryRetrievalResponse = {
 };
 
 /**
- * Response from creating an observation
+ * Response from creating an observation.
+ *
+ * The Memory API Observations endpoint is a batch create that returns a
+ * confirmation message rather than the persisted observation.
  */
 export const CreateObservationResponseSchema = z.object({
-  content: z.string(),
-  source: z.string(),
-  occurredAt: z.string(),
-  conversationIds: z.array(z.string()),
+  message: z.string(),
 });
 
 export type CreateObservationResponse = z.infer<typeof CreateObservationResponseSchema>;

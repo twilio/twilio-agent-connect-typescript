@@ -319,10 +319,7 @@ describe('OperatorResultProcessor', () => {
 
     it('should process observation operator results successfully', async () => {
       mockAdapter.onPost(/\/Observations$/).reply(200, {
-        content: 'Test observation',
-        source: 'conversation-intelligence',
-        occurredAt: '2024-01-15T10:00:00Z',
-        conversationIds: ['conv_123'],
+        message: 'Observations created',
       });
 
       const event = {
@@ -429,10 +426,7 @@ describe('OperatorResultProcessor', () => {
 
     it('should process multiple profiles', async () => {
       mockAdapter.onPost(/\/Observations$/).reply(200, {
-        content: 'User prefers email',
-        source: 'conversation-intelligence',
-        occurredAt: '2024-01-15T10:00:00Z',
-        conversationIds: ['conv_123'],
+        message: 'Observations created',
       });
 
       const event = {
@@ -526,13 +520,8 @@ describe('Memory Client Write Methods', () => {
   });
 
   describe('createObservation()', () => {
-    it('should create observation successfully', async () => {
-      const mockResponse = {
-        content: 'Test observation',
-        source: 'conversation-intelligence',
-        occurredAt: '2024-01-15T10:00:00Z',
-        conversationIds: ['conv_123'],
-      };
+    it('should create observation successfully with a wrapped body', async () => {
+      const mockResponse = { message: 'Observations created' };
       mockAdapter
         .onPost('/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/profile_123/Observations')
         .reply(200, mockResponse);
@@ -551,7 +540,16 @@ describe('Memory Client Write Methods', () => {
         '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/profile_123/Observations'
       );
       const body = JSON.parse(mockAdapter.history.post[0].data);
-      expect(body.content).toBe('Test observation');
+      expect(body).toEqual({
+        observations: [
+          {
+            content: 'Test observation',
+            source: 'conversation-intelligence',
+            occurredAt: '2024-01-15T10:00:00Z',
+            conversationIds: ['conv_123'],
+          },
+        ],
+      });
     });
 
     it('should handle API errors', async () => {
