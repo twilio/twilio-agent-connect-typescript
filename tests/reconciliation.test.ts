@@ -51,8 +51,7 @@ describe('Reconcile participants', () => {
     tac = await createTestTAC(getTestConfig());
     channel = new SMSChannel(tac);
     mockAdapter = new MockAdapter(
-      (tac.getConversationClient() as unknown as { axiosInstance: typeof axios })
-        .axiosInstance
+      (tac.getConversationClient() as unknown as { axiosInstance: typeof axios }).axiosInstance
     );
 
     const memoryClient = tac.getMemoryClient() as unknown as {
@@ -82,9 +81,7 @@ describe('Reconcile participants', () => {
     ).reconcileParticipants(CONV_ID);
 
   const mockListParticipants = (participants: ConversationParticipant[]) =>
-    mockAdapter
-      .onGet(`/v2/Conversations/${CONV_ID}/Participants`)
-      .reply(200, { participants });
+    mockAdapter.onGet(`/v2/Conversations/${CONV_ID}/Participants`).reply(200, { participants });
 
   it('happy path: both sides correctly typed → no PUTs', async () => {
     const agent = participant('PA_A', 'AI_AGENT', AGENT_ADDR);
@@ -108,9 +105,7 @@ describe('Reconcile participants', () => {
     const promoted = participant('PA_C', 'CUSTOMER', CUSTOMER_ADDR);
 
     mockListParticipants([agent, customerUnknown]);
-    mockAdapter
-      .onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`)
-      .reply(200, promoted);
+    mockAdapter.onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`).reply(200, promoted);
     // Stub lookup to miss, create to return an id.
     stubLookupProfile.mockResolvedValue({ normalizedValue: CUSTOMER_ADDR, profiles: [] });
     stubCreateProfile.mockResolvedValue('mem_profile_01new');
@@ -134,9 +129,7 @@ describe('Reconcile participants', () => {
     const promoted = participant('PA_A', 'AI_AGENT', AGENT_ADDR);
 
     mockListParticipants([agentUnknown, customer]);
-    mockAdapter
-      .onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_A`)
-      .reply(200, promoted);
+    mockAdapter.onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_A`).reply(200, promoted);
 
     const result = await callReconcile();
 
@@ -156,9 +149,7 @@ describe('Reconcile participants', () => {
     const promotedCustomer = participant('PA_C', 'CUSTOMER', CUSTOMER_ADDR);
 
     mockListParticipants([agentUnknown, customerUnknown]);
-    mockAdapter
-      .onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_A`)
-      .reply(200, promotedAgent);
+    mockAdapter.onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_A`).reply(200, promotedAgent);
     mockAdapter
       .onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`)
       .reply(200, promotedCustomer);
@@ -194,9 +185,7 @@ describe('Reconcile participants', () => {
     const customer = participant('PA_C', 'CUSTOMER', CUSTOMER_ADDR);
     const createdAgent = participant('PA_A', 'AI_AGENT', AGENT_ADDR);
     mockListParticipants([customer]);
-    mockAdapter
-      .onPost(`/v2/Conversations/${CONV_ID}/Participants`)
-      .reply(201, createdAgent);
+    mockAdapter.onPost(`/v2/Conversations/${CONV_ID}/Participants`).reply(201, createdAgent);
 
     const result = await callReconcile();
 
@@ -239,9 +228,7 @@ describe('Reconcile participants', () => {
   });
 
   it('listParticipants failure → null (skips the webhook)', async () => {
-    mockAdapter
-      .onGet(`/v2/Conversations/${CONV_ID}/Participants`)
-      .networkError();
+    mockAdapter.onGet(`/v2/Conversations/${CONV_ID}/Participants`).networkError();
 
     const result = await callReconcile();
 
@@ -255,9 +242,7 @@ describe('Reconcile participants', () => {
     const promoted = participant('PA_C', 'CUSTOMER', CUSTOMER_ADDR);
 
     mockListParticipants([agent, customerUnknown]);
-    mockAdapter
-      .onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`)
-      .reply(200, promoted);
+    mockAdapter.onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`).reply(200, promoted);
 
     stubLookupProfile.mockResolvedValue({ normalizedValue: CUSTOMER_ADDR, profiles: [] });
     stubCreateProfile.mockResolvedValue('mem_profile_01new');
@@ -280,9 +265,7 @@ describe('Reconcile participants', () => {
     const promoted = participant('PA_C', 'CUSTOMER', CUSTOMER_ADDR);
 
     mockListParticipants([agent, customerUnknown]);
-    mockAdapter
-      .onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`)
-      .reply(200, promoted);
+    mockAdapter.onPut(`/v2/Conversations/${CONV_ID}/Participants/PA_C`).reply(200, promoted);
 
     // Both lookup and create fail — reconciliation still promotes, just
     // without a profileId attached.
@@ -323,7 +306,14 @@ describe('Reconcile participants', () => {
 
     expect(messageCallback).not.toHaveBeenCalled();
     expect(errors).toHaveLength(1);
+    // Stable identifiers so apps can classify this without string-matching.
+    expect(errors[0]!.error.name).toBe('ParticipantReconciliationError');
+    expect(errors[0]!.context?.error_code).toBe('participant_reconciliation_failed');
+    // Observability fields the implementation sets — assert them all so a
+    // future refactor can't silently drop the signal.
     expect(errors[0]!.context?.conversation_id).toBe(CONV_ID);
+    expect(errors[0]!.context?.dropped_inbound).toBe(true);
+    expect(errors[0]!.context?.channel).toBe(channel.channelType);
   });
 
   it('reconciliation lifts customer profileId onto session.profileId', async () => {

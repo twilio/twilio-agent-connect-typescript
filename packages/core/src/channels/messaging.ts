@@ -362,13 +362,19 @@ export abstract class MessagingChannel extends BaseChannel {
           // Surface via handleError (logs at error level AND fires the app's
           // onError callback) rather than a bare warn — otherwise the dropped
           // inbound is invisible to the app and can't be observed or retried.
-          this.handleError(
-            new Error(
-              `Participant reconciliation failed for conversation ${conversationId}; ` +
-                'inbound message dropped because no sendable participants could be resolved.'
-            ),
-            { conversation_id: conversationId, channel: this.channelType, dropped_inbound: true }
+          // Set a stable error.name and error_code so consumers can classify
+          // this condition programmatically without string-matching the message.
+          const error = new Error(
+            `Participant reconciliation failed for conversation ${conversationId}; ` +
+              'inbound message dropped because no sendable participants could be resolved.'
           );
+          error.name = 'ParticipantReconciliationError';
+          this.handleError(error, {
+            conversation_id: conversationId,
+            channel: this.channelType,
+            dropped_inbound: true,
+            error_code: 'participant_reconciliation_failed',
+          });
           return;
         }
 
