@@ -195,6 +195,7 @@ describe('MemoryClient', () => {
       expect(observation.source).toBe('conversation-intelligence');
       expect(typeof observation.occurredAt).toBe('string');
       expect(new Date(observation.occurredAt).toISOString()).toBe(observation.occurredAt);
+      expect(observation.conversationIds).toBeUndefined();
     });
 
     it('should handle API errors', async () => {

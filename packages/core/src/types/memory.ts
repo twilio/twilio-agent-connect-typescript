@@ -228,6 +228,31 @@ export const EMPTY_MEMORY_RESPONSE: MemoryRetrievalResponse = {
 };
 
 /**
+ * A single observation in a create request.
+ *
+ * `occurredAt` is required by the Memory API and formatted as ISO 8601.
+ */
+export const ObservationCreateRequestSchema = z.object({
+  content: z.string(),
+  source: z.string(),
+  occurredAt: z.string(),
+  conversationIds: z.array(z.string()).optional(),
+});
+
+export type ObservationCreateRequest = z.infer<typeof ObservationCreateRequestSchema>;
+
+/**
+ * Request body for the Memory API Observations endpoint.
+ *
+ * The endpoint is a batch create that wraps observations in an array.
+ */
+export const CreateObservationsRequestSchema = z.object({
+  observations: z.array(ObservationCreateRequestSchema),
+});
+
+export type CreateObservationsRequest = z.infer<typeof CreateObservationsRequestSchema>;
+
+/**
  * Response from creating an observation.
  *
  * The Memory API Observations endpoint is a batch create that returns a

@@ -8,6 +8,8 @@ import {
   ProfileLookupResponseSchema,
   ProfileResponse,
   ProfileResponseSchema,
+  ObservationCreateRequest,
+  CreateObservationsRequest,
   CreateObservationResponse,
   CreateObservationResponseSchema,
   CreateConversationSummariesResponse,
@@ -249,7 +251,7 @@ export class MemoryClient extends BaseClient {
   ): Promise<CreateObservationResponse> {
     const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}/Observations`;
 
-    const observation: Record<string, unknown> = {
+    const observation: ObservationCreateRequest = {
       content,
       source,
       occurredAt: occurredAt ?? new Date().toISOString(),
@@ -259,7 +261,7 @@ export class MemoryClient extends BaseClient {
       observation.conversationIds = conversationIds;
     }
 
-    const requestBody = { observations: [observation] };
+    const requestBody: CreateObservationsRequest = { observations: [observation] };
 
     try {
       const data = await this.makeRequest<CreateObservationResponse>(url, 'POST', requestBody);
