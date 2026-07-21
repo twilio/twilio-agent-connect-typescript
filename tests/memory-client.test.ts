@@ -150,6 +150,71 @@ describe('MemoryClient', () => {
     });
   });
 
+  describe('retrieveMemories()', () => {
+    const recallUrl =
+      '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/mem_profile_00000000000000000000000001/Recall';
+
+    const makeCommunication = (id: string, authorType: string) => ({
+      id,
+      author: {
+        id: `participant_${id}`,
+        name: 'Participant',
+        address: 'someone@example.com',
+        channel: 'EMAIL',
+        type: authorType,
+      },
+      content: { text: `content ${id}` },
+      recipients: [],
+      createdAt: '2024-01-01T00:00:00Z',
+    });
+
+    it('should parse a communication whose participant type is UNKNOWN', async () => {
+      const mockResponse = {
+        observations: [],
+        summaries: [],
+        communications: [makeCommunication('comm_1', 'UNKNOWN')],
+      };
+
+      mockAdapter.onPost(recallUrl).reply(200, mockResponse);
+
+      const result = await memoryClient.retrieveMemories(
+        'mem_profile_00000000000000000000000001'
+      );
+
+      expect(result.communications).toHaveLength(1);
+      expect(result.communications[0]!.author.type).toBe('UNKNOWN');
+    });
+
+    it('should return valid items when some items fail validation', async () => {
+      const mockResponse = {
+        observations: [
+          {
+            id: 'obs_valid',
+            content: 'valid observation',
+            createdAt: '2024-01-01T00:00:00Z',
+          },
+          { id: 'obs_invalid', createdAt: 'not-a-date' },
+        ],
+        summaries: [],
+        communications: [
+          makeCommunication('comm_valid', 'CUSTOMER'),
+          { id: 'comm_invalid', author: null },
+        ],
+      };
+
+      mockAdapter.onPost(recallUrl).reply(200, mockResponse);
+
+      const result = await memoryClient.retrieveMemories(
+        'mem_profile_00000000000000000000000001'
+      );
+
+      expect(result.observations).toHaveLength(1);
+      expect(result.observations[0]!.id).toBe('obs_valid');
+      expect(result.communications).toHaveLength(1);
+      expect(result.communications[0]!.id).toBe('comm_valid');
+    });
+  });
+
   describe('region support', () => {
     it('should use region in base URL when configured', () => {
       const config = new TACConfig({ ...getTestConfig(), region: 'test-region' });
