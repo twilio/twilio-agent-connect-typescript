@@ -35,7 +35,13 @@ export type MemoryChannelType = z.infer<typeof MemoryChannelTypeSchema>;
 /**
  * Participant type in Memory API
  */
-export const MemoryParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT']);
+export const MemoryParticipantTypeSchema = z.enum([
+  'HUMAN_AGENT',
+  'CUSTOMER',
+  'AI_AGENT',
+  'AGENT',
+  'UNKNOWN',
+]);
 export type MemoryParticipantType = z.infer<typeof MemoryParticipantTypeSchema>;
 
 /**
