@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Scan lockfiles + clean-room public install
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/npm-lockfile-hygiene@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/npm-lockfile-hygiene@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
   lint:
     name: Linting
@@ -29,8 +29,8 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -67,8 +67,8 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -99,8 +99,8 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - name: Set up Node.js 24
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -122,8 +122,8 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - name: Set up Node.js 22
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -145,8 +145,8 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -196,8 +196,8 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6

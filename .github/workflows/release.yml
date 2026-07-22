@@ -20,8 +20,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -47,8 +47,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/artifactory-oidc@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
 
       # Node 24+ required for npm OIDC trusted publisher support (npm >= 11.5.1)
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -60,5 +60,5 @@ jobs:
       - run: npm run build
 
       - name: Validate tag + publish to npm
-        # PR twilio/sdk-actions#1 (unmerged) — repin to a release tag once it merges
-        uses: twilio/sdk-actions/npm-publish@2026de8ed6bedd91b6527323c93b1a2711a66e83
+        # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
+        uses: twilio/sdk-actions/npm-publish@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
