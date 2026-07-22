@@ -19,7 +19,7 @@ jobs:
 
       - name: Scan lockfiles + clean-room public install
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/npm-lockfile-hygiene@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/npm-lockfile-hygiene@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
   lint:
     name: Linting
@@ -30,7 +30,7 @@ jobs:
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/artifactory-oidc@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -68,7 +68,7 @@ jobs:
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/artifactory-oidc@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -100,7 +100,7 @@ jobs:
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/artifactory-oidc@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
       - name: Set up Node.js 24
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -123,7 +123,7 @@ jobs:
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/artifactory-oidc@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
       - name: Set up Node.js 22
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -146,7 +146,7 @@ jobs:
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/artifactory-oidc@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -197,7 +197,7 @@ jobs:
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
         # twilio/sdk-actions#1 (merged) — repin to a release tag once one is cut
-        uses: twilio/sdk-actions/artifactory-oidc@b84fe24294fdf3c48b553fca00f6806ee9b74a4c
+        uses: twilio/sdk-actions/artifactory-oidc@0375437914d535a5fb178bdbfdb5d51bdde2616e
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
