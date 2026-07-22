@@ -59,3 +59,9 @@ jobs:
 
       - name: Validate tag + publish to npm
         uses: twilio/sdk-actions/npm-publish@0375437914d535a5fb178bdbfdb5d51bdde2616e
+        with:
+          registry: 'https://registry.npmjs.org'
+          validate-tag: 'true'
+          tag-prefix: 'v'
+          access: 'public'
+          provenance: 'true'
