@@ -10,10 +10,16 @@ permissions:
   contents: read
   id-token: write
 
-env:
-  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
-
 jobs:
+  lockfile-hygiene:
+    name: Lockfile Hygiene
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Scan lockfiles + clean-room public install
+        uses: twilio/sdk-actions/npm-lockfile-hygiene@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
+
   lint:
     name: Linting
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
@@ -22,7 +28,7 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -59,7 +65,7 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -90,7 +96,7 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - name: Set up Node.js 24
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -112,7 +118,7 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - name: Set up Node.js 22
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -134,7 +140,7 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -184,7 +190,7 @@ jobs:
 
       - name: Artifactory OIDC Auth
         if: ${{ !github.event.pull_request.head.repo.fork }}
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -214,13 +220,14 @@ jobs:
 
   all-checks:
     name: All Checks Passed
-    needs: [lint, type-check, test-node-22, test-node-24, getting-started-example, build]
+    needs: [lockfile-hygiene, lint, type-check, test-node-22, test-node-24, getting-started-example, build]
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
     if: always()
     steps:
       - name: Check all job statuses
         run: |
-          if [ "${{ needs.lint.result }}" != "success" ] || \
+          if [ "${{ needs['lockfile-hygiene'].result }}" != "success" ] || \
+             [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs['type-check'].result }}" != "success" ] || \
              [ "${{ needs['test-node-22'].result }}" != "success" ] || \
              [ "${{ needs['test-node-24'].result }}" != "success" ] || \

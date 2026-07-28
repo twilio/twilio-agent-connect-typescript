@@ -1,9 +1,12 @@
+import { z } from 'zod';
 import {
   MemoryRetrievalRequest,
   MemoryRetrievalRequestSchema,
   MemoryRetrievalResponse,
-  MemoryRetrievalResponseSchema,
   EMPTY_MEMORY_RESPONSE,
+  ObservationInfoSchema,
+  SummaryInfoSchema,
+  MemoryCommunicationSchema,
   ProfileLookupResponse,
   ProfileLookupResponseSchema,
   ProfileResponse,
@@ -93,32 +96,51 @@ export class MemoryClient extends BaseClient {
         'Raw memory response received'
       );
 
-      // Validate and parse the response
-      const validatedResponse = MemoryRetrievalResponseSchema.safeParse(data);
-
-      if (!validatedResponse.success) {
+      if (data === null || typeof data !== 'object') {
         this.logger.warn(
           {
             profile_id: profileId,
             memory_store_id: this.storeId,
-            validation_errors: validatedResponse.error.issues,
           },
           'Invalid memory response format'
         );
         return EMPTY_MEMORY_RESPONSE;
       }
 
+      // Parse each item independently so a single malformed entry (e.g. an
+      // unrecognized enum value) doesn't discard the entire response.
+      const response = data as Record<string, unknown>;
+      const observations = this.parseItems(
+        response.observations,
+        ObservationInfoSchema,
+        'observation',
+        profileId
+      );
+      const summaries = this.parseItems(
+        response.summaries,
+        SummaryInfoSchema,
+        'summary',
+        profileId
+      );
+      const communications = this.parseItems(
+        response.communications,
+        MemoryCommunicationSchema,
+        'communication',
+        profileId
+      );
+
       this.logger.debug(
         {
           memory_store_id: this.storeId,
           profile_id: profileId,
-          observation_count: validatedResponse.data.observations.length,
-          summary_count: validatedResponse.data.summaries.length,
+          observation_count: observations.length,
+          summary_count: summaries.length,
+          communication_count: communications.length,
         },
         'Memory retrieval succeeded'
       );
 
-      return validatedResponse.data;
+      return { observations, summaries, communications };
     } catch (error) {
       this.logger.warn(
         {
@@ -130,6 +152,79 @@ export class MemoryClient extends BaseClient {
       );
       return EMPTY_MEMORY_RESPONSE;
     }
+  }
+
+  /** Cap on per-item validation warnings logged per response, to avoid flooding logs. */
+  private static readonly MAX_INVALID_ITEM_LOGS = 10;
+
+  /**
+   * Validate an array of memory items one at a time, dropping (and logging)
+   * any that fail validation while keeping the rest.
+   *
+   * Per-item warnings are capped at {@link MemoryClient.MAX_INVALID_ITEM_LOGS}
+   * and followed by a single summary warning with the total `invalid_count`.
+   */
+  private parseItems<T>(
+    value: unknown,
+    schema: z.ZodType<T, unknown>,
+    itemType: string,
+    profileId: string
+  ): T[] {
+    if (value === undefined) {
+      return [];
+    }
+
+    if (!Array.isArray(value)) {
+      this.logger.warn(
+        {
+          profile_id: profileId,
+          memory_store_id: this.storeId,
+          item_type: itemType,
+          received_type: typeof value,
+        },
+        'Expected an array of memory items but received a non-array value'
+      );
+      return [];
+    }
+
+    const parsed: T[] = [];
+    let invalidCount = 0;
+    for (const [index, item] of value.entries()) {
+      const result = schema.safeParse(item);
+      if (result.success) {
+        parsed.push(result.data);
+        continue;
+      }
+
+      invalidCount += 1;
+      if (invalidCount <= MemoryClient.MAX_INVALID_ITEM_LOGS) {
+        this.logger.warn(
+          {
+            profile_id: profileId,
+            memory_store_id: this.storeId,
+            item_type: itemType,
+            item_index: index,
+            validation_errors: result.error.issues,
+          },
+          'Dropping invalid memory item'
+        );
+      }
+    }
+
+    if (invalidCount > 0) {
+      this.logger.warn(
+        {
+          profile_id: profileId,
+          memory_store_id: this.storeId,
+          item_type: itemType,
+          invalid_count: invalidCount,
+          total_count: value.length,
+        },
+        'Dropped invalid memory items'
+      );
+    }
+
+    return parsed;
   }
 
   /**

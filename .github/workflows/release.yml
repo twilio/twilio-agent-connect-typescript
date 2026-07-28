@@ -4,9 +4,6 @@ on:
   release:
     types: [published]
 
-env:
-  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
-
 jobs:
   test:
     name: Test
@@ -23,7 +20,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
@@ -49,7 +46,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       # Node 24+ required for npm OIDC trusted publisher support (npm >= 11.5.1)
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -58,21 +55,13 @@ jobs:
 
       - run: npm ci
 
-      - name: Validate tag format and version match
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "::error::Release tag must be in the form v1.2.3 (got '$TAG')"
-            exit 1
-          fi
-          VERSION="${TAG#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag $TAG does not match package.json version $PKG_VERSION"
-            exit 1
-          fi
-
       - run: npm run build
 
-      - name: Publish to npm
-        run: npm publish --registry https://registry.npmjs.org --ignore-scripts --provenance --access public
+      - name: Validate tag + publish to npm
+        uses: twilio/sdk-actions/npm-publish@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
+        with:
+          registry: 'https://registry.npmjs.org'
+          validate-tag: 'true'
+          tag-prefix: 'v'
+          access: 'public'
+          provenance: 'true'
