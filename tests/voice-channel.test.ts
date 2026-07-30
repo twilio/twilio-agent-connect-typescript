@@ -1536,6 +1536,45 @@ describe('VoiceChannel', () => {
       const hasFinalMarker = textMessages.some((m: any) => m.last === true && m.token === '');
       expect(hasFinalMarker).toBe(false);
     });
+
+    it('should send the pending handoff end message after the final token marker', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      const session = voiceChannel.getConversationSession('CHstream_test' as any)!;
+      session.pendingHandoffData = {
+        type: 'end',
+        handoffData: JSON.stringify({ conversationId: 'CHstream_test' }),
+      };
+
+      await voiceChannel.sendStreamingResponse(
+        'CHstream_test' as any,
+        makeTokenStream(['Transferring', ' you', ' now'])
+      );
+
+      const messages = mockWs.send.mock.calls.map((call: any[]) => JSON.parse(call[0] as string));
+      const endIndex = messages.findIndex((m: any) => m.type === 'end');
+      const finalMarkerIndex = messages.findIndex(
+        (m: any) => m.type === 'text' && m.last === true && m.token === ''
+      );
+
+      expect(endIndex).toBeGreaterThan(-1);
+      expect(messages[endIndex].handoffData).toBe(
+        JSON.stringify({ conversationId: 'CHstream_test' })
+      );
+      expect(endIndex).toBeGreaterThan(finalMarkerIndex);
+      expect(session.pendingHandoffData).toBeUndefined();
+    });
+
+    it('should not send an end message when no handoff is pending', async () => {
+      const { voiceChannel, mockWs } = await setupForStreaming();
+
+      await voiceChannel.sendStreamingResponse('CHstream_test' as any, makeTokenStream(['Hello']));
+
+      const hasEnd = mockWs.send.mock.calls.some(
+        (call: any[]) => JSON.parse(call[0] as string).type === 'end'
+      );
+      expect(hasEnd).toBe(false);
+    });
   });
 
   describe('interrupt handling', () => {
@@ -1709,6 +1748,59 @@ describe('VoiceChannel', () => {
       });
 
       expect(ackCall).toBeUndefined();
+    });
+
+    it('should keep a pending handoff across an interrupt and flush it on the next response', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      const session = voiceChannel.getConversationSession('CHinterrupt_test' as any)!;
+      session.pendingHandoffData = {
+        type: 'end',
+        handoffData: JSON.stringify({ conversationId: 'CHinterrupt_test' }),
+      };
+
+      voiceChannel
+        .sendStreamingResponse(
+          'CHinterrupt_test' as any,
+          (async function* () {
+            yield 'Transferring';
+            yield new Promise(() => {}) as never;
+          })()
+        )
+        .catch(() => {});
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      mockWs._emit(
+        'message',
+        Buffer.from(JSON.stringify({ type: 'interrupt', utteranceUntilInterrupt: 'Transferring' }))
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // The interrupted response was never fully delivered, so the handoff must
+      // stay pending rather than ending the call early.
+      expect(session.pendingHandoffData).toBeDefined();
+      expect(
+        mockWs.send.mock.calls.some((call: any[]) => JSON.parse(call[0] as string).type === 'end')
+      ).toBe(false);
+
+      mockWs.send.mockClear();
+
+      await voiceChannel.sendStreamingResponse(
+        'CHinterrupt_test' as any,
+        (async function* () {
+          yield 'Goodbye';
+        })()
+      );
+
+      const endMessage = mockWs.send.mock.calls
+        .map((call: any[]) => JSON.parse(call[0] as string))
+        .find((m: any) => m.type === 'end');
+
+      expect(endMessage).toBeDefined();
+      expect(endMessage.handoffData).toBe(JSON.stringify({ conversationId: 'CHinterrupt_test' }));
+      expect(session.pendingHandoffData).toBeUndefined();
     });
 
     it('should pass utteranceUntilInterrupt through onInterrupt callback', async () => {

@@ -644,21 +644,7 @@ export class VoiceChannel extends BaseChannel {
       };
 
       ws.send(JSON.stringify(response));
-
-      // If a handoff is pending, send the WS "end" message now that the
-      // LLM's final response has been delivered to the caller.
-      const session = this.getConversationSession(conversationId);
-      if (session?.pendingHandoffData) {
-        try {
-          ws.send(JSON.stringify(session.pendingHandoffData));
-          delete session.pendingHandoffData;
-        } catch (err) {
-          this.logger.warn(
-            { err, conversation_id: conversationId },
-            'WebSocket closed before sending handoff end message; caller will not be transferred'
-          );
-        }
-      }
+      this.flushPendingHandoff(conversationId, ws);
 
       return Promise.resolve();
     } catch (error) {
@@ -672,6 +658,31 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
+   * Send the ConversationRelay `end` message if the session has a handoff
+   * pending, so the caller is transferred once the response has been delivered.
+   * No-op when nothing is pending.
+   */
+  private flushPendingHandoff(conversationId: ConversationId, ws: WebSocket): void {
+    const session = this.getConversationSession(conversationId);
+    if (!session?.pendingHandoffData) {
+      return;
+    }
+
+    try {
+      if (ws.readyState !== WebSocket.OPEN) {
+        throw new Error(`WebSocket is not open (readyState: ${ws.readyState})`);
+      }
+      ws.send(JSON.stringify(session.pendingHandoffData));
+      delete session.pendingHandoffData;
+    } catch (err) {
+      this.logger.warn(
+        { err, conversation_id: conversationId },
+        'WebSocket closed before sending handoff end message; caller will not be transferred'
+      );
+    }
+  }
+
+  /**
    * Send a streaming voice response via WebSocket, token by token.
    *
    * Each chunk from the iterable is sent as a text token message with last: false.
@@ -679,6 +690,10 @@ export class VoiceChannel extends BaseChannel {
    * only if at least one token was emitted. If the AbortSignal fires (e.g., user
    * interrupted), iteration stops and no final marker is sent (the interrupt
    * handler sends the finalization instead).
+   *
+   * Once the stream completes, a handoff pending on the session is delivered as
+   * the WS `end` message, matching {@link sendResponse}. An aborted stream
+   * leaves it pending for the next response.
    *
    * @returns The accumulated full response text.
    */
@@ -731,6 +746,12 @@ export class VoiceChannel extends BaseChannel {
 
       if (!signal?.aborted && hasSentTokens && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'text', token: '', last: true }));
+      }
+
+      // An aborted stream was cut short, so leave any handoff pending for the
+      // next response rather than ending the call mid-utterance.
+      if (!signal?.aborted) {
+        this.flushPendingHandoff(conversationId, ws);
       }
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), {
