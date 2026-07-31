@@ -64,7 +64,12 @@ export function createSendMessageTool(
 /**
  * Create factory function for messaging tools
  */
-export function createMessagingTools() {
+export function createMessagingTools(): {
+  forConversation: (
+    channel: BaseChannel,
+    conversationId: ConversationId
+  ) => TACTool<SendMessageParams, SendMessageResult>;
+} {
   return {
     /**
      * Create send message tool for specific channel and conversation
