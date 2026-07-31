@@ -116,7 +116,6 @@ export const TACConfigSchema = z.object({
    */
   voiceActionPath: voicePathSchema('/conversation-relay-callback'),
   cintelConfigurationId: z.string().optional(),
-  cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
   region: z
     .string()
@@ -165,7 +164,6 @@ export const EnvironmentVariables = {
   TWILIO_VOICE_WEBSOCKET_PATH: 'TWILIO_VOICE_WEBSOCKET_PATH',
   TWILIO_VOICE_ACTION_PATH: 'TWILIO_VOICE_ACTION_PATH',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
-  TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',
   TWILIO_REGION: 'TWILIO_REGION',
   TWILIO_STUDIO_HANDOFF_FLOW_SID: 'TWILIO_STUDIO_HANDOFF_FLOW_SID',

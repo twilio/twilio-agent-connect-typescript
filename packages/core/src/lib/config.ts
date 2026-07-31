@@ -32,7 +32,6 @@ export class TACConfig {
   /** Path the ConversationRelay action callback is served at (default '/conversation-relay-callback'). */
   public readonly voiceActionPath: string;
   public readonly cintelConfigurationId?: string;
-  public readonly cintelObservationOperatorSid?: string;
   public readonly cintelSummaryOperatorSid?: string;
   /** Optional Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`) */
   public readonly region?: string;
@@ -73,9 +72,6 @@ export class TACConfig {
     this.voiceActionPath = validatedConfig.voiceActionPath;
     if (validatedConfig.cintelConfigurationId) {
       this.cintelConfigurationId = validatedConfig.cintelConfigurationId;
-    }
-    if (validatedConfig.cintelObservationOperatorSid) {
-      this.cintelObservationOperatorSid = validatedConfig.cintelObservationOperatorSid;
     }
     if (validatedConfig.cintelSummaryOperatorSid) {
       this.cintelSummaryOperatorSid = validatedConfig.cintelSummaryOperatorSid;
@@ -253,8 +249,6 @@ export class TACConfig {
         process.env[EnvironmentVariables.TWILIO_VOICE_WEBSOCKET_PATH] || undefined,
       voiceActionPath: process.env[EnvironmentVariables.TWILIO_VOICE_ACTION_PATH] || undefined,
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
-      cintelObservationOperatorSid:
-        process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],
       cintelSummaryOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
       region: process.env[EnvironmentVariables.TWILIO_REGION],

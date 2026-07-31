@@ -147,7 +147,6 @@ describe('Conversation Intelligence Types', () => {
     it('should validate full config', () => {
       const config = {
         configurationId: 'LY123',
-        observationOperatorSid: 'LY456',
         summaryOperatorSid: 'LY789',
       };
 
@@ -184,7 +183,6 @@ describe('OperatorResultProcessor', () => {
 
   const cintelConfig = {
     configurationId: 'LY_CONFIG_123',
-    observationOperatorSid: 'LY_OBS_456',
     summaryOperatorSid: 'LY_SUM_789',
   };
 
