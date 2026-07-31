@@ -198,6 +198,39 @@ describe('MemoryClient', () => {
       expect(observation.conversationIds).toBeUndefined();
     });
 
+    it('should default occurredAt to the current time when blank', async () => {
+      mockAdapter.onPost(observationsUrl).reply(201, { message: 'Observations created' });
+
+      await memoryClient.createObservation(
+        'mem_profile_00000000000000000000000001',
+        'Customer mentioned a billing issue',
+        'conversation-intelligence',
+        undefined,
+        ''
+      );
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      const observation = body.observations[0];
+      expect(observation.occurredAt).not.toBe('');
+      expect(observation.occurredAt.trim()).not.toBe('');
+      expect(new Date(observation.occurredAt).toISOString()).toBe(observation.occurredAt);
+    });
+
+    it('should preserve a non-empty occurredAt unchanged', async () => {
+      mockAdapter.onPost(observationsUrl).reply(201, { message: 'Observations created' });
+
+      await memoryClient.createObservation(
+        'mem_profile_00000000000000000000000001',
+        'Customer mentioned a billing issue',
+        'conversation-intelligence',
+        undefined,
+        '2024-01-01T00:00:00Z'
+      );
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.observations[0].occurredAt).toBe('2024-01-01T00:00:00Z');
+    });
+
     it('should handle API errors', async () => {
       mockAdapter.onPost(observationsUrl).reply(500);
 
