@@ -1,0 +1,20 @@
+{
+  "name": "tac-example-voice-call-events",
+  "version": "1.0.0",
+  "description": "Voice call events (status, AMD, recording) example for Twilio Agent Connect",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "twilio-agent-connect": "file:../../..",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

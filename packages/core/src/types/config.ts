@@ -40,6 +40,14 @@ const voicePathSchema = (defaultPath: string): z.ZodType<string> =>
     return trimmed.length === 0 ? undefined : trimmed;
   }, z.string().startsWith('/', 'Path must start with "/"').default(defaultPath));
 
+/** The three Twilio call callbacks TAC serves, one route per kind. */
+export const CallEventKindSchema = z.enum(['status', 'amd', 'recording']);
+
+export type CallEventKind = z.infer<typeof CallEventKindSchema>;
+
+/** Iterable form of {@link CallEventKind}, for registering every route. */
+export const CALL_EVENT_KINDS: readonly CallEventKind[] = CallEventKindSchema.options;
+
 /**
  * TAC configuration schema
  */
@@ -115,6 +123,14 @@ export const TACConfigSchema = z.object({
    * Must start with '/'.
    */
   voiceActionPath: voicePathSchema('/conversation-relay-callback'),
+
+  /**
+   * Base path for the call-event callbacks (status, async AMD, recording).
+   * TACServer registers one route per callback under it — `<base>/status`,
+   * `<base>/amd`, `<base>/recording` — so the route identifies the event. Same
+   * role as voiceActionPath. Must start with '/'.
+   */
+  voiceCallEventPath: voicePathSchema('/twilio/call-events'),
   cintelConfigurationId: z.string().optional(),
   cintelObservationOperatorSid: z.string().optional(),
   cintelSummaryOperatorSid: z.string().optional(),
@@ -164,6 +180,7 @@ export const EnvironmentVariables = {
   TWILIO_VOICE_PUBLIC_DOMAIN: 'TWILIO_VOICE_PUBLIC_DOMAIN',
   TWILIO_VOICE_WEBSOCKET_PATH: 'TWILIO_VOICE_WEBSOCKET_PATH',
   TWILIO_VOICE_ACTION_PATH: 'TWILIO_VOICE_ACTION_PATH',
+  TWILIO_VOICE_CALL_EVENT_PATH: 'TWILIO_VOICE_CALL_EVENT_PATH',
   TWILIO_TAC_CI_CONFIGURATION_ID: 'TWILIO_TAC_CI_CONFIGURATION_ID',
   TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID: 'TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID',
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',

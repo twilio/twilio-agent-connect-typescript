@@ -10,7 +10,11 @@ import gracefulShutdown from 'fastify-graceful-shutdown';
 import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
-import { ConversationRelayCallbackPayloadSchema, twiMLRequestFromForm } from '@twilio/tac-core';
+import {
+  ConversationRelayCallbackPayloadSchema,
+  twiMLRequestFromForm,
+  CALL_EVENT_KINDS,
+} from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 
 /**
@@ -75,6 +79,14 @@ const DEFAULT_CONFIG = {
   TACServerConfig,
   'fastify' | 'fastifyInstance' | 'voiceChannel' | 'messagingChannels'
 >;
+
+/** Normalize a route path for comparison, so '/hooks' and '/hooks/' collide. */
+function stripTrailingSlash(path: string): string {
+  return path.replace(/\/+$/, '');
+}
+
+/** What the voice channel's webhook handlers hand back for a reply. */
+type CallEventResult = { status: number; content: string; contentType: string };
 
 /**
  * Batteries-included Fastify server for TAC
@@ -148,6 +160,10 @@ export class TACServer {
           'Set it directly or via the TWILIO_VOICE_PUBLIC_DOMAIN env var.'
       );
     }
+    // Unconditional, because the call-event routes register unconditionally
+    // (like the TwiML and ConversationRelay routes) — so the collision is real
+    // whether or not a voice channel is attached.
+    this.validateCallEventPaths();
     this.messagingChannels =
       config.messagingChannels ??
       (
@@ -182,6 +198,44 @@ export class TACServer {
         },
         ...config.fastify,
       });
+    }
+  }
+
+  /**
+   * Validate `voiceCallEventPath`, the one path that isn't literal.
+   *
+   * Every other TAC path registers as configured, so a bad value is visible.
+   * This one expands into three sub-paths, hiding a mistake the base path looks
+   * innocent for: a sub-path colliding with another route while the base looks
+   * unrelated (base `/hooks` vs `webhookPaths.twiml = '/hooks/status'`). Both
+   * would register as POST routes and requests would reach the wrong handler.
+   *
+   * The leading-slash requirement is enforced by `TACConfigSchema` at parse
+   * time, so it doesn't need re-checking here.
+   */
+  private validateCallEventPaths(): void {
+    const cfg = this.tac.getConfig();
+
+    const others: Record<string, string> = {
+      [stripTrailingSlash(this.config.webhookPaths.twiml || '/twiml')]: 'webhookPaths.twiml',
+      [stripTrailingSlash(cfg.voiceActionPath)]: 'TACConfig.voiceActionPath',
+      [stripTrailingSlash(this.config.webhookPaths.conversation || '/webhook')]:
+        'webhookPaths.conversation',
+    };
+    if (this.config.webhookPaths.cintel) {
+      others[stripTrailingSlash(this.config.webhookPaths.cintel)] = 'webhookPaths.cintel';
+    }
+
+    for (const kind of CALL_EVENT_KINDS) {
+      const path = cfg.callEventPath(kind);
+      const clash = others[stripTrailingSlash(path)];
+      if (clash !== undefined) {
+        throw new Error(
+          `TACConfig.voiceCallEventPath expands to '${path}', which collides with ` +
+            `${clash}. Both would register as POST routes and requests would ` +
+            'reach the wrong handler.'
+        );
+      }
     }
   }
 
@@ -345,6 +399,46 @@ export class TACServer {
       }
     );
 
+    // One route per Twilio call callback — the route is the discriminator, so
+    // each handler parses its own typed event with no payload sniffing. Paths
+    // live on TACConfig because the voice channel derives the callback URLs it
+    // hands to the Calls API from the same base.
+    const callEventHandlers: Record<
+      (typeof CALL_EVENT_KINDS)[number],
+      (channel: VoiceChannel, form: Record<string, string>) => Promise<CallEventResult>
+    > = {
+      status: (channel, form) => channel.handleCallStatusEvent(form),
+      amd: (channel, form) => channel.handleAmdEvent(form),
+      recording: (channel, form) => channel.handleRecordingEvent(form),
+    };
+
+    for (const kind of CALL_EVENT_KINDS) {
+      const handle = callEventHandlers[kind];
+      this.fastify.post(
+        this.tac.getConfig().callEventPath(kind),
+        validateSignature,
+        async (request: FastifyRequest, reply: FastifyReply) => {
+          try {
+            if (!this.voiceChannel) {
+              await reply.code(500).send({ error: 'Voice channel not available' });
+              return;
+            }
+
+            const formData = (request.body as Record<string, string>) ?? {};
+            const result = await handle(this.voiceChannel, formData);
+
+            await reply.code(result.status).type(result.contentType).send(result.content);
+          } catch (error) {
+            this.fastify.log.error(
+              `Call ${kind} callback error: ` +
+                (error instanceof Error ? error.message : String(error))
+            );
+            await reply.code(500).send({ error: 'Internal server error' });
+          }
+        }
+      );
+    }
+
     // Voice WebSocket endpoint. Path lives on TACConfig because the voice
     // channel derives the WebSocket URL from it too.
     await this.fastify.register(fastify => {
@@ -503,6 +597,11 @@ export class TACServer {
           twiml_webhook: this.config.webhookPaths.twiml,
           ws_websocket: this.tac.getConfig().voiceWebsocketPath,
           conversation_relay_callback: this.tac.getConfig().voiceActionPath,
+          ...(this.voiceChannel && {
+            call_event_callbacks: CALL_EVENT_KINDS.map(kind =>
+              this.tac.getConfig().callEventPath(kind)
+            ),
+          }),
           ...(this.config.webhookPaths.cintel && {
             cintel_webhook: this.config.webhookPaths.cintel,
           }),

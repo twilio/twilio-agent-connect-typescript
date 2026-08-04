@@ -55,11 +55,21 @@ export type {
   VoiceChannelEvents,
   VoiceChannelConfig,
   InboundCallTwimlHandler,
+  CallStatusHandler,
+  AmdHandler,
+  RecordingHandler,
   StreamTask,
 } from './channels/voice';
 
 // Log redaction utilities
-export { maskPhone, maskEmail, maskAddress, scrubPii, scrubObject } from './util/log-redaction';
+export {
+  maskPhone,
+  maskEmail,
+  maskAddress,
+  scrubPii,
+  scrubObject,
+  redactTwimlParameters,
+} from './util/log-redaction';
 
 // Studio handoff URL helpers
 export { studioExecutionsUrl, studioVoiceHandoffUrl } from './util/handoff-urls';

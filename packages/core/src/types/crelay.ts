@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
+import type { CallListInstanceCreateOptions } from 'twilio/lib/rest/api/v2010/account/call.js';
 
 /**
  * ConversationRelay API Types
@@ -596,6 +597,440 @@ export type ConversationRelayCallbackPayload = z.infer<
 >;
 
 // =========================================================================
+// Call Events (status callback, async AMD, recording status)
+// =========================================================================
+
+/**
+ * Split a Twilio webhook form into aliased fields and everything else.
+ *
+ * Unknown keys — including fields that belong to a different call event — are
+ * bucketed rather than dropped, so a handler can still reach them via `extra`.
+ */
+function splitCallEventForm(
+  form: Record<string, string>,
+  aliases: Record<string, string>
+): { known: Record<string, string>; extra: Record<string, string> } {
+  const known: Record<string, string> = {};
+  const extra: Record<string, string> = {};
+  for (const [key, value] of Object.entries(form)) {
+    const alias = aliases[key];
+    if (alias) {
+      known[alias] = value;
+    } else {
+      extra[key] = value;
+    }
+  }
+  return { known, extra };
+}
+
+/**
+ * Fields shared by the three Twilio call-webhook events.
+ *
+ * `callSid` is the correlation key across every surface — it matches
+ * `ConversationSession.callSid` and the SID from
+ * `initiateOutboundConversation`. It's required: every real call webhook
+ * carries one, and defaulting it would hand handlers an empty SID to act on
+ * (`endCall('')` is a Twilio 404). Missing or blank fails validation, which the
+ * channel turns into a 400.
+ */
+const CallEventBaseShape = {
+  callSid: z.string().min(1, 'CallSid is required'),
+  accountSid: z.string().optional(),
+  /** Any other Twilio webhook fields not surfaced above. */
+  extra: z.record(z.string(), z.string()).default({}),
+};
+
+const CALL_EVENT_BASE_ALIASES = {
+  CallSid: 'callSid',
+  AccountSid: 'accountSid',
+} as const;
+
+/**
+ * Call statuses that mean the call ended without reaching the callee — i.e.
+ * worth a retry.
+ */
+const UNREACHED_CALL_STATUSES: readonly string[] = ['busy', 'no-answer', 'failed', 'canceled'];
+
+/**
+ * A Twilio `statusCallback` webhook — call progress and disposition.
+ *
+ * By default Twilio sends only the terminal event, which covers every
+ * disposition (`completed` / `busy` / `no-answer` / `failed` / `canceled`); set
+ * `CallOptions.statusCallbackEvent` for the intermediate ones. Register a
+ * handler via `VoiceChannel.onCallStatus`.
+ *
+ * `isUnreached` is computed at parse time so application code doesn't have to
+ * match disposition strings itself.
+ */
+export const CallStatusEventSchema = z
+  .object({
+    ...CallEventBaseShape,
+    callStatus: z.string().optional(),
+    callDuration: z.string().optional(),
+    sipResponseCode: z.string().optional(),
+  })
+  .transform(event => ({
+    ...event,
+    /** Call ended without reaching the callee — i.e. worth a retry. */
+    isUnreached: UNREACHED_CALL_STATUSES.includes(event.callStatus ?? ''),
+  }));
+
+export type CallStatusEvent = z.infer<typeof CallStatusEventSchema>;
+
+const CALL_STATUS_EVENT_ALIASES: Record<string, string> = {
+  ...CALL_EVENT_BASE_ALIASES,
+  CallStatus: 'callStatus',
+  CallDuration: 'callDuration',
+  SipResponseCode: 'sipResponseCode',
+};
+
+/** Build a {@link CallStatusEvent} from a raw Twilio webhook form. */
+export function callStatusEventFromForm(form: Record<string, string>): CallStatusEvent {
+  const { known, extra } = splitCallEventForm(form, CALL_STATUS_EVENT_ALIASES);
+  return CallStatusEventSchema.parse({ ...known, extra });
+}
+
+/**
+ * A Twilio `asyncAmdStatusCallback` webhook — answering machine detection.
+ *
+ * Fires at most once per call, and only when the call set both
+ * `CallOptions.machineDetection` and `asyncAmd`.
+ *
+ * `answeredBy` is mode-dependent — `machine_start` under `'Enable'`,
+ * `machine_end_beep` / `machine_end_silence` / `machine_end_other` under
+ * `'DetectMessageEnd'`, plus `human` / `fax` / `unknown` in both. Use
+ * `isMachine` rather than matching those yourself. Register a handler via
+ * `VoiceChannel.onAmd`.
+ */
+export const AmdEventSchema = z
+  .object({
+    ...CallEventBaseShape,
+    answeredBy: z.string().optional(),
+    machineDetectionDuration: z.string().optional(),
+  })
+  .transform(event => ({
+    ...event,
+    /**
+     * A machine answered — any `machine_*` value, either mode. `unknown`
+     * (detection timed out) is false, so a call is never hung up on a guess.
+     */
+    isMachine: (event.answeredBy ?? '').startsWith('machine'),
+  }));
+
+export type AmdEvent = z.infer<typeof AmdEventSchema>;
+
+const AMD_EVENT_ALIASES: Record<string, string> = {
+  ...CALL_EVENT_BASE_ALIASES,
+  AnsweredBy: 'answeredBy',
+  MachineDetectionDuration: 'machineDetectionDuration',
+};
+
+/** Build an {@link AmdEvent} from a raw Twilio webhook form. */
+export function amdEventFromForm(form: Record<string, string>): AmdEvent {
+  const { known, extra } = splitCallEventForm(form, AMD_EVENT_ALIASES);
+  return AmdEventSchema.parse({ ...known, extra });
+}
+
+/**
+ * A Twilio `recordingStatusCallback` webhook — a recording became available.
+ *
+ * Fires when the recording is ready (`recordingUrl` accessible), only when
+ * recording is enabled. Register a handler via `VoiceChannel.onRecording`.
+ */
+export const RecordingEventSchema = z.object({
+  ...CallEventBaseShape,
+  recordingSid: z.string().optional(),
+  recordingUrl: z.string().optional(),
+  recordingStatus: z.string().optional(),
+  recordingDuration: z.string().optional(),
+});
+
+export type RecordingEvent = z.infer<typeof RecordingEventSchema>;
+
+const RECORDING_EVENT_ALIASES: Record<string, string> = {
+  ...CALL_EVENT_BASE_ALIASES,
+  RecordingSid: 'recordingSid',
+  RecordingUrl: 'recordingUrl',
+  RecordingStatus: 'recordingStatus',
+  RecordingDuration: 'recordingDuration',
+};
+
+/** Build a {@link RecordingEvent} from a raw Twilio webhook form. */
+export function recordingEventFromForm(form: Record<string, string>): RecordingEvent {
+  const { known, extra } = splitCallEventForm(form, RECORDING_EVENT_ALIASES);
+  return RecordingEventSchema.parse({ ...known, extra });
+}
+
+// =========================================================================
+// Calls API parameters (calls.create passthrough)
+// =========================================================================
+
+/**
+ * Every parameter `client.calls.create()` accepts, as of the pinned Twilio SDK.
+ *
+ * Unlike Python's `inspect.signature`, TypeScript has no runtime view of a
+ * function's accepted keys, so the set is listed here and pinned to the SDK by
+ * {@link _CallsCreateDriftGuards} at typecheck time. It's needed at runtime
+ * because the Node SDK builds its request body from an explicit whitelist —
+ * an unrecognized key is **silently dropped**, not an error, so without this a
+ * typo would look like it worked.
+ */
+const CALLS_CREATE_PARAMS = [
+  'applicationSid',
+  'asyncAmd',
+  'asyncAmdStatusCallback',
+  'asyncAmdStatusCallbackMethod',
+  'byoc',
+  'callerId',
+  'callReason',
+  'callToken',
+  'clientNotificationUrl',
+  'fallbackMethod',
+  'fallbackUrl',
+  'from',
+  'machineDetection',
+  'machineDetectionSilenceTimeout',
+  'machineDetectionSpeechEndThreshold',
+  'machineDetectionSpeechThreshold',
+  'machineDetectionTimeout',
+  'method',
+  'record',
+  'recordingChannels',
+  'recordingStatusCallback',
+  'recordingStatusCallbackEvent',
+  'recordingStatusCallbackMethod',
+  'recordingTrack',
+  'sendDigits',
+  'sipAuthPassword',
+  'sipAuthUsername',
+  'statusCallback',
+  'statusCallbackEvent',
+  'statusCallbackMethod',
+  'timeLimit',
+  'timeout',
+  'to',
+  'trim',
+  'twiml',
+  'url',
+] as const;
+
+/**
+ * `calls.create` parameters TAC owns — it builds the call and its TwiML, so a
+ * caller setting these would either be overwritten or break the call.
+ */
+const RESERVED_CALL_PARAMS = ['to', 'from', 'twiml', 'url', 'applicationSid'] as const;
+
+type ReservedCallParam = (typeof RESERVED_CALL_PARAMS)[number];
+
+/**
+ * The `calls.create` parameters TAC types explicitly — the ones outbound
+ * ConversationRelay reaches for. Everything else the SDK accepts is still
+ * forwarded, typed by the SDK itself via {@link CallOptions}.
+ */
+export interface TypedCallOptions {
+  /**
+   * Enables AMD. `'Enable'` reports as soon as it can tell human from machine
+   * (to hang up on voicemail); `'DetectMessageEnd'` waits out the greeting (to
+   * leave a message). Required, together with `asyncAmd`, for `onAmd` to fire.
+   */
+  machineDetection?: 'Enable' | 'DetectMessageEnd' | undefined;
+  /**
+   * Detect in the background. Required for `onAmd`: with it off, `AnsweredBy`
+   * comes back on the TwiML request, which inline TwiML can't receive.
+   *
+   * Twilio's API types this as a string; a boolean is serialized for you.
+   */
+  asyncAmd?: boolean | string | undefined;
+  asyncAmdStatusCallback?: string | undefined;
+  asyncAmdStatusCallbackMethod?: string | undefined;
+  machineDetectionTimeout?: number | undefined;
+  machineDetectionSpeechThreshold?: number | undefined;
+  machineDetectionSpeechEndThreshold?: number | undefined;
+  machineDetectionSilenceTimeout?: number | undefined;
+
+  /** Required for `onRecording`. */
+  record?: boolean | undefined;
+  recordingStatusCallback?: string | undefined;
+  recordingStatusCallbackEvent?: string[] | undefined;
+  recordingChannels?: string | undefined;
+  recordingTrack?: string | undefined;
+
+  statusCallback?: string | undefined;
+  /**
+   * Lifecycle events to report. Omitted, Twilio sends only `'completed'` —
+   * which covers busy/canceled/failed/no-answer. Set it for ringing/answered.
+   */
+  statusCallbackEvent?: string[] | undefined;
+  statusCallbackMethod?: string | undefined;
+  /** Seconds to ring before giving up. Twilio defaults to 60. */
+  timeout?: number | undefined;
+}
+
+/**
+ * Parameters for Twilio's `client.calls.create()`.
+ *
+ * {@link TypedCallOptions} covers the ones outbound ConversationRelay reaches
+ * for; any other parameter `calls.create()` accepts is forwarded too, typed by
+ * the Twilio SDK. TAC-owned parameters (`to`, `from`, `twiml`, `url`,
+ * `applicationSid`) are excluded — TAC builds the call and its TwiML.
+ *
+ * Unknown keys are rejected at validation, so a typo fails at
+ * `initiateOutboundConversation` rather than being silently dropped by the SDK.
+ *
+ * @example
+ * ```typescript
+ * const callOptions: CallOptions = {
+ *   machineDetection: 'Enable',
+ *   asyncAmd: true,
+ *   record: true,
+ * };
+ * ```
+ */
+export type CallOptions = TypedCallOptions &
+  Omit<CallListInstanceCreateOptions, ReservedCallParam | keyof TypedCallOptions>;
+
+/**
+ * @internal Fails typecheck unless instantiated with `true`. A conditional type
+ * that merely resolves to `never` is not an error on its own, so the assertion
+ * has to be a constraint violation to be load-bearing.
+ */
+type _AssertTrue<T extends true> = T;
+
+/**
+ * @internal Compile-time SDK drift guards — do not use directly.
+ * If the Twilio SDK adds, removes, or renames a `calls.create` parameter these
+ * checks fail during `npm run typecheck`, signaling that
+ * {@link CALLS_CREATE_PARAMS} needs updating. Without the `complete` direction a
+ * newly added SDK parameter would be rejected at runtime as unknown.
+ */
+export type _CallsCreateDriftGuards = {
+  known: _AssertTrue<
+    (typeof CALLS_CREATE_PARAMS)[number] extends keyof CallListInstanceCreateOptions ? true : false
+  >;
+  complete: _AssertTrue<
+    keyof CallListInstanceCreateOptions extends (typeof CALLS_CREATE_PARAMS)[number] ? true : false
+  >;
+  typedAreRealParams: _AssertTrue<
+    keyof TypedCallOptions extends keyof CallListInstanceCreateOptions ? true : false
+  >;
+  reservedAreRealParams: _AssertTrue<
+    ReservedCallParam extends keyof CallListInstanceCreateOptions ? true : false
+  >;
+};
+
+const ACCEPTED_CALL_PARAMS: ReadonlySet<string> = new Set(CALLS_CREATE_PARAMS);
+
+/**
+ * Whether an `asyncAmd` value actually turns background detection on.
+ *
+ * Accepts the boolean TAC serializes for callers and the string Twilio's API
+ * types the parameter as, so `'false'` reads as off rather than as a non-empty
+ * (therefore truthy) string.
+ */
+function isAsyncAmdEnabled(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+  return false;
+}
+
+/**
+ * Runtime validation for {@link CallOptions}.
+ *
+ * Loose rather than strict so untyped-but-real Calls API parameters pass
+ * through; `superRefine` then rejects TAC-owned and unknown keys explicitly so
+ * the message says which mistake was made.
+ */
+const CallOptionsObjectSchema = z
+  .looseObject({
+    machineDetection: z.enum(['Enable', 'DetectMessageEnd']).optional(),
+    asyncAmd: z.union([z.boolean(), z.string()]).optional(),
+    asyncAmdStatusCallback: z.string().optional(),
+    asyncAmdStatusCallbackMethod: z.string().optional(),
+    machineDetectionTimeout: z.number().int().optional(),
+    machineDetectionSpeechThreshold: z.number().int().optional(),
+    machineDetectionSpeechEndThreshold: z.number().int().optional(),
+    machineDetectionSilenceTimeout: z.number().int().optional(),
+
+    record: z.boolean().optional(),
+    recordingStatusCallback: z.string().optional(),
+    recordingStatusCallbackEvent: z.array(z.string()).optional(),
+    recordingChannels: z.string().optional(),
+    recordingTrack: z.string().optional(),
+
+    statusCallback: z.string().optional(),
+    statusCallbackEvent: z.array(z.string()).optional(),
+    statusCallbackMethod: z.string().optional(),
+    timeout: z.number().int().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const supplied = Object.keys(value);
+
+    const conflict = supplied.filter(key =>
+      (RESERVED_CALL_PARAMS as readonly string[]).includes(key)
+    );
+    if (conflict.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          `callOptions may not set TAC-owned call parameters: ${conflict.sort().join(', ')}. ` +
+          'TAC builds the call and its TwiML.',
+      });
+    }
+
+    const unknown = supplied.filter(key => !ACCEPTED_CALL_PARAMS.has(key));
+    if (unknown.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          "callOptions has parameters Twilio's calls.create() does not accept: " +
+          `${unknown.sort().join(', ')}. Check for a typo, or upgrade the twilio package.`,
+      });
+    }
+
+    // AMD needs both flags. machineDetection turns detection on; asyncAmd
+    // delivers AnsweredBy to a callback. Without asyncAmd, Twilio returns it on
+    // the TwiML request instead — unreachable, since TAC sends inline TwiML.
+    //
+    // asyncAmd is checked by value, not truthiness: Twilio's API types it as a
+    // string, and `Boolean('false')` is true — so a plain truthiness test would
+    // wave through `asyncAmd: 'false'` and silently deliver no AMD event.
+    if (Boolean(value.machineDetection) !== isAsyncAmdEnabled(value.asyncAmd)) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'AMD requires both machineDetection and asyncAmd; got ' +
+          `machineDetection=${JSON.stringify(value.machineDetection)}, ` +
+          `asyncAmd=${JSON.stringify(value.asyncAmd)}.`,
+      });
+    }
+  });
+
+/**
+ * Validates {@link CallOptions}. The parsed value is re-widened to `CallOptions`
+ * because the loose object's inferred index signature would otherwise erase the
+ * SDK-derived parameter types.
+ */
+export const CallOptionsSchema: z.ZodType<CallOptions, unknown> = CallOptionsObjectSchema.transform(
+  value => value as CallOptions
+);
+
+/**
+ * Serialize {@link CallOptions} into the argument object for
+ * `client.calls.create()`, dropping unset keys.
+ *
+ * `asyncAmd` is coerced to a string because Twilio's SDK types it as one,
+ * unlike `record`.
+ */
+export function callOptionsToCreateParams(options: CallOptions): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined) continue;
+    params[key] = key === 'asyncAmd' && typeof value === 'boolean' ? String(value) : value;
+  }
+  return params;
+}
+
+// =========================================================================
 // Outbound Voice Conversation Types
 // =========================================================================
 
@@ -630,6 +1065,12 @@ export interface InitiateVoiceConversationOptions {
    * `VoiceChannelConfig.defaultTwimlOptions` and TAC defaults.
    */
   twimlOptions?: TwiMLOptions | undefined;
+  /**
+   * Parameters for Twilio's `calls.create()` — AMD, recording, status
+   * callbacks, timeout (see {@link CallOptions}). Callback URLs auto-wire when
+   * the matching handler is registered; an explicit URL wins.
+   */
+  callOptions?: CallOptions | undefined;
 }
 
 export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> = z
@@ -637,6 +1078,7 @@ export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConv
     to: z.string().min(1, 'Recipient phone number is required'),
     websocketUrl: z.url().optional(),
     twimlOptions: TwiMLOptionsSchema.optional(),
+    callOptions: CallOptionsSchema.optional(),
   })
   // Reject removed flat fields (welcomeGreeting, actionUrl, customParameters,
   // conversationRelayConfig) so callers upgrading from older TAC versions get

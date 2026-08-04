@@ -1,4 +1,5 @@
 import { TACConfigData, TACConfigSchema, EnvironmentVariables } from '../types/index';
+import type { CallEventKind } from '../types/index';
 import { z } from 'zod';
 
 /**
@@ -31,6 +32,8 @@ export class TACConfig {
   public readonly voiceWebsocketPath: string;
   /** Path the ConversationRelay action callback is served at (default '/conversation-relay-callback'). */
   public readonly voiceActionPath: string;
+  /** Base path the call-event callbacks are served under (default '/twilio/call-events'). */
+  public readonly voiceCallEventPath: string;
   public readonly cintelConfigurationId?: string;
   public readonly cintelObservationOperatorSid?: string;
   public readonly cintelSummaryOperatorSid?: string;
@@ -68,9 +71,10 @@ export class TACConfig {
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
-    // voiceWebsocketPath / voiceActionPath always have schema defaults
+    // voiceWebsocketPath / voiceActionPath / voiceCallEventPath always have schema defaults
     this.voiceWebsocketPath = validatedConfig.voiceWebsocketPath;
     this.voiceActionPath = validatedConfig.voiceActionPath;
+    this.voiceCallEventPath = validatedConfig.voiceCallEventPath;
     if (validatedConfig.cintelConfigurationId) {
       this.cintelConfigurationId = validatedConfig.cintelConfigurationId;
     }
@@ -104,6 +108,7 @@ export class TACConfig {
    * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
    * - TWILIO_VOICE_WEBSOCKET_PATH: Path for the voice WebSocket (default: /ws)
    * - TWILIO_VOICE_ACTION_PATH: Path for the ConversationRelay action callback (default: /conversation-relay-callback)
+   * - TWILIO_VOICE_CALL_EVENT_PATH: Base path for the call-event callbacks — status, async AMD, recording (default: /twilio/call-events)
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
    * - TWILIO_RCS_SENDER_ID: RCS Sender ID for the RCS channel
@@ -252,6 +257,8 @@ export class TACConfig {
       voiceWebsocketPath:
         process.env[EnvironmentVariables.TWILIO_VOICE_WEBSOCKET_PATH] || undefined,
       voiceActionPath: process.env[EnvironmentVariables.TWILIO_VOICE_ACTION_PATH] || undefined,
+      voiceCallEventPath:
+        process.env[EnvironmentVariables.TWILIO_VOICE_CALL_EVENT_PATH] || undefined,
       cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
       cintelObservationOperatorSid:
         process.env[EnvironmentVariables.TWILIO_TAC_CI_OBSERVATION_OPERATOR_SID],
@@ -262,6 +269,26 @@ export class TACConfig {
     };
 
     return new TACConfig(rawConfig);
+  }
+
+  /**
+   * Path a call-event callback is served at.
+   *
+   * Single source of truth: the voice channel builds callback URLs from this
+   * and TACServer registers routes at it, so the two can't drift.
+   */
+  public callEventPath(kind: CallEventKind): string {
+    return `${this.voiceCallEventPath.replace(/\/+$/, '')}/${kind}`;
+  }
+
+  /**
+   * Public URL for a call-event callback, or `undefined` without a public domain.
+   */
+  public callEventUrl(kind: CallEventKind): string | undefined {
+    if (!this.voicePublicDomain) {
+      return undefined;
+    }
+    return `https://${this.voicePublicDomain}${this.callEventPath(kind)}`;
   }
 
   /**

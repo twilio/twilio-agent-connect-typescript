@@ -5,6 +5,7 @@ import {
   maskAddress,
   scrubPii,
   scrubObject,
+  redactTwimlParameters,
   SMSChannel,
   TAC,
 } from '@twilio/tac-core';
@@ -83,6 +84,65 @@ describe('PII masking', () => {
 
     it('should return *** for single char', () => {
       expect(maskAddress('x')).toBe('***');
+    });
+  });
+
+  // <Parameter> values are arbitrary developer data, so they're masked.
+  describe('redactTwimlParameters', () => {
+    it('masks parameter values and keeps their names', () => {
+      const twiml =
+        '<Response><Connect action="https://x/cb">' +
+        '<ConversationRelay url="wss://x/ws" welcomeGreeting="Hi">' +
+        '<Parameter name="profile_id" value="PR123"/>' +
+        '<Parameter name="caller_name" value="Jane Doe"/>' +
+        '</ConversationRelay></Connect></Response>';
+
+      const result = redactTwimlParameters(twiml);
+
+      expect(result).not.toContain('PR123');
+      expect(result).not.toContain('Jane Doe');
+      // Names survive: knowing which parameters were sent is the point.
+      expect(result).toContain('name="profile_id"');
+      expect(result).toContain('name="caller_name"');
+      expect(result.match(/value="\*\*\*"/g)).toHaveLength(2);
+    });
+
+    it('leaves non-parameter attributes alone', () => {
+      // The WS/action URLs and greeting are TAC-generated config, not user data.
+      const twiml =
+        '<Response><Connect action="https://x/cb">' +
+        '<ConversationRelay url="wss://x/ws" welcomeGreeting="Hello there"/>' +
+        '</Connect></Response>';
+
+      expect(redactTwimlParameters(twiml)).toBe(twiml);
+    });
+
+    it('masks single-quoted values', () => {
+      // The Twilio SDK double-quotes, but this takes any string.
+      const result = redactTwimlParameters("<Parameter name='profile_id' value='PR123'/>");
+
+      expect(result).not.toContain('PR123');
+      expect(result).toContain("value='***'");
+      expect(result).toContain("name='profile_id'");
+    });
+
+    it('does not end the match early on the other quote style', () => {
+      const result = redactTwimlParameters(`<Parameter name="note" value='say "hi"'/>`);
+
+      expect(result).not.toContain('hi');
+      expect(result).toContain("value='***'");
+    });
+
+    it('handles empty input', () => {
+      expect(redactTwimlParameters(undefined)).toBe('');
+      expect(redactTwimlParameters('')).toBe('');
+    });
+
+    it('masks a value containing special characters', () => {
+      const result = redactTwimlParameters('<Parameter name="note" value="a=b&amp;c d"/>');
+
+      expect(result).toContain('value="***"');
+      expect(result).not.toContain('a=b');
     });
   });
 

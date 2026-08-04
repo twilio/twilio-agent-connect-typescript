@@ -713,6 +713,212 @@ describe('TACServer voice TwiML', () => {
   });
 });
 
+// One route per Twilio callback; the route is the event discriminator.
+describe('TACServer call event routes', () => {
+  const getTestConfig = () => ({
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    voicePublicDomain: 'test.ngrok.io',
+  });
+
+  let tac: TAC;
+  let server: TACServer;
+  let voiceChannel: VoiceChannel;
+  let currentPort: number;
+
+  beforeEach(async () => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+    mockValidateRequest.mockReturnValue(true);
+
+    currentPort = getNextPort();
+
+    tac = await createTestTAC(new TACConfig(getTestConfig()));
+    voiceChannel = new VoiceChannel(tac);
+    tac.registerChannel(voiceChannel);
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  const post = async (path: string, body: string): Promise<Response> =>
+    fetch(`http://localhost:${currentPort}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Twilio-Signature': 'valid',
+      },
+      body,
+    });
+
+  it('registers all three routes at the configured base path', async () => {
+    const cfg = { ...getTestConfig(), voiceCallEventPath: '/hooks/calls' };
+    const t = await createTestTAC(new TACConfig(cfg));
+    const voice = new VoiceChannel(t);
+    t.registerChannel(voice);
+    const port = getNextPort();
+    const s = new TACServer(t, { port });
+    await s.start();
+
+    const seen: string[] = [];
+    voice.onCallStatus(() => {
+      seen.push('status');
+    });
+    voice.onAmd(() => {
+      seen.push('amd');
+    });
+    voice.onRecording(() => {
+      seen.push('recording');
+    });
+
+    for (const kind of ['status', 'amd', 'recording']) {
+      const resp = await fetch(`http://localhost:${port}/hooks/calls/${kind}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-Twilio-Signature': 'valid',
+        },
+        body: 'CallSid=CA1',
+      });
+      expect(resp.status).toBe(200);
+    }
+    expect(seen).toEqual(['status', 'amd', 'recording']);
+
+    await s.stop().catch(() => {});
+    t.shutdown();
+  });
+
+  it.each(['status', 'amd', 'recording'])('rejects an invalid signature on /%s', async kind => {
+    mockValidateRequest.mockReturnValue(false);
+    server = new TACServer(tac, { port: currentPort });
+    await server.start();
+
+    const resp = await post(`/twilio/call-events/${kind}`, 'CallSid=CA1');
+
+    expect(resp.status).toBe(403);
+  });
+
+  it.each([
+    ['status', 'CallSid=CA1&CallStatus=no-answer', 'callStatus', 'no-answer'],
+    ['amd', 'CallSid=CA1&AnsweredBy=machine_start', 'answeredBy', 'machine_start'],
+    ['recording', 'CallSid=CA1&RecordingStatus=completed', 'recordingStatus', 'completed'],
+  ])('dispatches /%s to its own handler', async (kind, body, field, expected) => {
+    // Pins each route to its own handler, not all three to one.
+    const received: Record<string, unknown[]> = { status: [], amd: [], recording: [] };
+    voiceChannel.onCallStatus(event => {
+      received.status!.push(event);
+    });
+    voiceChannel.onAmd(event => {
+      received.amd!.push(event);
+    });
+    voiceChannel.onRecording(event => {
+      received.recording!.push(event);
+    });
+
+    server = new TACServer(tac, { port: currentPort });
+    await server.start();
+
+    const resp = await post(`/twilio/call-events/${kind}`, `AccountSid=ACtest123456789&${body}`);
+
+    expect(resp.status).toBe(200);
+    expect(received[kind]).toHaveLength(1);
+    expect((received[kind]![0] as Record<string, unknown>)[field]).toBe(expected);
+    // Only the matching handler fired.
+    for (const [other, events] of Object.entries(received)) {
+      if (other !== kind) expect(events).toEqual([]);
+    }
+  });
+
+  it('returns 200 with no handler registered', async () => {
+    // Routes register unconditionally, so a stale config no-ops instead of 404ing.
+    server = new TACServer(tac, { port: currentPort });
+    await server.start();
+
+    const resp = await post('/twilio/call-events/status', 'CallSid=CA1&CallStatus=completed');
+
+    expect(resp.status).toBe(200);
+  });
+
+  it('returns 400 when the handler throws', async () => {
+    voiceChannel.onAmd(() => {
+      throw new Error('handler exploded');
+    });
+    server = new TACServer(tac, { port: currentPort });
+    await server.start();
+
+    const resp = await post('/twilio/call-events/amd', 'CallSid=CA1&AnsweredBy=human');
+
+    expect(resp.status).toBe(400);
+  });
+
+  it('returns 400 when CallSid is missing', async () => {
+    // Better a 400 than handing the handler an empty SID to act on.
+    const received: unknown[] = [];
+    voiceChannel.onAmd(event => {
+      received.push(event);
+    });
+    server = new TACServer(tac, { port: currentPort });
+    await server.start();
+
+    const resp = await post('/twilio/call-events/amd', 'AnsweredBy=machine_start');
+
+    expect(resp.status).toBe(400);
+    expect(received).toEqual([]);
+  });
+
+  it('throws at construction when a derived call-event path collides', async () => {
+    // Checked on the derived /status path — why this collision is invisible.
+    const t = await createTestTAC(
+      new TACConfig({ ...getTestConfig(), voiceCallEventPath: '/hooks' })
+    );
+    const voice = new VoiceChannel(t);
+    t.registerChannel(voice);
+
+    expect(
+      () => new TACServer(t, { port: getNextPort(), webhookPaths: { twiml: '/hooks/status' } })
+    ).toThrow(/collides with/);
+
+    t.shutdown();
+  });
+
+  it('allows the call-event base to equal another path', async () => {
+    // Sharing a base is fine — the registered paths are <base>/<kind>.
+    const t = await createTestTAC(
+      new TACConfig({ ...getTestConfig(), voiceCallEventPath: '/twiml' })
+    );
+    const voice = new VoiceChannel(t);
+    t.registerChannel(voice);
+
+    // No throw: /twiml vs /twiml/status, /twiml/amd, /twiml/recording.
+    expect(
+      () => new TACServer(t, { port: getNextPort(), webhookPaths: { twiml: '/twiml' } })
+    ).not.toThrow();
+
+    t.shutdown();
+  });
+
+  it('leaves pre-existing path collisions alone', async () => {
+    // Scoped to voiceCallEventPath — configs that used to start still do.
+    const t = await createTestTAC(new TACConfig({ ...getTestConfig(), voiceActionPath: '/twiml' }));
+    const voice = new VoiceChannel(t);
+    t.registerChannel(voice);
+
+    expect(
+      () => new TACServer(t, { port: getNextPort(), webhookPaths: { twiml: '/twiml' } })
+    ).not.toThrow();
+
+    t.shutdown();
+  });
+});
+
 describe('TACServer customization', () => {
   const getTestConfig = () => ({
     accountSid: 'ACtest123456789',
