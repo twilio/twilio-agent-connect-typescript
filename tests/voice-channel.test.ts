@@ -2009,6 +2009,7 @@ describe('VoiceChannel', () => {
       );
 
       expect(endIndex).toBeGreaterThan(-1);
+      expect(finalMarkerIndex).toBeGreaterThan(-1);
       expect(messages[endIndex].handoffData).toBe(
         JSON.stringify({ conversationId: 'CHstream_test' })
       );
