@@ -129,7 +129,6 @@ export class TAC {
           tac.memoryClient,
           {
             configurationId: tac.config.cintelConfigurationId,
-            observationOperatorSid: tac.config.cintelObservationOperatorSid,
             summaryOperatorSid: tac.config.cintelSummaryOperatorSid,
           },
           tac.logger.child({ component: 'cintel' })

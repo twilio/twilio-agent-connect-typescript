@@ -94,7 +94,6 @@ export type OperatorProcessingResult = z.infer<typeof OperatorProcessingResultSc
  */
 export const ConversationIntelligenceConfigSchema = z.object({
   configurationId: z.string(),
-  observationOperatorSid: z.string().optional(),
   summaryOperatorSid: z.string().optional(),
 });
 

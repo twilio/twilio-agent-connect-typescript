@@ -150,6 +150,99 @@ describe('MemoryClient', () => {
     });
   });
 
+  describe('createObservation()', () => {
+    const observationsUrl =
+      '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/mem_profile_00000000000000000000000001/Observations';
+
+    it('should wrap the observation in an observations array with occurredAt', async () => {
+      mockAdapter.onPost(observationsUrl).reply(201, { message: 'Observations created' });
+
+      const result = await memoryClient.createObservation(
+        'mem_profile_00000000000000000000000001',
+        'Customer prefers email contact',
+        'conversation-intelligence',
+        ['conv_1'],
+        '2024-01-01T00:00:00Z'
+      );
+
+      expect(result).toEqual({ message: 'Observations created' });
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body).toEqual({
+        observations: [
+          {
+            content: 'Customer prefers email contact',
+            source: 'conversation-intelligence',
+            occurredAt: '2024-01-01T00:00:00Z',
+            conversationIds: ['conv_1'],
+          },
+        ],
+      });
+    });
+
+    it('should default occurredAt to the current time when omitted', async () => {
+      mockAdapter.onPost(observationsUrl).reply(201, { message: 'Observations created' });
+
+      await memoryClient.createObservation(
+        'mem_profile_00000000000000000000000001',
+        'Customer mentioned a billing issue'
+      );
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.observations).toHaveLength(1);
+      const observation = body.observations[0];
+      expect(observation.content).toBe('Customer mentioned a billing issue');
+      expect(observation.source).toBe('conversation-intelligence');
+      expect(typeof observation.occurredAt).toBe('string');
+      expect(new Date(observation.occurredAt).toISOString()).toBe(observation.occurredAt);
+      expect(observation.conversationIds).toBeUndefined();
+    });
+
+    it('should default occurredAt to the current time when blank', async () => {
+      mockAdapter.onPost(observationsUrl).reply(201, { message: 'Observations created' });
+
+      await memoryClient.createObservation(
+        'mem_profile_00000000000000000000000001',
+        'Customer mentioned a billing issue',
+        'conversation-intelligence',
+        undefined,
+        ''
+      );
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      const observation = body.observations[0];
+      expect(observation.occurredAt).not.toBe('');
+      expect(observation.occurredAt.trim()).not.toBe('');
+      expect(new Date(observation.occurredAt).toISOString()).toBe(observation.occurredAt);
+    });
+
+    it('should preserve a non-empty occurredAt unchanged', async () => {
+      mockAdapter.onPost(observationsUrl).reply(201, { message: 'Observations created' });
+
+      await memoryClient.createObservation(
+        'mem_profile_00000000000000000000000001',
+        'Customer mentioned a billing issue',
+        'conversation-intelligence',
+        undefined,
+        '2024-01-01T00:00:00Z'
+      );
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.observations[0].occurredAt).toBe('2024-01-01T00:00:00Z');
+    });
+
+    it('should handle API errors', async () => {
+      mockAdapter.onPost(observationsUrl).reply(500);
+
+      await expect(
+        memoryClient.createObservation(
+          'mem_profile_00000000000000000000000001',
+          'Some observation'
+        )
+      ).rejects.toThrow(/Failed to create observation/);
+    });
+  });
+
   describe('retrieveMemories()', () => {
     const recallUrl =
       '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/mem_profile_00000000000000000000000001/Recall';
