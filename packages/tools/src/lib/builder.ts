@@ -1,11 +1,11 @@
-import { ToolFunction, JSONSchema } from '@twilio/tac-core';
+import { ToolFunction, JSONSchema, OpenAITool, AnthropicTool } from '@twilio/tac-core';
 
 /**
  * TAC Tool class with helper methods for LLM integration
  *
  * Matches Python's TACTool dataclass with conversion methods.
  */
-export class TACTool<TParams = any, TResult = any> {
+export class TACTool<TParams = unknown, TResult = unknown> {
   constructor(
     public readonly name: string,
     public readonly description: string,
@@ -16,7 +16,7 @@ export class TACTool<TParams = any, TResult = any> {
   /**
    * Convert to OpenAI function calling format
    */
-  toOpenAIFormat(): Record<string, any> {
+  toOpenAIFormat(): OpenAITool {
     return {
       type: 'function',
       function: {
@@ -30,7 +30,7 @@ export class TACTool<TParams = any, TResult = any> {
   /**
    * Convert to Anthropic tool calling format
    */
-  toAnthropicFormat(): Record<string, any> {
+  toAnthropicFormat(): AnthropicTool {
     return {
       name: this.name,
       description: this.description,
@@ -110,7 +110,7 @@ export class TACTool<TParams = any, TResult = any> {
  * Simplified approach matching Python's create_tool function.
  * No builder pattern - just a simple function call.
  */
-export function defineTool<TParams = any, TResult = any>(
+export function defineTool<TParams = unknown, TResult = unknown>(
   name: string,
   description: string,
   parameters: JSONSchema,

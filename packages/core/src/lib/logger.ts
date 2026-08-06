@@ -6,8 +6,7 @@ import { scrubObject } from '../util/log-redaction';
  */
 export type Logger = pino.Logger;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function piiLogMethod(this: any, args: unknown[], method: pino.LogFn) {
+function piiLogMethod(this: pino.Logger, args: unknown[], method: pino.LogFn): void {
   const scrubbed = args.map(arg =>
     typeof arg === 'string'
       ? scrubObject(arg)
