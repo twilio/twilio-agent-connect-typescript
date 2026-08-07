@@ -103,6 +103,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel
 - **[RCS Example](examples/rcs/)** - RCS (Rich Communication Services) channel using the OpenAI Agents SDK
 - **[Outbound Example](examples/outbound/)** - Agent-initiated outbound conversations via SMS, RCS, WhatsApp, or Voice
+- **[Langflow Example](examples/langflow/)** - Use a Langflow flow as the agent brain across Voice, SMS, and WhatsApp, with streaming voice
 
 ## Next Steps
 

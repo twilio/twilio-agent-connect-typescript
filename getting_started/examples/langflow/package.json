@@ -1,0 +1,22 @@
+{
+  "name": "tac-example-langflow",
+  "version": "1.0.0",
+  "description": "Langflow integration example for Twilio Agent Connect",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts | pino-pretty",
+    "start": "tsx watch src/index.ts | pino-pretty"
+  },
+  "dependencies": {
+    "twilio-agent-connect": "file:../../..",
+    "dotenv": "^16.4.5",
+    "@datastax/langflow-client": "^0.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
