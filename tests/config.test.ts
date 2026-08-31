@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { TACConfig } from '@twilio/tac-core';
+import { TACConfig, CALL_EVENT_KINDS } from '@twilio/tac-core';
 
 describe('TACConfig', () => {
   const getTestConfigData = () => ({
@@ -298,25 +298,30 @@ describe('TACConfig', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
       delete process.env.TWILIO_VOICE_ACTION_PATH;
+      delete process.env.TWILIO_VOICE_CALL_EVENT_PATH;
 
       const config = TACConfig.fromEnv();
 
       expect(config.voiceWebsocketPath).toBe('/ws');
       expect(config.voiceActionPath).toBe('/conversation-relay-callback');
+      expect(config.voiceCallEventPath).toBe('/twilio/call-events');
     });
 
     it('should read voice paths from env vars', () => {
       setRequiredEnvVars();
       process.env.TWILIO_VOICE_WEBSOCKET_PATH = '/voice/ws';
       process.env.TWILIO_VOICE_ACTION_PATH = '/voice/cleanup';
+      process.env.TWILIO_VOICE_CALL_EVENT_PATH = '/voice/hooks';
 
       const config = TACConfig.fromEnv();
 
       expect(config.voiceWebsocketPath).toBe('/voice/ws');
       expect(config.voiceActionPath).toBe('/voice/cleanup');
+      expect(config.voiceCallEventPath).toBe('/voice/hooks');
 
       delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
       delete process.env.TWILIO_VOICE_ACTION_PATH;
+      delete process.env.TWILIO_VOICE_CALL_EVENT_PATH;
     });
 
     it('should apply defaults when voice path env vars are empty/whitespace', () => {
@@ -340,6 +345,16 @@ describe('TACConfig', () => {
       expect(() => TACConfig.fromEnv()).toThrow(/start with/);
 
       delete process.env.TWILIO_VOICE_WEBSOCKET_PATH;
+    });
+
+    it('should reject a call-event path without a leading slash', () => {
+      // 'hooks/calls' would build 'https://example.comhooks/calls/status'.
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_CALL_EVENT_PATH = 'hooks/calls';
+
+      expect(() => TACConfig.fromEnv()).toThrow(/start with/);
+
+      delete process.env.TWILIO_VOICE_CALL_EVENT_PATH;
     });
 
     it('should throw error when TWILIO_ACCOUNT_SID is missing', () => {
@@ -633,6 +648,47 @@ describe('TACConfig', () => {
 
       expect(credentials.username).toBe('ACtest123456789');
       expect(credentials.password).toBe('test_token_123');
+    });
+  });
+
+  // One source of truth for the channel's URL construction and the server's
+  // route registration.
+  describe('call event paths', () => {
+    it('builds one path per kind', () => {
+      const config = new TACConfig(getTestConfigData());
+
+      expect(config.callEventPath('status')).toBe('/twilio/call-events/status');
+      expect(config.callEventPath('amd')).toBe('/twilio/call-events/amd');
+      expect(config.callEventPath('recording')).toBe('/twilio/call-events/recording');
+    });
+
+    it('normalizes a trailing slash on the base path', () => {
+      const config = new TACConfig({ ...getTestConfigData(), voiceCallEventPath: '/hooks/calls/' });
+
+      expect(config.callEventPath('amd')).toBe('/hooks/calls/amd');
+    });
+
+    it('returns no URL without a public domain', () => {
+      const config = new TACConfig(getTestConfigData());
+
+      expect(config.callEventUrl('status')).toBeUndefined();
+    });
+
+    it('builds a URL from the public domain', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        voicePublicDomain: 'example.ngrok.app',
+      });
+
+      expect(config.callEventUrl('status')).toBe(
+        'https://example.ngrok.app/twilio/call-events/status'
+      );
+    });
+
+    it('covers every kind in CALL_EVENT_KINDS', () => {
+      // CALL_EVENT_KINDS is what TACServer iterates to register and validate its
+      // routes; this pins the set they have to stay in step with.
+      expect([...CALL_EVENT_KINDS]).toEqual(['status', 'amd', 'recording']);
     });
   });
 });

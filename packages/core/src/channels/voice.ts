@@ -19,12 +19,22 @@ import {
   TwiMLOptions,
   TwiMLRequest,
   ConversationWebhookPayload,
+  CallOptions,
+  CallEventKind,
+  CallStatusEvent,
+  AmdEvent,
+  RecordingEvent,
+  CallOptionsSchema,
+  callOptionsToCreateParams,
+  callStatusEventFromForm,
+  amdEventFromForm,
+  recordingEventFromForm,
 } from '../types/index';
 import type { InitiateVoiceConversationResult } from '../types/conversation';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
-import { maskAddress } from '../util/log-redaction';
+import { maskAddress, redactTwimlParameters } from '../util/log-redaction';
 import { studioVoiceHandoffUrl } from '../util/handoff-urls';
 
 /** Fixed default welcome greeting applied when no layer sets one. */
@@ -51,6 +61,15 @@ export interface VoiceChannelConfig extends BaseChannelOptions {
    * higher-priority layer sets them.
    */
   defaultTwimlOptions?: TwiMLOptions;
+
+  /**
+   * Static {@link CallOptions} applied to every outbound call — the
+   * `calls.create` parameters, including the call-event callback URLs. This is
+   * the layer to use for a custom server or non-default routes: URLs set here
+   * override the ones TAC would derive from `voicePublicDomain` +
+   * `voiceCallEventPath`.
+   */
+  defaultCallOptions?: CallOptions;
 }
 
 /**
@@ -59,6 +78,15 @@ export interface VoiceChannelConfig extends BaseChannelOptions {
  * {@link TwiMLRequest} and returns {@link TwiMLOptions}.
  */
 export type InboundCallTwimlHandler = (req: TwiMLRequest) => Promise<TwiMLOptions>;
+
+/** Handler for Twilio `statusCallback` webhooks. */
+export type CallStatusHandler = (event: CallStatusEvent) => Promise<void> | void;
+
+/** Handler for Twilio `asyncAmdStatusCallback` webhooks. */
+export type AmdHandler = (event: AmdEvent) => Promise<void> | void;
+
+/** Handler for Twilio `recordingStatusCallback` webhooks. */
+export type RecordingHandler = (event: RecordingEvent) => Promise<void> | void;
 
 /**
  * Stringify a custom-parameter value for emission as a `<Parameter value=...>`.
@@ -121,6 +149,9 @@ export class VoiceChannel extends BaseChannel {
   private twilioClient: ReturnType<typeof Twilio> | undefined;
   private readonly voiceConfig: VoiceChannelConfig;
   private onInboundCallTwimlHandler: InboundCallTwimlHandler | undefined;
+  private onCallStatusHandler: CallStatusHandler | undefined;
+  private onAmdHandler: AmdHandler | undefined;
+  private onRecordingHandler: RecordingHandler | undefined;
 
   constructor(tac: TAC, options?: VoiceChannelConfig) {
     super(tac, options);
@@ -157,6 +188,77 @@ export class VoiceChannel extends BaseChannel {
    */
   public onInboundCallTwiml(callback: InboundCallTwimlHandler): void {
     this.onInboundCallTwimlHandler = callback;
+  }
+
+  /**
+   * Register a handler for Twilio `statusCallback` webhooks.
+   *
+   * This is the Calls-API status callback (call disposition), not the
+   * ConversationRelay session callback — see
+   * {@link handleConversationRelayCallback}.
+   *
+   * Registering does two things: it stores the handler, and it makes later
+   * outbound calls pass `statusCallback` to `calls.create`. With no handler
+   * registered TAC omits that parameter, so Twilio has nowhere to post and the
+   * event never arrives.
+   *
+   * Twilio reports only the terminal event by default, which covers every
+   * disposition; set `CallOptions.statusCallbackEvent` for ringing/answered.
+   *
+   * @example
+   * ```typescript
+   * voiceChannel.onCallStatus(async event => {
+   *   if (event.isUnreached) {
+   *     // queue a retry
+   *   }
+   * });
+   * ```
+   */
+  public onCallStatus(callback: CallStatusHandler): void {
+    this.onCallStatusHandler = callback;
+  }
+
+  /**
+   * Register a handler for Twilio `asyncAmdStatusCallback` webhooks.
+   *
+   * Registering makes later outbound calls pass `asyncAmdStatusCallback` to
+   * `calls.create`; without a handler TAC omits it and Twilio has nowhere to
+   * post the result. It does not enable detection — that's per-call, via
+   * `CallOptions.machineDetection` and `asyncAmd`, both of which are required
+   * for this to fire (at most once per call).
+   *
+   * @example
+   * ```typescript
+   * voiceChannel.onAmd(async event => {
+   *   if (event.isMachine) {
+   *     await voiceChannel.endCall(event.callSid); // voicemail → hang up
+   *   }
+   * });
+   * ```
+   */
+  public onAmd(callback: AmdHandler): void {
+    this.onAmdHandler = callback;
+  }
+
+  /**
+   * Register a handler for Twilio `recordingStatusCallback` webhooks.
+   *
+   * Registering makes later outbound calls pass `recordingStatusCallback` to
+   * `calls.create`; without a handler TAC omits it and Twilio has nowhere to
+   * post. It does not start recording — that's `CallOptions.record`, which is
+   * required for this to fire.
+   *
+   * @example
+   * ```typescript
+   * voiceChannel.onRecording(async event => {
+   *   if (event.recordingStatus === 'completed') {
+   *     // store event.recordingUrl
+   *   }
+   * });
+   * ```
+   */
+  public onRecording(callback: RecordingHandler): void {
+    this.onRecordingHandler = callback;
   }
 
   /**
@@ -377,6 +479,8 @@ export class VoiceChannel extends BaseChannel {
                     this.webSocketConnections.set(conversationId, ws);
                     this.callSidToConversationId.set(callSid, conversationId);
                     const session = this.startConversation(conversationId);
+                    // Relay-only: conversationId === callSid.
+                    session.callSid = callSid;
 
                     if (fromNumber) {
                       session.authorInfo = { address: fromNumber };
@@ -432,6 +536,11 @@ export class VoiceChannel extends BaseChannel {
                     this.webSocketConnections.set(conversationId, ws);
                     this.callSidToConversationId.set(callSid, conversationId);
                     const session = this.startConversation(conversationId, profileId);
+                    // In orchestrator mode conversationId is the Orchestrator
+                    // conversation id, so record the CallSid so out-of-band call
+                    // webhooks can reach this session (resolved via
+                    // getConversationSessionByCallSid).
+                    session.callSid = callSid;
 
                     if (customerAddress) {
                       session.authorInfo = {
@@ -907,6 +1016,72 @@ export class VoiceChannel extends BaseChannel {
   // =========================================================================
 
   /**
+   * Overlay `perCall` onto `VoiceChannelConfig.defaultCallOptions`.
+   *
+   * Per-field via key presence, the same convention {@link overlayFields} uses
+   * for TwiML options — so a per-call `{ machineDetection: undefined }`
+   * explicitly clears the channel default rather than falling through to it.
+   *
+   * The result is always validated, for two reasons: a combination only
+   * reachable by layering — per-call clearing `machineDetection` while the
+   * default set `asyncAmd` — must still fail instead of reaching Twilio, and
+   * `VoiceChannelConfig` is a plain interface, so `defaultCallOptions` has had
+   * no runtime validation of its own.
+   */
+  private mergeCallOptions(perCall: CallOptions | undefined): CallOptions | undefined {
+    const defaults = this.voiceConfig.defaultCallOptions;
+    if (!defaults && !perCall) {
+      return undefined;
+    }
+
+    const merged: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(defaults ?? {})) {
+      if (value !== undefined) {
+        merged[key] = value;
+      }
+    }
+    for (const key of Object.keys(perCall ?? {})) {
+      merged[key] = (perCall as Record<string, unknown>)[key];
+    }
+    return CallOptionsSchema.parse(merged);
+  }
+
+  /**
+   * Build the extra arguments for `client.calls.create`.
+   *
+   * Layers, highest precedence first: this call's `callOptions`,
+   * `VoiceChannelConfig.defaultCallOptions`, then callback URLs derived from
+   * `voicePublicDomain` + `voiceCallEventPath`.
+   *
+   * A URL is derived only when its handler is registered. That's a deliberate
+   * deviation from `websocketUrl` / `actionUrl`, which derive unconditionally:
+   * those are load-bearing, so a wrong one fails loudly on the first call,
+   * whereas an unwanted call-event URL fails as silent 11200 alerts for a
+   * feature nobody asked for. Set the URLs in `defaultCallOptions` when TAC
+   * isn't serving the routes.
+   */
+  private buildCallParams(callOptions: CallOptions | undefined): Record<string, unknown> {
+    const merged = this.mergeCallOptions(callOptions);
+    const params = merged ? callOptionsToCreateParams(merged) : {};
+
+    const wiring: [CallEventKind, string, unknown][] = [
+      ['status', 'statusCallback', this.onCallStatusHandler],
+      ['amd', 'asyncAmdStatusCallback', this.onAmdHandler],
+      ['recording', 'recordingStatusCallback', this.onRecordingHandler],
+    ];
+    for (const [kind, param, handler] of wiring) {
+      if (!handler) continue;
+      const url = this.config.callEventUrl(kind);
+      // An explicit URL from either options layer is never overwritten.
+      if (url !== undefined && params[param] === undefined) {
+        params[param] = url;
+      }
+    }
+
+    return params;
+  }
+
+  /**
    * Initiate an outbound voice conversation
    *
    * Places an outbound call with inline TwiML that connects to ConversationRelay.
@@ -920,6 +1095,12 @@ export class VoiceChannel extends BaseChannel {
    *   3. TAC defaults: welcome greeting, `conversationConfiguration` from
    *      `TACConfig`, and `actionUrl` from Studio handoff (if configured), else
    *      derived from `TACConfig.voicePublicDomain` + `voiceActionPath`.
+   *
+   * Calls-API parameters merge the same way:
+   *   1. `options.callOptions` — per-call overrides
+   *   2. `VoiceChannelConfig.defaultCallOptions` — channel-wide defaults
+   *   3. Callback URLs derived from `TACConfig.voicePublicDomain` +
+   *      `voiceCallEventPath`, for handlers that are registered
    *
    * The WebSocket URL is derived from `TACConfig.voicePublicDomain` +
    * `TACConfig.voiceWebsocketPath`, unless overridden per-call via
@@ -949,6 +1130,16 @@ export class VoiceChannel extends BaseChannel {
         merged.websocketUrl ??
         this.resolveWebsocketUrl('initiateOutboundConversation');
       const twiml = this.generateTwiml(websocketUrl, merged);
+      const callParams = this.buildCallParams(validated.callOptions);
+
+      // The inline TwiML handed to Twilio, useful for debugging the
+      // <Connect action> handoff target. customParameters values are masked —
+      // they're arbitrary developer data (profile IDs, caller names), unlike
+      // the WS/action URLs and conversation config.
+      this.logger.debug(
+        { twiml: redactTwimlParameters(twiml), to: maskAddress(validated.to) },
+        'Outbound call TwiML'
+      );
 
       // Place the outbound call with inline TwiML
       const client = this.getTwilioClient();
@@ -956,6 +1147,7 @@ export class VoiceChannel extends BaseChannel {
         to: validated.to,
         from: fromNumber,
         twiml,
+        ...callParams,
       });
 
       this.logger.info(
@@ -1012,6 +1204,201 @@ export class VoiceChannel extends BaseChannel {
     }
 
     return { status: 200, content: 'OK', contentType: 'text/plain' };
+  }
+
+  // =========================================================================
+  // Call Event Handling (status callback, async AMD, recording)
+  // =========================================================================
+
+  /**
+   * Whether a call-webhook payload belongs to the configured account.
+   *
+   * Twilio signature validation already gates the route; this is defense in
+   * depth. A payload with no `AccountSid` is allowed through.
+   *
+   * Subaccounts: events carry the SID the call was placed on, so configure TAC
+   * with that account or its events get dropped here.
+   */
+  private callEventAccountOk(form: Record<string, string>): boolean {
+    const accountSid = form['AccountSid'];
+    if (accountSid && accountSid !== this.config.accountSid) {
+      this.logger.warn(
+        { expected: this.config.accountSid, received: accountSid },
+        'Call event AccountSid mismatch, ignoring'
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Parse a call-event webhook form and dispatch it to its handler.
+   *
+   * Returns 400 when the payload can't be parsed (no `CallSid`) or the handler
+   * throws — better than handing Twilio a 200 for an event that wasn't
+   * processed. Everything else, including no handler registered and an
+   * account mismatch, is a 200 no-op.
+   */
+  private async dispatchCallEvent<T>(
+    kind: CallEventKind,
+    form: Record<string, string>,
+    handler: ((event: T) => Promise<void> | void) | undefined,
+    parse: (form: Record<string, string>) => T,
+    logFields: (event: T) => Record<string, unknown>
+  ): Promise<{ status: number; content: string; contentType: string }> {
+    const ok = { status: 200, content: 'OK', contentType: 'text/plain' };
+    if (!handler || !this.callEventAccountOk(form)) {
+      return ok;
+    }
+
+    try {
+      const event = parse(form);
+      this.logger.debug(logFields(event), `Call ${kind} event received`);
+      await handler(event);
+    } catch (error) {
+      this.logger.error({ err: error, kind }, 'Failed to process call event callback');
+      return { status: 400, content: 'Bad Request', contentType: 'text/plain' };
+    }
+    return ok;
+  }
+
+  /**
+   * Handle a Twilio `statusCallback` webhook.
+   *
+   * The developer routes the request here (`TACServer` does this automatically
+   * for its `/status` call-event route). Parsed into a {@link CallStatusEvent}
+   * and dispatched to the {@link onCallStatus} handler. No-op if no handler is
+   * registered.
+   *
+   * @param form - Raw form data from the webhook request.
+   */
+  public async handleCallStatusEvent(
+    form: Record<string, string>
+  ): Promise<{ status: number; content: string; contentType: string }> {
+    return this.dispatchCallEvent(
+      'status',
+      form,
+      this.onCallStatusHandler,
+      callStatusEventFromForm,
+      event => ({ call_sid: event.callSid, call_status: event.callStatus })
+    );
+  }
+
+  /**
+   * Handle a Twilio `asyncAmdStatusCallback` webhook.
+   *
+   * The developer routes the request here (`TACServer` does this automatically
+   * for its `/amd` call-event route). Parsed into an {@link AmdEvent} and
+   * dispatched to the {@link onAmd} handler. No-op if no handler is registered.
+   *
+   * @param form - Raw form data from the webhook request.
+   */
+  public async handleAmdEvent(
+    form: Record<string, string>
+  ): Promise<{ status: number; content: string; contentType: string }> {
+    return this.dispatchCallEvent('amd', form, this.onAmdHandler, amdEventFromForm, event => ({
+      call_sid: event.callSid,
+      answered_by: event.answeredBy,
+    }));
+  }
+
+  /**
+   * Handle a Twilio `recordingStatusCallback` webhook.
+   *
+   * The developer routes the request here (`TACServer` does this automatically
+   * for its `/recording` call-event route). Parsed into a
+   * {@link RecordingEvent} and dispatched to the {@link onRecording} handler.
+   * No-op if no handler is registered.
+   *
+   * @param form - Raw form data from the webhook request.
+   */
+  public async handleRecordingEvent(
+    form: Record<string, string>
+  ): Promise<{ status: number; content: string; contentType: string }> {
+    return this.dispatchCallEvent(
+      'recording',
+      form,
+      this.onRecordingHandler,
+      recordingEventFromForm,
+      event => ({ call_sid: event.callSid, recording_status: event.recordingStatus })
+    );
+  }
+
+  /**
+   * Hang up a call and clean up its ConversationRelay session.
+   *
+   * Works on `callSid` alone, in any mode and before a session exists, so it's
+   * safe from a call-event handler that fires before the first prompt. Session
+   * cleanup no-ops if no tracked session matches.
+   *
+   * Does not throw — hanging up an already-ended call is routine (the callee
+   * hangs up while AMD is still resolving), and handlers shouldn't have to
+   * guard against it.
+   *
+   * @param callSid - Twilio Call SID (from a call event, the outbound result, or
+   *   `ConversationSession.callSid`).
+   * @returns True if Twilio accepted the hangup, false if it failed (logged).
+   *   Session cleanup runs either way.
+   */
+  public async endCall(callSid: string): Promise<boolean> {
+    const client = this.getTwilioClient();
+    let hungUp = true;
+    try {
+      await client.calls(callSid).update({ status: 'completed' });
+    } catch (error) {
+      hungUp = false;
+      this.logger.error({ err: error, call_sid: callSid }, 'Failed to hang up call');
+    }
+
+    const session = this.getConversationSessionByCallSid(callSid);
+    if (session) {
+      await this.endConversation(session.conversationId as ConversationId);
+    }
+    return hungUp;
+  }
+
+  /**
+   * Look up the active voice session for a Twilio Call SID.
+   *
+   * Out-of-band code holding a CallSid — a dashboard route, an operator action,
+   * a call-event handler — can't reach the session-facing methods, which are
+   * keyed by conversation id: the Orchestrator conversation id in orchestrator
+   * mode, the CallSid only in ConversationRelay-only mode.
+   *
+   * Sessions are created on the caller's first prompt, not at WebSocket setup,
+   * so this returns `undefined` for a call that connected but hasn't been spoken
+   * into. That includes `onAmd` under `machineDetection: 'Enable'`, which fires
+   * before the first prompt by design — hang up with {@link endCall}, which
+   * needs no session.
+   *
+   * At the other end, orchestrator mode keeps the session until Conversation
+   * Orchestrator's CLOSED webhook, so it outlives the call and `onCallStatus` /
+   * `onRecording` do resolve. Relay-only mode tears down on the
+   * ConversationRelay callback instead, which races them.
+   *
+   * @example
+   * ```typescript
+   * async function nudge(callSid: string): Promise<void> {
+   *   const session = voiceChannel.getConversationSessionByCallSid(callSid);
+   *   if (session) {
+   *     await voiceChannel.sendResponse(session.conversationId, 'Still there?');
+   *   }
+   * }
+   * ```
+   *
+   * @param callSid - Twilio Call SID, e.g. from
+   *   `InitiateVoiceConversationResult.callSid` or a call event.
+   * @returns The session, or `undefined` — no first prompt yet, the call ended,
+   *   or it landed on another instance (see the horizontal-scaling note in
+   *   CLAUDE.md).
+   */
+  public getConversationSessionByCallSid(callSid: string): ConversationSession | undefined {
+    for (const session of this.activeConversations.values()) {
+      if (session.callSid === callSid) {
+        return session;
+      }
+    }
+    return undefined;
   }
 
   // =========================================================================

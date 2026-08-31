@@ -215,6 +215,13 @@ export interface Profile {
  */
 export const ConversationSessionSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID is required'),
+  /**
+   * Twilio Call SID on the Voice channel, unset on messaging. The correlation
+   * key for call events (`VoiceChannel.onCallStatus` / `onAmd` / `onRecording`)
+   * and `endCall`. Equals `conversationId` in relay-only mode; look the session
+   * up the other way with `VoiceChannel.getConversationSessionByCallSid`.
+   */
+  callSid: z.string().optional(),
   profileId: z.string().optional(),
   serviceId: z.string().optional(),
   channel: ChannelTypeSchema,

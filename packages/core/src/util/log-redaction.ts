@@ -79,3 +79,23 @@ export function maskAddress(address: string): string {
   if (address.length <= 1) return '***';
   return `${address[0]}***`;
 }
+
+/**
+ * Mask `<Parameter value="...">` contents in TwiML, keeping the names.
+ *
+ * `<Parameter>` children carry whatever the developer put in
+ * `customParameters` — profile IDs, caller names. Names stay because knowing
+ * which parameters were sent is the point of logging the TwiML.
+ *
+ * Handles either quote style. TAC's own TwiML comes from the Twilio SDK, which
+ * always double-quotes, but this takes a plain string and shouldn't depend on
+ * that to stay safe.
+ */
+export function redactTwimlParameters(twiml: string | undefined | null): string {
+  if (!twiml) return '';
+  // Fresh RegExp each call — avoids lastIndex state bugs from the g flag.
+  const parameterValueRe = /(<Parameter\b[^>]*?\bvalue=)(["'])(.*?)\2/gi;
+  return twiml.replace(parameterValueRe, (_match, prefix: string, quote: string) => {
+    return `${prefix}${quote}***${quote}`;
+  });
+}

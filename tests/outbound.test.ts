@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SMSChannel, RCSChannel, ChatChannel, VoiceChannel, TAC } from '@twilio/tac-core';
+import {
+  SMSChannel,
+  RCSChannel,
+  ChatChannel,
+  VoiceChannel,
+  TAC,
+  CallOptionsSchema,
+} from '@twilio/tac-core';
+import type { CallOptions } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import { createTestTAC } from './helpers/tac';
 
@@ -793,6 +801,299 @@ describe('Outbound Conversations', () => {
           welcomeGreeting: 'Hi!',
         })
       ).rejects.toThrow();
+    });
+  });
+
+  // =============================================================================
+  // Calls API passthrough (callOptions) + call-event callback auto-wiring
+  // =============================================================================
+
+  describe('VoiceChannel callOptions', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    /** Place a call and return the arguments handed to calls.create. */
+    const placeCall = async (
+      channel: VoiceChannel,
+      options: Parameters<VoiceChannel['initiateOutboundConversation']>[0]
+    ): Promise<Record<string, unknown>> => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAxyz' });
+      await channel.initiateOutboundConversation(options);
+      return mockCallCreate.mock.calls[0]![0] as Record<string, unknown>;
+    };
+
+    const noopHandler = () => Promise.resolve();
+
+    it('forwards typed callOptions to calls.create', async () => {
+      // No voicePublicDomain → no auto-wiring in the way.
+      const channel = new VoiceChannel(await createTestTAC(getTestConfig()));
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        callOptions: { machineDetection: 'Enable', asyncAmd: true, timeout: 20 },
+      });
+
+      expect(params.machineDetection).toBe('Enable');
+      expect(params.timeout).toBe(20);
+    });
+
+    it('forwards Calls API params TAC does not type explicitly', async () => {
+      const channel = new VoiceChannel(await createTestTAC(getTestConfig()));
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        callOptions: { sipAuthUsername: 'alice', byoc: 'BYxxx' },
+      });
+
+      expect(params.sipAuthUsername).toBe('alice');
+      expect(params.byoc).toBe('BYxxx');
+    });
+
+    it('rejects params the Twilio SDK does not accept', () => {
+      // The Node SDK builds its request body from an explicit whitelist, so a
+      // typo would otherwise be silently dropped rather than erroring.
+      expect(() =>
+        // @ts-expect-error typo'd machineDetection
+        CallOptionsSchema.parse({ machineDetecton: 'Enable' })
+      ).toThrow(/does not accept/);
+    });
+
+    it('accepts every real calls.create param', () => {
+      // The pinned param list is checked against the SDK type at typecheck time
+      // by _CallsCreateDriftGuards; this pins the runtime half.
+      expect(() =>
+        CallOptionsSchema.parse({
+          callerId: '+15551234567',
+          sendDigits: '1234',
+          trim: 'trim-silence',
+          timeLimit: 3600,
+          callReason: 'support',
+          recordingChannels: 'dual',
+        })
+      ).not.toThrow();
+    });
+
+    it('serializes asyncAmd as a string and record as a boolean', async () => {
+      // Twilio's SDK types asyncAmd as a string, unlike record.
+      const channel = new VoiceChannel(await createTestTAC(getTestConfig()));
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        callOptions: { machineDetection: 'Enable', asyncAmd: true, record: true },
+      });
+
+      expect(params.asyncAmd).toBe('true');
+      expect(params.record).toBe(true);
+    });
+
+    it.each(['to', 'from', 'twiml', 'url', 'applicationSid'])(
+      'rejects the TAC-owned param %s',
+      reserved => {
+        expect(() => CallOptionsSchema.parse({ [reserved]: 'x' })).toThrow(/TAC-owned/);
+      }
+    );
+
+    it.each([
+      [{ asyncAmd: true }, 'detection never runs'],
+      [{ machineDetection: 'Enable' }, 'AnsweredBy goes nowhere inline TwiML can read'],
+    ])('rejects %o because AMD needs both flags', amdOptions => {
+      expect(() => CallOptionsSchema.parse(amdOptions)).toThrow(/requires both/);
+    });
+
+    it.each(['false', 'FALSE', ' false '])(
+      'treats the string asyncAmd=%s as off, not as a truthy string',
+      asyncAmd => {
+        // Twilio's API types asyncAmd as a string, and Boolean('false') is true —
+        // a truthiness test would wave this through and deliver no AMD event.
+        expect(() => CallOptionsSchema.parse({ machineDetection: 'Enable', asyncAmd })).toThrow(
+          /requires both/
+        );
+      }
+    );
+
+    it('accepts the string asyncAmd=true alongside machineDetection', () => {
+      expect(() =>
+        CallOptionsSchema.parse({ machineDetection: 'Enable', asyncAmd: 'true' })
+      ).not.toThrow();
+    });
+
+    it('advertises no callback URL when no handler is registered', async () => {
+      // Otherwise TAC would point Twilio at a 404 (error 11200) on every call.
+      const channel = new VoiceChannel(await createTestTAC(getVoiceConfig()));
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+      });
+
+      expect(params.statusCallback).toBeUndefined();
+      expect(params.asyncAmdStatusCallback).toBeUndefined();
+      expect(params.recordingStatusCallback).toBeUndefined();
+    });
+
+    it('wires only the callback whose handler is registered', async () => {
+      const channel = new VoiceChannel(await createTestTAC(getVoiceConfig()));
+      channel.onAmd(noopHandler);
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        callOptions: { machineDetection: 'Enable', asyncAmd: true },
+      });
+
+      expect(params.asyncAmdStatusCallback).toBe('https://example.com/twilio/call-events/amd');
+      expect(params.statusCallback).toBeUndefined();
+      expect(params.recordingStatusCallback).toBeUndefined();
+    });
+
+    it('wires all three callbacks when all handlers are registered', async () => {
+      const channel = new VoiceChannel(await createTestTAC(getVoiceConfig()));
+      channel.onCallStatus(noopHandler);
+      channel.onAmd(noopHandler);
+      channel.onRecording(noopHandler);
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        callOptions: { machineDetection: 'Enable', asyncAmd: true, record: true },
+      });
+
+      expect(params.statusCallback).toBe('https://example.com/twilio/call-events/status');
+      expect(params.asyncAmdStatusCallback).toBe('https://example.com/twilio/call-events/amd');
+      expect(params.recordingStatusCallback).toBe(
+        'https://example.com/twilio/call-events/recording'
+      );
+    });
+
+    it('lets an explicit callback URL win over auto-wiring', async () => {
+      const channel = new VoiceChannel(await createTestTAC(getVoiceConfig()));
+      channel.onCallStatus(noopHandler);
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        callOptions: { statusCallback: 'https://other.example/cb' },
+      });
+
+      expect(params.statusCallback).toBe('https://other.example/cb');
+    });
+
+    it('advertises no callback URL without a public domain', async () => {
+      const channel = new VoiceChannel(await createTestTAC(getTestConfig()));
+      channel.onCallStatus(noopHandler);
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+      });
+
+      expect(params.statusCallback).toBeUndefined();
+    });
+
+    it('normalizes a trailing slash on voiceCallEventPath', async () => {
+      const channel = new VoiceChannel(
+        await createTestTAC({ ...getVoiceConfig(), voiceCallEventPath: '/hooks/calls/' })
+      );
+      channel.onCallStatus(noopHandler);
+
+      const params = await placeCall(channel, {
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+      });
+
+      expect(params.statusCallback).toBe('https://example.com/hooks/calls/status');
+    });
+  });
+
+  // Channel-wide CallOptions layer, mirroring defaultTwimlOptions. This is how a
+  // custom server or non-default routes supply their own callback URLs.
+  describe('VoiceChannel defaultCallOptions', () => {
+    const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    const makeChannel = async (defaultCallOptions: CallOptions): Promise<VoiceChannel> =>
+      new VoiceChannel(await createTestTAC(getVoiceConfig()), { defaultCallOptions });
+
+    const place = async (
+      channel: VoiceChannel,
+      callOptions?: CallOptions
+    ): Promise<Record<string, unknown>> => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAxyz' });
+      await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        websocketUrl: 'wss://example.com/ws',
+        ...(callOptions ? { callOptions } : {}),
+      });
+      return mockCallCreate.mock.calls[0]![0] as Record<string, unknown>;
+    };
+
+    it('applies to every call', async () => {
+      const params = await place(await makeChannel({ timeout: 45 }));
+      expect(params.timeout).toBe(45);
+    });
+
+    it('lets a configured URL beat the derived default', async () => {
+      // The custom-server case: TAC isn't serving /twilio/call-events/amd.
+      const channel = await makeChannel({
+        machineDetection: 'Enable',
+        asyncAmd: true,
+        asyncAmdStatusCallback: 'https://my-express-app.com/amd-hook',
+      });
+      channel.onAmd(() => Promise.resolve());
+
+      const params = await place(channel);
+      expect(params.asyncAmdStatusCallback).toBe('https://my-express-app.com/amd-hook');
+    });
+
+    it('lets per-call options beat channel-wide ones', async () => {
+      const params = await place(await makeChannel({ timeout: 45 }), { timeout: 10 });
+      expect(params.timeout).toBe(10);
+    });
+
+    it('falls through for fields the per-call layer leaves unset', async () => {
+      // Per-field merge: setting timeout doesn't drop the channel's record flag.
+      const params = await place(await makeChannel({ record: true, timeout: 45 }), { timeout: 10 });
+      expect(params.timeout).toBe(10);
+      expect(params.record).toBe(true);
+    });
+
+    it('validates channel-wide options even with no per-call layer', async () => {
+      // VoiceChannelConfig is a plain interface, so defaultCallOptions gets no
+      // runtime validation until it's used to place a call.
+      await expect(place(await makeChannel({ machineDetection: 'Enable' }))).rejects.toThrow(
+        /requires both/
+      );
+    });
+
+    it('lets a call disable AMD by clearing both flags', async () => {
+      const params = await place(
+        await makeChannel({ machineDetection: 'Enable', asyncAmd: true }),
+        {
+          machineDetection: undefined,
+          asyncAmd: undefined,
+        }
+      );
+      expect(params.machineDetection).toBeUndefined();
+      expect(params.asyncAmd).toBeUndefined();
+    });
+
+    it('revalidates the merged result', async () => {
+      // Clearing only one flag leaves the other from the channel default — an
+      // invalid combination reachable only by layering.
+      await expect(
+        place(await makeChannel({ machineDetection: 'Enable', asyncAmd: true }), {
+          machineDetection: undefined,
+        })
+      ).rejects.toThrow(/requires both/);
+    });
+
+    it('merges untyped params too', async () => {
+      const params = await place(await makeChannel({ byoc: 'BYdefault' }), {
+        sipAuthUsername: 'alice',
+      });
+      expect(params.byoc).toBe('BYdefault');
+      expect(params.sipAuthUsername).toBe('alice');
     });
   });
 
