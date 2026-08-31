@@ -701,18 +701,22 @@ describe('VoiceChannel', () => {
       last: true,
     });
 
-    // Helper: mock init APIs, connect a WS, and drive setup + first prompt so
-    // the conversation is initialized and tracked.
-    const initConversation = async (tac: TAC, voiceChannel: VoiceChannel) => {
-      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
-        { id: 'CHcb_test12345', status: 'ACTIVE' },
-      ] as any);
+    // Helper: mock the participant lookup half of conversation initialization.
+    const mockCustomerParticipant = (tac: TAC) =>
       vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
         {
           profileId: 'mem_profile_cb_test',
           addresses: [{ channel: 'VOICE', address: '+15551234567' }],
         },
       ] as any);
+
+    // Helper: mock init APIs, connect a WS, and drive setup + first prompt so
+    // the conversation is initialized and tracked.
+    const initConversation = async (tac: TAC, voiceChannel: VoiceChannel) => {
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcb_test12345', status: 'ACTIVE' },
+      ] as any);
+      mockCustomerParticipant(tac);
 
       const mockWs = createMockWebSocket();
       voiceChannel.handleWebSocketConnection(mockWs as any);
@@ -854,6 +858,148 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.isConversationActive('CA_cb_test' as any)).toBe(false);
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CA_cb_test');
+    });
+
+    it('starts the conversation lookup on setup, before any prompt arrives', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const listSpy = vi
+        .spyOn(tac.getConversationClient(), 'listConversations')
+        .mockResolvedValue([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
+      mockCustomerParticipant(tac);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+
+      // Setup only — the caller hasn't spoken yet.
+      mockWs._emit('message', Buffer.from(setupMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Scoped to the CallSid and to ACTIVE, matching the Python SDK.
+      expect(listSpy).toHaveBeenCalledWith({ channelId: 'CA_cb_test', status: ['ACTIVE'] });
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBe(mockWs);
+      expect(voiceChannel.getConversationSessionByCallSid('CA_cb_test')?.conversationId).toBe(
+        'CHcb_test12345'
+      );
+    });
+
+    it('first prompt awaits the setup-time lookup instead of starting a new one', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const listSpy = vi
+        .spyOn(tac.getConversationClient(), 'listConversations')
+        .mockResolvedValue([{ id: 'CHcb_test12345', status: 'ACTIVE' }] as any);
+      mockCustomerParticipant(tac);
+
+      const promptSpy = vi.fn();
+      voiceChannel.on('prompt', promptSpy);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // The lookup ran on setup, before the caller spoke.
+      expect(listSpy).toHaveBeenCalledTimes(1);
+
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Still one: the prompt reused it rather than starting another.
+      expect(listSpy).toHaveBeenCalledTimes(1);
+      expect(promptSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'CHcb_test12345', transcript: 'Hello' })
+      );
+    });
+
+    it('cleans up the WebSocket registration when the call ends before any prompt', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      // Hold the lookup open so it finishes only after the call has ended.
+      let releaseLookup: (conversations: unknown) => void = () => {};
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockImplementation(
+        () =>
+          new Promise(resolve => {
+            releaseLookup = resolve;
+          }) as any
+      );
+      mockCustomerParticipant(tac);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Caller hangs up without ever speaking, then the lookup lands.
+      mockWs._emit('close');
+      releaseLookup([{ id: 'CHcb_test12345', status: 'ACTIVE' }]);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // The WebSocket registration is adopted and torn down, not leaked, while
+      // the conversation stays tracked until the CLOSED webhook.
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+    });
+
+    it('cleans up when the call ends while the first prompt awaits the lookup', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      let releaseLookup: (conversations: unknown) => void = () => {};
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockImplementation(
+        () =>
+          new Promise(resolve => {
+            releaseLookup = resolve;
+          }) as any
+      );
+      mockCustomerParticipant(tac);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      // The prompt claims the still-pending lookup and awaits it...
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // ...then the caller hangs up before it resolves.
+      mockWs._emit('close');
+      releaseLookup([{ id: 'CHcb_test12345', status: 'ACTIVE' }]);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
+    });
+
+    it('polls up to 10 times with capped backoff before giving up', async () => {
+      vi.useFakeTimers();
+      try {
+        const tac = await createTestTAC(getTestConfig());
+        const voiceChannel = new VoiceChannel(tac);
+        tac.registerChannel(voiceChannel);
+
+        const listSpy = vi
+          .spyOn(tac.getConversationClient(), 'listConversations')
+          .mockResolvedValue([] as any);
+
+        const mockWs = createMockWebSocket();
+        voiceChannel.handleWebSocketConnection(mockWs as any);
+        mockWs._emit('message', Buffer.from(setupMessage));
+
+        // Backoff is 250/500/1000ms then capped at 1500ms: ~10.75s total.
+        await vi.advanceTimersByTimeAsync(15000);
+
+        expect(listSpy).toHaveBeenCalledTimes(10);
+        expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('should call onError when initialization fails and not close WebSocket', async () => {
