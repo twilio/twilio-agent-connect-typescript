@@ -3,7 +3,7 @@
  *
  * Places an outbound ConversationRelay call with answering machine detection and
  * recording enabled, then reacts to Twilio's call webhooks: hang up on
- * voicemail, log which calls went unreached. Each handler is optional.
+ * voicemail, log call disposition and recordings. Each handler is optional.
  *
  * TACServer registers the routes and auto-wires their URLs from
  * TWILIO_VOICE_PUBLIC_DOMAIN, so there's no webhook setup here.
@@ -52,9 +52,6 @@ voiceChannel.onCallStatus(event => {
   // first prompt, so an early event may not resolve one yet.
   const session = voiceChannel.getConversationSessionByCallSid(event.callSid);
   console.log(`[STATUS] session lookup -> ${session?.conversationId ?? 'none'}`);
-  if (event.isUnreached) {
-    console.log(`[STATUS] ${event.callSid} unreached — queue retry`);
-  }
 });
 
 voiceChannel.onAmd(async event => {
