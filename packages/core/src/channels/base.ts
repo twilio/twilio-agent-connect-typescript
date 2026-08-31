@@ -33,7 +33,7 @@ export interface BaseChannelOptions {
    *
    * - "never": Memory is not automatically retrieved. Use the memory TAC tool or manually call `tac.retrieveMemory()` in callbacks for conditional retrieval.
    * - "always": Memory is automatically retrieved (using the message as query) for every inbound message and available in `onMessageReady` callback.
-   * - "once": Memory is retrieved once at conversation start with an empty query and cached on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE.
+   * - "once": Memory is retrieved once at conversation start with no query (and no conversation id) and cached on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE.
    */
   memoryMode?: MemoryMode;
 
@@ -417,9 +417,9 @@ export abstract class BaseChannel {
    *
    * Modes:
    * - "always": Fetch with the provided query on every message.
-   * - "once": Fetch once with an empty query and cache the result on the
-   *   session. Subsequent calls reuse the cache until it is invalidated on the
-   *   INACTIVE transition.
+   * - "once": Fetch once with neither a query nor a conversation id (skipping
+   *   query expansion) and cache the result on the session. Subsequent calls
+   *   reuse the cache until it is invalidated on the INACTIVE transition.
    * - "never": Skip retrieval.
    *
    * Memory retrieval failures are logged and swallowed so message processing
@@ -441,10 +441,14 @@ export abstract class BaseChannel {
     }
 
     try {
-      // "always" uses the message as query; "once" fetches with an empty query.
+      // "always" sends query + conversation id so Memory ranks by relevance.
+      // "once" sends neither: with no query, a conversation id only buys
+      // Memory's expensive server-side query expansion.
+      const isAlways = this.memoryMode === 'always';
       const memory = await this.tac.retrieveMemory(
         session,
-        this.memoryMode === 'always' ? query : undefined
+        isAlways ? query : undefined,
+        isAlways ? session.conversationId : undefined
       );
       if (this.memoryMode === 'once') {
         session.cachedMemory = memory;

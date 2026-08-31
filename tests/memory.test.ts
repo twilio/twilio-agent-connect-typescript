@@ -50,7 +50,7 @@ describe('Memory Functionality', () => {
         startedAt: new Date(),
       };
 
-      const result = await tac.retrieveMemory(session, 'test query');
+      const result = await tac.retrieveMemory(session, 'test query', session.conversationId);
 
       // Result is wrapped in TACMemoryResponse
       expect(result).toBeInstanceOf(TACMemoryResponse);
@@ -63,10 +63,43 @@ describe('Memory Functionality', () => {
           query: 'test query',
           observationsLimit: 20,
           summariesLimit: 5,
-          communicationsLimit: 10,
+          communicationsLimit: 0,
           relevanceThreshold: 0.0,
         }
       );
+    });
+
+    it('should omit conversationId from /Recall when the caller does not pass one', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+
+      const mockMemoryResponse: MemoryRetrievalResponse = {
+        observations: [],
+        summaries: [],
+        communications: [],
+      };
+
+      const memoryClient = tac.getMemoryClient();
+      expect(memoryClient).toBeDefined();
+      vi.spyOn(memoryClient!, 'retrieveMemories').mockResolvedValue(mockMemoryResponse);
+
+      const session: ConversationSession = {
+        conversationId: 'conv_test_123',
+        profileId: 'mem_profile_existing',
+        channel: 'sms',
+        startedAt: new Date(),
+      };
+
+      // Omitted by the caller, so it must not be pulled off the session.
+      await tac.retrieveMemory(session);
+
+      expect(memoryClient!.retrieveMemories).toHaveBeenCalledWith('mem_profile_existing', {
+        conversationId: undefined,
+        query: undefined,
+        observationsLimit: 20,
+        summariesLimit: 5,
+        communicationsLimit: 0,
+        relevanceThreshold: 0.0,
+      });
     });
 
     it('should auto-lookup profile when missing', async () => {
@@ -100,7 +133,7 @@ describe('Memory Functionality', () => {
         },
       };
 
-      const result = await tac.retrieveMemory(session, 'test query');
+      const result = await tac.retrieveMemory(session, 'test query', session.conversationId);
 
       // Verify profile was looked up
       expect(memoryClient!.lookupProfile).toHaveBeenCalledWith(
@@ -119,7 +152,7 @@ describe('Memory Functionality', () => {
           query: 'test query',
           observationsLimit: 20,
           summariesLimit: 5,
-          communicationsLimit: 10,
+          communicationsLimit: 0,
           relevanceThreshold: 0.0,
         }
       );
@@ -160,7 +193,7 @@ describe('Memory Functionality', () => {
         authorInfo: { address: '+13175556789' },
       };
 
-      await tac.retrieveMemory(session);
+      await tac.retrieveMemory(session, undefined, session.conversationId);
 
       // Verify first profile was used
       expect(session.profileId).toBe('mem_profile_00000000000000000000000001');
@@ -171,7 +204,7 @@ describe('Memory Functionality', () => {
           query: undefined,
           observationsLimit: 20,
           summariesLimit: 5,
-          communicationsLimit: 10,
+          communicationsLimit: 0,
           relevanceThreshold: 0.0,
         }
       );

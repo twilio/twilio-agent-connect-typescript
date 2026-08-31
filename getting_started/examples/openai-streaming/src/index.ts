@@ -10,22 +10,26 @@
 import { config } from 'dotenv';
 import { Agent, run } from '@openai/agents';
 import type { AgentInputItem } from '@openai/agents';
-import { TAC, TACConfig, VoiceChannel, SMSChannel, TACServer } from 'twilio-agent-connect';
+import {
+  TAC,
+  TACConfig,
+  VoiceChannel,
+  SMSChannel,
+  TACServer,
+  MemoryPromptBuilder,
+} from 'twilio-agent-connect';
 
 config({ path: '../.env' });
 
-const agent = new Agent({
-  name: 'customer-service',
-  instructions:
-    'You are a customer service agent speaking with a user over voice or SMS. ' +
-    'Keep responses short and conversational — a sentence or two. ' +
-    'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
-    'spoken aloud or sent as plain text.',
-  model: 'gpt-5.4-mini',
-});
+const AGENT_INSTRUCTIONS =
+  'You are a customer service agent speaking with a user over voice or SMS. ' +
+  'Keep responses short and conversational — a sentence or two. ' +
+  'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
+  'spoken aloud or sent as plain text.';
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const voiceChannel = new VoiceChannel(tac);
+// "once" caches memory per conversation, keeping /Recall off the per-turn path.
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
 const smsChannel = new SMSChannel(tac);
 
 tac.registerChannel(voiceChannel);
@@ -33,7 +37,7 @@ tac.registerChannel(smsChannel);
 
 const conversationHistory: Record<string, AgentInputItem[]> = {};
 
-tac.onMessageReady(async ({ conversationId, message, channel, abortSignal }) => {
+tac.onMessageReady(async ({ conversationId, message, memory, session, channel, abortSignal }) => {
   const convId = conversationId as string;
 
   try {
@@ -45,6 +49,13 @@ tac.onMessageReady(async ({ conversationId, message, channel, abortSignal }) => 
       type: 'message',
       role: 'user',
       content: message,
+    });
+
+    // Fold the retrieved memory and profile traits into this turn's prompt.
+    const agent = new Agent({
+      name: 'customer-service',
+      instructions: MemoryPromptBuilder.compose(AGENT_INSTRUCTIONS, memory, session),
+      model: 'gpt-5.4-mini',
     });
 
     if (channel === 'voice') {

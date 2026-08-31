@@ -136,6 +136,8 @@ export class MemoryClient extends BaseClient {
           observation_count: observations.length,
           summary_count: summaries.length,
           communication_count: communications.length,
+          // Server-side query time; dominates /Recall when expansion runs.
+          query_time_ms: (response.meta as { queryTime?: number } | undefined)?.queryTime,
         },
         'Memory retrieval succeeded'
       );

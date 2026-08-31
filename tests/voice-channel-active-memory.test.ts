@@ -75,12 +75,14 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       await (voiceChannel as any).handlePromptMessage('conv123', promptMessage);
 
       // Verify memory was retrieved
+      // "always" sends the transcript as query plus the conversation id.
       expect(retrieveMemorySpy).toHaveBeenCalledWith(
         expect.objectContaining({
           conversationId: 'conv123',
           profileId: 'prof123',
         }),
-        'Hello, I need help'
+        'Hello, I need help',
+        'conv123'
       );
 
       // Verify callback received memory

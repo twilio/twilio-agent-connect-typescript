@@ -133,7 +133,8 @@ const voiceChannel = new VoiceChannel(tac, { memoryMode: 'never' }); // default
 
 - **`"never"` (default)**: No automatic fetching. Use `tac.retrieveMemory()` in callbacks for conditional retrieval.
 - **`"always"`**: Automatically fetches memory (using the message as query) for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
-- **`"once"`**: Fetches memory once at conversation start with an empty query and caches it on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE (Conversation Orchestrator refreshes memory on that transition), after which the next message re-fetches.
+- **`"once"`**: Fetches memory once at conversation start with no query and caches it on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE (Conversation Orchestrator refreshes memory on that transition), after which the next message re-fetches. The fetch also omits `conversationId`: with no query it would only trigger Memory's server-side query expansion (an LLM call — 1854ms vs 28ms measured), so results come back by recency. `"always"` still sends it.
+- `memoryConfig.communicationsLimit` therefore defaults to **0**, as in the Memory API and Python SDK. Above 0, Memory requires `conversationId` on every `/Recall`, so raising it makes `"once"` fetches fail with a 400 and fall back to the Conversations API.
 
 ## Pull Requests
 
