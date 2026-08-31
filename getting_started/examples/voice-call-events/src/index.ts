@@ -39,14 +39,14 @@ const to = values.to;
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
-tac.onMessageReady(async ({ message }) => `You said: ${message}`);
+tac.onMessageReady(({ message }) => `You said: ${message}`);
 
 const voiceChannel = new VoiceChannel(tac);
 
 // Registering is also what puts each callback URL on the outbound call below.
 // Skip a handler and TAC omits its URL, so Twilio never posts that event.
 
-voiceChannel.onCallStatus(async event => {
+voiceChannel.onCallStatus(event => {
   console.log(`[STATUS] ${event.callSid}: ${event.callStatus}`);
   // The conversation session — conversationId, profile, metadata. Set on the
   // first prompt, so an early event may not resolve one yet.
@@ -64,7 +64,7 @@ voiceChannel.onAmd(async event => {
   }
 });
 
-voiceChannel.onRecording(async event => {
+voiceChannel.onRecording(event => {
   console.log(`[RECORDING] ${event.callSid}: ${event.recordingStatus} ${event.recordingUrl}`);
 });
 
