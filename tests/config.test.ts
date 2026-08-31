@@ -184,15 +184,6 @@ describe('TACConfig', () => {
       expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
-    it('should reject invalid voicePublicDomain format', () => {
-      setRequiredEnvVars();
-      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'not a valid domain!';
-
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Invalid hostname format/);
-    });
-
     it('should strip an http:// protocol from voicePublicDomain', () => {
       setRequiredEnvVars();
       process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'http://example.ngrok.app';
@@ -220,33 +211,41 @@ describe('TACConfig', () => {
       expect(config.voicePublicDomain).toBe('example.ngrok.app');
     });
 
-    it('should reject voicePublicDomain with path', () => {
+    it('should accept voicePublicDomain with a base path', () => {
       setRequiredEnvVars();
-      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'example.ngrok.app/path';
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'example.ngrok.app/server1';
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Invalid hostname format/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.ngrok.app/server1');
     });
 
-    it('should reject voicePublicDomain with port', () => {
+    it('should accept a multi-segment base path and strip scheme and trailing slash', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'https://example.com/a/b/';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.com/a/b');
+    });
+
+    it('should accept voicePublicDomain with a port', () => {
       setRequiredEnvVars();
       process.env.TWILIO_VOICE_PUBLIC_DOMAIN = 'example.ngrok.app:8080';
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Invalid hostname format/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('example.ngrok.app:8080');
     });
 
-    it('should reject voicePublicDomain that is too long', () => {
+    it('should normalize rather than validate voicePublicDomain (Python SDK parity)', () => {
+      // Don't reintroduce a hostname pattern here without changing Python too.
       setRequiredEnvVars();
-      // Create a domain longer than 253 characters
-      const longDomain = 'a'.repeat(250) + '.com';
-      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = longDomain;
+      process.env.TWILIO_VOICE_PUBLIC_DOMAIN = '  https://internal_host.corp:8443/a/b/  ';
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/Hostname too long/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.voicePublicDomain).toBe('internal_host.corp:8443/a/b');
     });
 
     it('should accept valid subdomain', () => {

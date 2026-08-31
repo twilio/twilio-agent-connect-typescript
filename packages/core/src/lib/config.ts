@@ -97,7 +97,7 @@ export class TACConfig {
    * Optional environment variables:
    * - TWILIO_WHATSAPP_NUMBER: WhatsApp number for WhatsApp channel (e.g., 'whatsapp:+1234567890')
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
-   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; domain only, without protocol/port/path, e.g., 'abc123.ngrok.app')
+   * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; a base path is allowed, e.g., 'abc123.ngrok.app' or 'example.com/server1')
    * - TWILIO_VOICE_WEBSOCKET_PATH: Path for the voice WebSocket (default: /ws)
    * - TWILIO_VOICE_ACTION_PATH: Path for the ConversationRelay action callback (default: /conversation-relay-callback)
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)

@@ -66,39 +66,29 @@ export const TACConfigSchema = z.object({
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
     .optional(),
   /**
-   * Public domain where voice routes are reachable (e.g. "abc123.ngrok.app").
-   * Used by VoiceChannel to construct the public WebSocket URL and
-   * ConversationRelay action URL. Required when using the Voice channel.
+   * Public base URL where voice routes are reachable (e.g. "example.ngrok.app",
+   * or "example.com/server1" when served under a base path). Used by
+   * VoiceChannel to construct the public WebSocket URL and ConversationRelay
+   * action URL. Required when using the Voice channel.
    *
-   * Schemes (https://, wss://), surrounding whitespace, and trailing slashes
-   * are stripped automatically before validation — a naive copy-paste from a
-   * browser address bar like "https://example.ngrok.app/" is normalized to
-   * "example.ngrok.app" rather than rejected.
+   * Whitespace, schemes (https://, wss://), and trailing slashes are stripped
+   * automatically; anything else is passed through as given. Mirrors the Python
+   * SDK's `_normalize_voice_public_domain` — keep the two in step.
    */
   voicePublicDomain: z
-    .preprocess(
-      v => {
-        if (typeof v !== 'string') return v;
-        let s = v.trim();
-        if (s.length === 0) return undefined;
-        for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
-          if (s.toLowerCase().startsWith(scheme)) {
-            s = s.slice(scheme.length);
-            break;
-          }
+    .preprocess(v => {
+      if (typeof v !== 'string') return v;
+      let s = v.trim();
+      if (s.length === 0) return undefined;
+      for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
+        if (s.toLowerCase().startsWith(scheme)) {
+          s = s.slice(scheme.length);
+          break;
         }
-        s = s.replace(/\/+$/, '');
-        return s.length === 0 ? undefined : s;
-      },
-      z
-        .string()
-        .max(253, 'Hostname too long (max 253 characters)')
-        .regex(
-          /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
-          'Invalid hostname format. Must be a hostname without protocol, port, or path (e.g., "abc123.ngrok.app", "localhost", or "192.168.1.100")'
-        )
-        .optional()
-    )
+      }
+      s = s.replace(/\/+$/, '');
+      return s.length === 0 ? undefined : s;
+    }, z.string().optional())
     .optional(),
 
   /**
