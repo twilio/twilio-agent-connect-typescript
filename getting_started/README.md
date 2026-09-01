@@ -82,7 +82,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 ### Optional (Server)
 
-- `TWILIO_VOICE_PUBLIC_DOMAIN`: Your ngrok domain without `https://` prefix (required for voice, e.g., `abc123.ngrok.app`). May include a base path if the app is served under one (e.g., `example.com/server1`).
+- `TWILIO_VOICE_PUBLIC_DOMAIN`: Public host for voice routes (required for voice, e.g., `abc123.ngrok.app`). May include a port and/or base path (e.g., `example.ngrok.app:8080` or `example.com/server1`). Schemes like `https://` and trailing slashes are stripped automatically.
 - `TWILIO_WHATSAPP_NUMBER`: Your Twilio WhatsApp number (required for WhatsApp channel, e.g., `whatsapp:+1234567890`)
 
 ### Optional (Handoff)
