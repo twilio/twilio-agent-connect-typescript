@@ -493,6 +493,10 @@ export class TAC {
    *
    * @param session - Conversation session context
    * @param query - Optional semantic search query
+   * @param conversationId - Passed through to `/Recall` as-is. Sending one
+   *   without a `query` makes Memory infer one from that conversation's history
+   *   — an expensive server-side step — so leave it unset when there is no
+   *   per-turn topic (e.g. `"once"` mode's cache-priming fetch).
    * @returns Promise containing TACMemoryResponse wrapper providing unified access to memory data.
    *
    * Attempts to retrieve from Memory API first:
@@ -505,7 +509,8 @@ export class TAC {
    */
   public async retrieveMemory(
     session: ConversationSession,
-    query?: string
+    query?: string,
+    conversationId?: string
   ): Promise<TACMemoryResponse> {
     if (!this.isOrchestratorEnabled()) {
       return new TACMemoryResponse([]);
@@ -575,7 +580,7 @@ export class TAC {
       }
 
       const memoryResponse = await this.memoryClient.retrieveMemories(session.profileId, {
-        conversationId: session.conversationId,
+        conversationId,
         query,
         observationsLimit: this.config.memoryConfig.observationsLimit,
         summariesLimit: this.config.memoryConfig.summariesLimit,

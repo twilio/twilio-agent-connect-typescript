@@ -13,8 +13,10 @@ export const TwilioMemoryConfigSchema = z.object({
   traitGroups: z.array(z.string()).optional(),
   observationsLimit: z.number().int().min(0).max(100).default(20),
   summariesLimit: z.number().int().min(0).max(100).default(5),
-  // API default is 0 (no communications fetched). SDK defaults to 10 for a useful out-of-box experience.
-  communicationsLimit: z.number().int().min(0).max(100).default(10),
+  // 0 matches the Memory API and Python SDK. Above 0, Memory requires a
+  // conversationId on every /Recall, forcing the query expansion that
+  // `memoryMode: "once"` exists to avoid.
+  communicationsLimit: z.number().int().min(0).max(100).default(0),
   relevanceThreshold: z.number().min(0.0).max(1.0).default(0.0),
   /**
    * Trait group name that holds the phone identifier on newly created profiles.

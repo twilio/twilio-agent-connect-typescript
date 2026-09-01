@@ -84,6 +84,8 @@ describe('Memory mode "once"', () => {
     expect(spy).toHaveBeenCalledTimes(1);
     // "once" mode must not forward the inbound message as the query.
     expect(spy.mock.calls[0]?.[1]).toBeUndefined();
+    // ...nor the conversation id, which would trigger query expansion.
+    expect(spy.mock.calls[0]?.[2]).toBeUndefined();
   });
 
   it('invalidates the cache on INACTIVE, then re-fetches on the next message', async () => {
