@@ -66,10 +66,10 @@ export const TACConfigSchema = z.object({
     .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
     .optional(),
   /**
-   * Public base URL where voice routes are reachable (e.g. "example.ngrok.app",
-   * or "example.com/server1" when served under a base path). Used by
-   * VoiceChannel to construct the public WebSocket URL and ConversationRelay
-   * action URL. Required when using the Voice channel.
+   * Public domain where voice routes are reachable, optionally including a port
+   * and/or base path (e.g. "example.ngrok.app", "example.ngrok.app:8080",
+   * or "example.com/server1"). Used by VoiceChannel to construct the public
+   * WebSocket URL and ConversationRelay action URL. Required when using the Voice channel.
    *
    * Whitespace, schemes (https://, wss://), and trailing slashes are stripped
    * automatically; anything else is passed through as given. Mirrors the Python
