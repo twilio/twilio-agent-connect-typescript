@@ -113,18 +113,20 @@ export class TAC {
       );
 
       tac.memoryStoreId = conversationConfig.memoryStoreId;
-      tac.memoryClient = new MemoryClient(
-        tac.config,
-        conversationConfig.memoryStoreId,
-        tac.logger.child({ component: 'memory' })
-      );
+      if (conversationConfig.memoryStoreId) {
+        tac.memoryClient = new MemoryClient(
+          tac.config,
+          conversationConfig.memoryStoreId,
+          tac.logger.child({ component: 'memory' })
+        );
+      }
 
       tac.knowledgeClient = new KnowledgeClient(
         tac.config,
         tac.logger.child({ component: 'knowledge' })
       );
 
-      if (tac.config.cintelConfigurationId) {
+      if (tac.config.cintelConfigurationId && tac.memoryClient) {
         tac.cintelProcessor = new OperatorResultProcessor(
           tac.memoryClient,
           {
