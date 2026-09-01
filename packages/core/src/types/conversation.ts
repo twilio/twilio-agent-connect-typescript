@@ -451,8 +451,8 @@ export interface InitiateConversationResult {
 /**
  * Result of initiating an outbound voice conversation.
  * Note: conversationId is not included because the conversation is created by
- * Conversation Orchestrator during passive hydration — the SDK discovers it
- * lazily on the first prompt via callSid lookup.
+ * Conversation Orchestrator during passive hydration — the SDK discovers it by
+ * callSid, in the background from WebSocket setup.
  */
 export interface InitiateVoiceConversationResult {
   callSid: string;

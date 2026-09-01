@@ -40,6 +40,11 @@ import { studioVoiceHandoffUrl } from '../util/handoff-urls';
 /** Fixed default welcome greeting applied when no layer sets one. */
 const DEFAULT_WELCOME_GREETING = 'Hello! How can I assist you today?';
 
+/** Poll window from call-connect: 10 attempts, 250ms doubling to a 1.5s cap (~11s). */
+const POLL_ATTEMPTS = 10;
+const POLL_BASE_DELAY_MS = 250;
+const POLL_MAX_DELAY_MS = 1500;
+
 /**
  * Configuration for the Voice channel.
  *
@@ -123,6 +128,10 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
     utteranceUntilInterrupt: string | undefined;
     durationUntilInterruptMs: number | undefined;
   }) => void;
+  /**
+   * Fired once the session and WebSocket registration exist — in orchestrated
+   * mode possibly before the first prompt, since the lookup starts at setup.
+   */
   onWebSocketConnected?: (data: { conversationId: ConversationId }) => void;
   onWebSocketDisconnected?: (data: { conversationId: ConversationId }) => void;
 }
@@ -412,6 +421,82 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
+   * Poll Conversation Orchestrator for the conversation ConversationRelay
+   * created for `callSid`, then register the local session and WebSocket.
+   * Runs in the background from `setup`, so those can exist before the
+   * caller speaks.
+   */
+  private async initializeOrchestratedConversation(
+    callSid: string,
+    fromNumber: string | null,
+    ws: WebSocket
+  ): Promise<ConversationId> {
+    if (!this.conversationClient) {
+      throw new Error('Conversation client is required in orchestrated mode');
+    }
+
+    let conversations: Awaited<ReturnType<typeof this.conversationClient.listConversations>> = [];
+
+    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+      // ACTIVE only: a stale conversation on the same CallSid would break the
+      // "exactly 1" check below.
+      conversations = await this.conversationClient.listConversations({
+        channelId: callSid,
+        status: ['ACTIVE'],
+      });
+      if (conversations.length === 1) break;
+      if (attempt < POLL_ATTEMPTS - 1) {
+        this.logger.debug(
+          { call_sid: callSid, attempt: attempt + 1, found: conversations.length },
+          'Conversation not ready yet, polling again'
+        );
+        const delayMs = Math.min(POLL_BASE_DELAY_MS * 2 ** attempt, POLL_MAX_DELAY_MS);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    if (conversations.length !== 1) {
+      throw new Error(
+        `Expected exactly 1 conversation for callSid ${callSid}, ` +
+          `but found ${conversations.length} after ${POLL_ATTEMPTS} attempts`
+      );
+    }
+
+    const conversation = conversations[0]!;
+    const conversationId = conversation.id as ConversationId;
+
+    const participants = await this.conversationClient.listParticipants(conversationId);
+
+    const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
+    const customerAddress =
+      customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
+      fromNumber ??
+      undefined;
+    const profileId: ProfileId | undefined = customerParticipant?.profileId
+      ? (customerParticipant.profileId as ProfileId)
+      : undefined;
+
+    this.webSocketConnections.set(conversationId, ws);
+    this.callSidToConversationId.set(callSid, conversationId);
+    const session = this.startConversation(conversationId, profileId);
+    // conversationId is the Orchestrator's, so record the CallSid too —
+    // out-of-band call webhooks resolve via getConversationSessionByCallSid.
+    session.callSid = callSid;
+
+    if (customerAddress) {
+      session.authorInfo = {
+        address: customerAddress,
+      };
+    }
+
+    if (this.voiceCallbacks.onWebSocketConnected) {
+      this.voiceCallbacks.onWebSocketConnected({ conversationId });
+    }
+
+    return conversationId;
+  }
+
+  /**
    * Handle WebSocket connection from ConversationRelay
    */
   public handleWebSocketConnection(ws: WebSocket): void {
@@ -419,6 +504,9 @@ export class VoiceChannel extends BaseChannel {
     let callSid: string | null = null;
     let fromNumber: string | null = null;
     let initializationFailed = false;
+    // Background conversation lookup started on `setup`; cleared once claimed,
+    // by the first prompt or by the close handler.
+    let initPromise: Promise<ConversationId> | null = null;
 
     ws.on('message', (data: Buffer) => {
       (async (): Promise<void> => {
@@ -445,6 +533,20 @@ export class VoiceChannel extends BaseChannel {
             case 'setup':
               callSid = message.callSid;
               fromNumber = message.from;
+
+              // ConversationRelay creates the conversation at call-connect, so
+              // start the lookup now and let it overlap the wait for the
+              // caller's first utterance instead of delaying it.
+              if (this.tac.isOrchestratorEnabled()) {
+                this.logger.debug(
+                  { call_sid: callSid },
+                  'Starting background conversation initialization'
+                );
+                initPromise = this.initializeOrchestratedConversation(callSid, fromNumber, ws);
+                // Marks it handled; whoever claims it still sees the rejection.
+                void initPromise.catch(() => undefined);
+              }
+
               if (this.voiceCallbacks.onSetup) {
                 this.voiceCallbacks.onSetup({
                   callSid,
@@ -485,72 +587,25 @@ export class VoiceChannel extends BaseChannel {
                     if (fromNumber) {
                       session.authorInfo = { address: fromNumber };
                     }
+
+                    if (this.voiceCallbacks.onWebSocketConnected) {
+                      this.voiceCallbacks.onWebSocketConnected({ conversationId });
+                    }
                   } else {
-                    // Orchestrated mode: poll for conversation created by CO
-                    if (!this.conversationClient) {
-                      throw new Error('Conversation client is required in orchestrated mode');
+                    // Await the lookup from `setup` — usually already done.
+                    // Stays visible to the close handler while awaited, so a
+                    // hangup mid-lookup still cleans up; cleared after so a
+                    // retry starts fresh and `close` uses conversationId.
+                    initPromise ??= this.initializeOrchestratedConversation(
+                      callSid,
+                      fromNumber,
+                      ws
+                    );
+                    try {
+                      conversationId = await initPromise;
+                    } finally {
+                      initPromise = null;
                     }
-
-                    const POLL_ATTEMPTS = 5;
-                    const POLL_DELAY_MS = 500;
-                    let conversations: Awaited<
-                      ReturnType<typeof this.conversationClient.listConversations>
-                    > = [];
-
-                    for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
-                      conversations = await this.conversationClient.listConversations({
-                        channelId: callSid,
-                      });
-                      if (conversations.length === 1) break;
-                      if (attempt < POLL_ATTEMPTS - 1) {
-                        this.logger.debug(
-                          { call_sid: callSid, attempt: attempt + 1, found: conversations.length },
-                          'Conversation not ready yet, polling again'
-                        );
-                        await new Promise(resolve => setTimeout(resolve, POLL_DELAY_MS));
-                      }
-                    }
-
-                    if (conversations.length !== 1) {
-                      throw new Error(
-                        `Expected exactly 1 conversation for callSid ${callSid}, ` +
-                          `but found ${conversations.length} after ${POLL_ATTEMPTS} attempts`
-                      );
-                    }
-
-                    const conversation = conversations[0]!;
-                    conversationId = conversation.id as ConversationId;
-
-                    const participants =
-                      await this.conversationClient.listParticipants(conversationId);
-
-                    const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
-                    const customerAddress =
-                      customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
-                      fromNumber ??
-                      undefined;
-                    const profileId: ProfileId | undefined = customerParticipant?.profileId
-                      ? (customerParticipant.profileId as ProfileId)
-                      : undefined;
-
-                    this.webSocketConnections.set(conversationId, ws);
-                    this.callSidToConversationId.set(callSid, conversationId);
-                    const session = this.startConversation(conversationId, profileId);
-                    // In orchestrator mode conversationId is the Orchestrator
-                    // conversation id, so record the CallSid so out-of-band call
-                    // webhooks can reach this session (resolved via
-                    // getConversationSessionByCallSid).
-                    session.callSid = callSid;
-
-                    if (customerAddress) {
-                      session.authorInfo = {
-                        address: customerAddress,
-                      };
-                    }
-                  }
-
-                  if (this.voiceCallbacks.onWebSocketConnected) {
-                    this.voiceCallbacks.onWebSocketConnected({ conversationId });
                   }
 
                   // Success! Clear retry count and failed flag
@@ -616,6 +671,26 @@ export class VoiceChannel extends BaseChannel {
     });
 
     ws.on('close', () => {
+      // Call ended before any prompt claimed the lookup. A promise can't be
+      // cancelled, so adopt what it registers and tear that down, or the
+      // WebSocket registration leaks. The conversation stays tracked (CLOSED).
+      const pendingInit = initPromise;
+      initPromise = null;
+      if (pendingInit && !conversationId) {
+        void pendingInit
+          .then(async adoptedId => {
+            await this.handleWebSocketDisconnect(adoptedId);
+            if (callSid) this.callSidToConversationId.delete(callSid);
+          })
+          // No prompt ever arrived to surface a lookup failure, so log here.
+          .catch((err: unknown) => {
+            this.logger.error(
+              { err, call_sid: callSid },
+              'Background conversation initialization failed after the call ended'
+            );
+          });
+      }
+
       if (conversationId) {
         void this.handleWebSocketDisconnect(conversationId).catch((err: unknown) => {
           this.logger.error(
@@ -1086,8 +1161,8 @@ export class VoiceChannel extends BaseChannel {
    *
    * Places an outbound call with inline TwiML that connects to ConversationRelay.
    * The conversationConfiguration attribute tells CO to create and manage the
-   * conversation during passive hydration. The session is initialized lazily
-   * on the first prompt when the conversation is discovered by callSid.
+   * conversation during passive hydration. The session is initialized when the
+   * background callSid lookup started at WebSocket setup finds it.
    *
    * TwiML fields are merged per-field, highest precedence first:
    *   1. `options.twimlOptions` — per-call overrides
@@ -1327,9 +1402,8 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Hang up a call and clean up its ConversationRelay session.
    *
-   * Works on `callSid` alone, in any mode and before a session exists, so it's
-   * safe from a call-event handler that fires before the first prompt. Session
-   * cleanup no-ops if no tracked session matches.
+   * Works on `callSid` alone, whether or not a session exists yet. No-ops the
+   * session cleanup if none is tracked.
    *
    * Does not throw — hanging up an already-ended call is routine (the callee
    * hangs up while AMD is still resolving), and handlers shouldn't have to
@@ -1365,11 +1439,10 @@ export class VoiceChannel extends BaseChannel {
    * keyed by conversation id: the Orchestrator conversation id in orchestrator
    * mode, the CallSid only in ConversationRelay-only mode.
    *
-   * Sessions are created on the caller's first prompt, not at WebSocket setup,
-   * so this returns `undefined` for a call that connected but hasn't been spoken
-   * into. That includes `onAmd` under `machineDetection: 'Enable'`, which fires
-   * before the first prompt by design — hang up with {@link endCall}, which
-   * needs no session.
+   * Relay-only mode creates the session on the first prompt; orchestrated
+   * mode creates it when the lookup started at setup finishes, so it may
+   * exist before the caller speaks — including before `onAmd` fires. Treat it
+   * as racy and hang up with {@link endCall}, which needs no session.
    *
    * At the other end, orchestrator mode keeps the session until Conversation
    * Orchestrator's CLOSED webhook, so it outlives the call and `onCallStatus` /
@@ -1388,8 +1461,8 @@ export class VoiceChannel extends BaseChannel {
    *
    * @param callSid - Twilio Call SID, e.g. from
    *   `InitiateVoiceConversationResult.callSid` or a call event.
-   * @returns The session, or `undefined` — no first prompt yet, the call ended,
-   *   or it landed on another instance (see the horizontal-scaling note in
+   * @returns The session, or `undefined` — not created yet, the call ended, or
+   *   it landed on another instance (see the horizontal-scaling note in
    *   CLAUDE.md).
    */
   public getConversationSessionByCallSid(callSid: string): ConversationSession | undefined {
