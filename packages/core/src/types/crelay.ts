@@ -1227,3 +1227,14 @@ export const InitiateVoiceConversationOptionsOpenAIRealtimeSchema =
 export type InitiateVoiceConversationOptionsOpenAIRealtime = z.infer<
   typeof InitiateVoiceConversationOptionsOpenAIRealtimeSchema
 >;
+
+/** Outbound options for `GPTLiveProvider`, adding a per-call `sessionConfig`. */
+export const InitiateVoiceConversationOptionsGPTLiveSchema =
+  InitiateVoiceConversationOptionsBase.extend({
+    /** Used verbatim in place of `GPTLiveProviderConfig.defaultSessionConfig` for this call. */
+    sessionConfig: z.record(z.string(), z.unknown()).optional(),
+  });
+
+export type InitiateVoiceConversationOptionsGPTLive = z.infer<
+  typeof InitiateVoiceConversationOptionsGPTLiveSchema
+>;
