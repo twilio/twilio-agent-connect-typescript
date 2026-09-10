@@ -22,3 +22,11 @@ export {
   TWILIO_AUDIO_FORMAT_FOR_REALTIME,
 } from './openai-realtime';
 export type { OpenAIRealtimeProviderConfigOptions } from './openai-realtime';
+
+export {
+  GPTLiveProvider,
+  GPTLiveProviderConfig,
+  TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE,
+  GPT_LIVE_SESSION_ID_METADATA_KEY,
+} from './gpt-live';
+export type { GPTLiveProviderConfigOptions } from './gpt-live';

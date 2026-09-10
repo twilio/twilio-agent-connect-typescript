@@ -27,6 +27,10 @@ export {
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
   TWILIO_AUDIO_FORMAT_FOR_REALTIME,
+  GPTLiveProvider,
+  GPTLiveProviderConfig,
+  TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE,
+  GPT_LIVE_SESSION_ID_METADATA_KEY,
 } from './media-streams';
 export type {
   BuildStreamTwiMLInputs,
@@ -34,4 +38,5 @@ export type {
   MediaStreamsProviderConfigOptions,
   MediaStreamsOpenAIProviderConfigOptions,
   OpenAIRealtimeProviderConfigOptions,
+  GPTLiveProviderConfigOptions,
 } from './media-streams';

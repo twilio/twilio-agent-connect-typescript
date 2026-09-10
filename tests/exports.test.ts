@@ -52,6 +52,19 @@ describe('package exports', () => {
     expect(tac.generateStreamTwiml).toBeDefined();
     expect(tac.TWILIO_AUDIO_FORMAT_FOR_REALTIME).toEqual({ type: 'audio/pcmu' });
   });
+
+  it('exports the GPT-Live provider surface', () => {
+    expect(tac.GPTLiveProvider).toBeDefined();
+    expect(tac.GPTLiveProviderConfig).toBeDefined();
+    expect(tac.TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE).toEqual({ type: 'audio/pcmu', rate: 8000 });
+    expect(tac.GPT_LIVE_SESSION_ID_METADATA_KEY).toBe('gpt_live_session_id');
+    expect(tac.InitiateVoiceConversationOptionsGPTLiveSchema).toBeDefined();
+  });
+
+  it('keeps the Realtime audio format distinct from the GPT-Live one', () => {
+    expect(tac.TWILIO_AUDIO_FORMAT_FOR_REALTIME).toEqual({ type: 'audio/pcmu' });
+    expect(tac.TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE).not.toEqual(tac.TWILIO_AUDIO_FORMAT_FOR_REALTIME);
+  });
 });
 
 describe('deprecated voice aliases', () => {
