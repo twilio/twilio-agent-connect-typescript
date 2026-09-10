@@ -1,4 +1,4 @@
-import { WebSocket } from 'ws';
+import type { WebSocket } from 'ws';
 import type { TACConfig } from '../../../../lib/config';
 import {
   InitiateVoiceConversationOptionsOpenAIRealtimeSchema,
@@ -434,37 +434,6 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
         response: this.config.welcomeGreetingResponse,
       });
     }
-  }
-
-  /**
-   * Open a WebSocket and resolve once it is ready to carry traffic.
-   *
-   * Isolated from {@link connectModel} so tests can substitute a socket
-   * without reaching the network.
-   *
-   * A resolved socket always carries at least one `'error'` listener, whatever
-   * the caller does with it next.
-   *
-   * @internal
-   */
-  public openModelSocket(url: string, headers: Record<string, string>): Promise<WebSocket> {
-    return new Promise<WebSocket>((resolve, reject) => {
-      const ws = new WebSocket(url, { headers });
-      const onOpen = (): void => {
-        ws.off('error', onError);
-        // A listener-less 'error' emission throws, and `ws` emits one for any
-        // frame its receiver rejects — including mid-close. Callers that never
-        // reach attachModelHandlers must still get a socket that can't do that.
-        ws.on('error', () => {});
-        resolve(ws);
-      };
-      const onError = (error: Error): void => {
-        ws.off('open', onOpen);
-        reject(error);
-      };
-      ws.once('open', onOpen);
-      ws.once('error', onError);
-    });
   }
 
   /**
