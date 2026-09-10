@@ -6,6 +6,7 @@ import type { ConversationId } from '@twilio/tac-core';
 import { GPTLiveProviderConfig } from '../packages/core/src/channels/voice/media-streams/gpt-live/config';
 import {
   GPTLiveProvider,
+  GPT_LIVE_SESSION_ID_METADATA_KEY,
   TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE,
 } from '../packages/core/src/channels/voice/media-streams/gpt-live/provider';
 
@@ -435,5 +436,210 @@ describe('GPTLiveProvider WebSocket bridge', () => {
     // Nothing rethrows here, so routing it to the host is the only way it
     // reaches the application at all.
     expect(channel.handleErrorInternal).toHaveBeenCalledWith(error, { conversationId: 'CA1' });
+  });
+});
+
+describe('GPTLiveProvider model events', () => {
+  it('sends the welcome instruction only once session.started arrives', async () => {
+    const { provider } = makeProvider({ welcomeInstruction: 'Greet the caller warmly.' });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    expect(modelWs.json().some(m => m.type === 'session.commentary.append')).toBe(false);
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.started' }));
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'session.commentary.append',
+        delegation_id: null,
+        content: 'Greet the caller warmly.',
+      })
+    );
+  });
+
+  it('sends nothing on session.started when no welcome instruction is configured', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+    const before = modelWs.sent.length;
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.started' }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(modelWs.sent.length).toBe(before);
+  });
+
+  it('relays model audio back to Twilio tagged with the streamSid', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.output_audio.delta', delta: 'xyz' }));
+    await vi.waitFor(() =>
+      expect(twilioWs.json()).toContainEqual({
+        event: 'media',
+        streamSid: 'MZ1',
+        media: { payload: 'xyz' },
+      })
+    );
+  });
+
+  it('records an input transcript delta as a user turn', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.input_transcript.delta', delta: 'hi' })
+    );
+    await vi.waitFor(() =>
+      expect(channel.getActiveConversations().get('CA1')!.metadata).toMatchObject({
+        transcript: [{ role: 'user', text: 'hi' }],
+      })
+    );
+  });
+
+  it('merges consecutive same-role deltas into one turn', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    for (const delta of ['he', 'llo']) {
+      modelWs.emit('message', JSON.stringify({ type: 'session.output_transcript.delta', delta }));
+    }
+    await vi.waitFor(() =>
+      expect(channel.getActiveConversations().get('CA1')!.metadata).toMatchObject({
+        transcript: [{ role: 'assistant', text: 'hello' }],
+      })
+    );
+  });
+
+  it('starts a new turn when the role changes', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.input_transcript.delta', delta: 'hi' })
+    );
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.output_transcript.delta', delta: 'hello' })
+    );
+    await vi.waitFor(() =>
+      expect(channel.getActiveConversations().get('CA1')!.metadata).toMatchObject({
+        transcript: [
+          { role: 'user', text: 'hi' },
+          { role: 'assistant', text: 'hello' },
+        ],
+      })
+    );
+  });
+
+  it('survives a malformed event without ending the call', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit('message', 'not json at all');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(twilioWs.closed).toBe(false);
+  });
+});
+
+describe('GPTLiveProvider session id', () => {
+  /** The session created for `CA1` by `startCall`. */
+  function sessionFor(channel: ReturnType<typeof makeChannelStub>) {
+    return channel.getActiveConversations().get('CA1')!;
+  }
+
+  it('records the session id from session.started onto the session metadata', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.started', session: { id: 'rtc_123', status: 'active' } })
+    );
+
+    await vi.waitFor(() =>
+      expect(sessionFor(channel).metadata).toMatchObject({
+        [GPT_LIVE_SESSION_ID_METADATA_KEY]: 'rtc_123',
+      })
+    );
+  });
+
+  it('records the session id from session.closed when session.started was missed', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'session.closed',
+        reason: 'client_request',
+        session: { id: 'live_456' },
+      })
+    );
+
+    await vi.waitFor(() =>
+      expect(sessionFor(channel).metadata).toMatchObject({
+        [GPT_LIVE_SESSION_ID_METADATA_KEY]: 'live_456',
+      })
+    );
+  });
+
+  it('leaves metadata untouched when the snapshot carries no usable id', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.started' }));
+    modelWs.emit('message', JSON.stringify({ type: 'session.started', session: {} }));
+    modelWs.emit('message', JSON.stringify({ type: 'session.started', session: { id: '' } }));
+    modelWs.emit('message', JSON.stringify({ type: 'session.started', session: { id: 42 } }));
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(sessionFor(channel).metadata).not.toHaveProperty(GPT_LIVE_SESSION_ID_METADATA_KEY);
+  });
+
+  it('logs the session id once per call even when both snapshots carry it', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.started', session: { id: 'live_789' } })
+    );
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.closed', session: { id: 'live_789' } })
+    );
+
+    await vi.waitFor(() =>
+      expect(sessionFor(channel).metadata).toMatchObject({
+        [GPT_LIVE_SESSION_ID_METADATA_KEY]: 'live_789',
+      })
+    );
+    const idLogs = channel.logger.info.mock.calls.filter(
+      ([, message]) => message === 'GPT-Live session id'
+    );
+    expect(idLogs).toHaveLength(1);
+    expect(idLogs[0][0]).toEqual({ conversation_id: 'CA1', gpt_live_session_id: 'live_789' });
   });
 });

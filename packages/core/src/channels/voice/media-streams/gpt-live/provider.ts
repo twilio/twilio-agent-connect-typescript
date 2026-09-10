@@ -33,6 +33,16 @@ import { CallState } from './state';
 export const TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE = { type: 'audio/pcmu', rate: 8000 } as const;
 
 /**
+ * `ConversationSession.metadata` key holding OpenAI's id for the GPT-Live
+ * session behind this call, set once `session.started` arrives. Quote it to
+ * OpenAI support when reporting a session.
+ *
+ * Opaque: the prefix differs across GPT-Live's alpha (`rtc_`) and GA (`live_`),
+ * so never parse it, validate it, or branch on it.
+ */
+export const GPT_LIVE_SESSION_ID_METADATA_KEY = 'gpt_live_session_id';
+
+/**
  * Reserved <Stream> customParameters key correlating an outbound call's
  * sessionConfig override to its WebSocket start event.
  */
@@ -500,12 +510,120 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     await this.channel.endConversationInternal(conversationId);
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- Stub throws synchronously; Task 5 replaces with the real async dispatch.
+  /** Apply one parsed GPT-Live event to the call. */
+  // eslint-disable-next-line @typescript-eslint/require-await -- Stays `async` to satisfy the base's abstract signature; the branch that awaits (tool calls) lands with `handleFunctionCall`.
   protected override async dispatchModelEvent(
-    _convId: ConversationId,
-    _session: ConversationSession,
-    _event: Record<string, unknown>
+    conversationId: ConversationId,
+    session: ConversationSession,
+    event: Record<string, unknown>
   ): Promise<void> {
-    throw new Error('not implemented');
+    switch (event.type) {
+      case 'error': {
+        this.logger.error(
+          { conversation_id: conversationId, error: event.error },
+          'GPT-Live error event'
+        );
+        break;
+      }
+
+      case 'session.closed': {
+        // Carries the session snapshot too, so it is the backstop for a
+        // `session.started` that never arrived or arrived malformed.
+        this.recordGptLiveSessionId(conversationId, session, event);
+        this.calls.get(conversationId)?.markClosed();
+        break;
+      }
+
+      case 'session.started': {
+        this.recordGptLiveSessionId(conversationId, session, event);
+        // Sending `session.commentary.append` before this event is
+        // undocumented behavior, so the greeting waits for it.
+        const instruction = this.config.welcomeInstruction;
+        if (instruction !== null) {
+          this.modelSend(conversationId, {
+            type: 'session.commentary.append',
+            delegation_id: null,
+            content: instruction,
+          });
+        }
+        break;
+      }
+
+      case 'session.input_transcript.delta': {
+        GPTLiveProvider.appendTranscriptDelta(session, 'user', event);
+        break;
+      }
+
+      case 'session.output_transcript.delta': {
+        GPTLiveProvider.appendTranscriptDelta(session, 'assistant', event);
+        break;
+      }
+
+      case 'session.output_audio.delta': {
+        // No item_id or barge-in bookkeeping: GPT-Live is full-duplex and
+        // handles interruption server-side, so there is nothing to truncate.
+        const delta = event.delta;
+        if (delta) {
+          this.twilioSend(conversationId, {
+            event: 'media',
+            streamSid: session.metadata.streamSid,
+            media: { payload: delta },
+          });
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+  }
+
+  /**
+   * Surface the GPT-Live session id from a session-snapshot event.
+   *
+   * OpenAI support asks for this id when investigating a session, so it goes
+   * where a caller can reach it — `session.metadata`, which outlives the call
+   * into `onConversationEnded` — and is logged once per call.
+   */
+  private recordGptLiveSessionId(
+    conversationId: ConversationId,
+    session: ConversationSession,
+    event: Record<string, unknown>
+  ): void {
+    const snapshot = (event.session ?? {}) as Record<string, unknown>;
+    const sessionId = snapshot.id;
+    if (typeof sessionId !== 'string' || sessionId === '') {
+      return;
+    }
+    // Idempotent: `session.started` and `session.closed` both carry the
+    // snapshot, and a normal call sees both.
+    if (session.metadata[GPT_LIVE_SESSION_ID_METADATA_KEY] === sessionId) {
+      return;
+    }
+    session.metadata[GPT_LIVE_SESSION_ID_METADATA_KEY] = sessionId;
+    this.logger.info(
+      { conversation_id: conversationId, gpt_live_session_id: sessionId },
+      'GPT-Live session id'
+    );
+  }
+
+  /** Accumulate one transcript delta into the in-progress turn. */
+  private static appendTranscriptDelta(
+    session: ConversationSession,
+    role: 'user' | 'assistant',
+    event: Record<string, unknown>
+  ): void {
+    const text = event.delta;
+    if (typeof text !== 'string' || text === '') {
+      return;
+    }
+
+    const transcript = (session.metadata.transcript ??= []) as { role: string; text: string }[];
+    const last = transcript[transcript.length - 1];
+    if (last !== undefined && last.role === role) {
+      last.text += text;
+    } else {
+      transcript.push({ role, text });
+    }
   }
 }
