@@ -186,6 +186,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com
 - **[Chat Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/chat/)** - Web chat integration example
 - **[ConversationRelay-Only Mode](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/relay-only/)** - Get started with voice using just ConversationRelay
 - **[OpenAI Realtime over Media Streams](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/openai-realtime/)** - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI Realtime API
+- **[GPT-Live over Media Streams](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/gpt-live/)** - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI GPT-Live API
 - **[Outbound Conversations](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/outbound/)** - Agent-initiated conversations example
 - **[Voice Call Events](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-call-events/)** - Answering machine detection, recording, and call disposition on outbound calls
 - More examples coming soon
