@@ -613,8 +613,10 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
   ): Promise<void> {
     const callId = item.call_id;
     if (typeof callId !== 'string' || !callId) {
+      // Keys only, never the item: `arguments` carries whatever the caller
+      // said, so logging it verbatim would put conversation content in logs.
       this.logger.error(
-        { conversation_id: conversationId, item },
+        { conversation_id: conversationId, item_keys: Object.keys(item) },
         'Received malformed function_call item without call_id'
       );
       return;
@@ -625,7 +627,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     if (typeof name !== 'string' || !name) {
       // No name means no tool can be selected, so none runs.
       this.logger.error(
-        { conversation_id: conversationId, call_id: callId, item },
+        { conversation_id: conversationId, call_id: callId, item_keys: Object.keys(item) },
         'Received malformed function_call item without tool name'
       );
       output = JSON.stringify({ error: 'Malformed function call: missing tool name.' });
