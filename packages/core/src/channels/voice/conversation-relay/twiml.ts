@@ -1,6 +1,6 @@
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
 import type { TwiMLOptions } from '../../../types/index';
-import type { VoiceChannelConfig } from '../../voice';
+import type { ConversationRelayProviderConfigOptions } from './config';
 import { studioVoiceHandoffUrl } from '../../../util/handoff-urls';
 import { TwiMLBuilderBase, filterUnsetValues } from '../twiml';
 
@@ -48,7 +48,7 @@ export interface BuildTwiMLInputs {
  * Builds the TwiML for a ConversationRelay call, owning every layering and
  * resolution decision so `VoiceChannel` doesn't have to.
  */
-export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<VoiceChannelConfig> {
+export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<ConversationRelayProviderConfigOptions> {
   /**
    * Field names on {@link TwiMLOptions} that map directly to `<ConversationRelay>`
    * attributes (camelCase, emitted as-is). Excludes the fields handled specially
@@ -135,11 +135,7 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<VoiceChannel
       this.overlayFields(merged, host, SKIP_ACTION_URL);
     }
     if (this.channelConfig.defaultTwimlOptions) {
-      this.overlayFields(
-        merged,
-        this.channelConfig.defaultTwimlOptions,
-        SKIP_ACTION_URL
-      );
+      this.overlayFields(merged, this.channelConfig.defaultTwimlOptions, SKIP_ACTION_URL);
     }
     if (perCall) {
       this.overlayFields(merged, perCall, SKIP_ACTION_URL);

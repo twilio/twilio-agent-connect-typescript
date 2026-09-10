@@ -1,43 +1,34 @@
 import { WebSocket } from 'ws';
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
-import Twilio from 'twilio';
+import type { ConversationClient } from '../../../clients/conversation';
+import type { TACConfig } from '../../../lib/config';
+import type { Logger } from '../../../lib/logger';
 import {
-  ChannelType,
+  CallOptions,
+  CallOptionsSchema,
   ConversationId,
-  ConversationSession,
-  ProfileId,
-  WebSocketMessageSchema,
-  PromptMessage,
-  InterruptMessage,
-  TextTokenMessage,
-  CustomParameters,
+  ConversationRelayCallbackPayload,
   ConversationRelayConfig,
   ConversationRelayConfigSchema,
-  ConversationRelayCallbackPayload,
+  CustomParameters,
   InitiateVoiceConversationOptions,
   InitiateVoiceConversationOptionsSchema,
+  InterruptMessage,
+  ProfileId,
+  PromptMessage,
+  TextTokenMessage,
   TwiMLOptions,
   TwiMLRequest,
-  ConversationWebhookPayload,
-  CallOptions,
-  CallEventKind,
-  CallStatusEvent,
-  AmdEvent,
-  RecordingEvent,
-  CallOptionsSchema,
+  WebSocketMessageSchema,
   callOptionsToCreateParams,
-  callStatusEventFromForm,
-  amdEventFromForm,
-  recordingEventFromForm,
-} from '../types/index';
-import type { InitiateVoiceConversationResult } from '../types/conversation';
-import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
-import type { TAC } from '../lib/tac';
-import type { TACConfig } from '../lib/config';
-import { TACMemoryResponse } from '../lib/tac-memory-response';
-import { maskAddress, redactTwimlParameters } from '../util/log-redaction';
-import { TwiMLBuilderConversationRelay } from './voice/conversation-relay/twiml';
-import { filterUnsetValues } from './voice/twiml';
+} from '../../../types/index';
+import type { InitiateVoiceConversationResult } from '../../../types/conversation';
+import { maskAddress, redactTwimlParameters } from '../../../util/log-redaction';
+import type { VoiceChannel } from '../channel';
+import { VoiceProvider } from '../provider';
+import { filterUnsetValues } from '../twiml';
+import type { ConversationRelayProviderConfig } from './config';
+import { TwiMLBuilderConversationRelay } from './twiml';
 
 /** Poll window from call-connect: 10 attempts, 250ms doubling to a 1.5s cap (~11s). */
 const POLL_ATTEMPTS = 10;
@@ -45,371 +36,65 @@ const POLL_BASE_DELAY_MS = 250;
 const POLL_MAX_DELAY_MS = 1500;
 
 /**
- * Configuration for the Voice channel.
- *
- * `defaultTwimlOptions` is one of several TwiML layers that merge per-field;
- * see `handleIncomingCall` (inbound) and `initiateOutboundConversation`
- * (outbound) for the full precedence order.
- */
-export interface VoiceChannelConfig extends BaseChannelOptions {
-  /**
-   * Static `TwiMLOptions` applied to every call (inbound and outbound).
-   * Controls the TwiML inside `<ConversationRelay>` — voice, language,
-   * transcription provider, welcomeGreeting, `<Language>` children, etc. Use
-   * this when the same ConversationRelay configuration is correct for every call.
-   *
-   * Per-call inbound customization is registered via
-   * `VoiceChannel.onInboundCallTwiml(...)` (not on this config).
-   *
-   * Note: `customParameters` and `languages` replace wholesale when a
-   * higher-priority layer sets them.
-   */
-  defaultTwimlOptions?: TwiMLOptions;
-
-  /**
-   * Static {@link CallOptions} applied to every outbound call — the
-   * `calls.create` parameters, including the call-event callback URLs. This is
-   * the layer to use for a custom server or non-default routes: URLs set here
-   * override the ones TAC would derive from `voicePublicDomain` +
-   * `voiceCallEventPath`.
-   */
-  defaultCallOptions?: CallOptions;
-}
-
-/**
- * Callback that produces per-call overrides for the TwiML inside
- * `<ConversationRelay>` on inbound calls. Receives a framework-neutral
- * {@link TwiMLRequest} and returns {@link TwiMLOptions}.
- */
-export type InboundCallTwimlHandler = (req: TwiMLRequest) => Promise<TwiMLOptions>;
-
-/** Handler for Twilio `statusCallback` webhooks. */
-export type CallStatusHandler = (event: CallStatusEvent) => Promise<void> | void;
-
-/** Handler for Twilio `asyncAmdStatusCallback` webhooks. */
-export type AmdHandler = (event: AmdEvent) => Promise<void> | void;
-
-/** Handler for Twilio `recordingStatusCallback` webhooks. */
-export type RecordingHandler = (event: RecordingEvent) => Promise<void> | void;
-
-/**
- * Voice channel event callbacks extending base callbacks
- */
-export interface VoiceChannelEvents extends BaseChannelEvents {
-  onSetup?: (data: {
-    callSid: string;
-    from: string;
-    to: string;
-    customParameters: Record<string, unknown> | undefined;
-  }) => void;
-  onPrompt?: (data: {
-    conversationId: ConversationId;
-    transcript: string;
-    userMemory?: TACMemoryResponse;
-    session?: ConversationSession;
-    abortSignal: AbortSignal;
-  }) => Promise<void> | void;
-  onInterrupt?: (data: {
-    conversationId: ConversationId;
-    utteranceUntilInterrupt: string | undefined;
-    durationUntilInterruptMs: number | undefined;
-  }) => void;
-  /**
-   * Fired once the session and WebSocket registration exist — in orchestrated
-   * mode possibly before the first prompt, since the lookup starts at setup.
-   */
-  onWebSocketConnected?: (data: { conversationId: ConversationId }) => void;
-  onWebSocketDisconnected?: (data: { conversationId: ConversationId }) => void;
-}
-
-/**
- * Voice Channel implementation for Twilio ConversationRelay
- *
- * Handles voice conversations through WebSocket connections.
- * Manages real-time audio streaming and conversation state.
+ * A single in-flight streaming response, with the {@link AbortController} that
+ * cancels it and whether any token has been written to the transport yet.
  */
 export interface StreamTask {
   controller: AbortController;
   hasSentTokens: boolean;
 }
 
-export class VoiceChannel extends BaseChannel {
+/**
+ * Twilio ConversationRelay: Twilio handles ASR/TTS and exchanges JSON
+ * `setup`/`prompt`/`interrupt` messages over one WebSocket.
+ *
+ * This is the default provider {@link VoiceChannel} builds when none is passed
+ * explicitly.
+ */
+export class ConversationRelayProvider extends VoiceProvider {
+  /**
+   * The owning channel's logger, so relocated ConversationRelay logic keeps
+   * logging exactly as it did when it lived on `VoiceChannel`.
+   */
+  protected override readonly logger: Logger;
+
+  /** In-flight streaming responses, keyed by conversation. */
+  protected readonly streamTasks: Map<ConversationId, StreamTask>;
+
+  private readonly config: ConversationRelayProviderConfig;
+  private readonly tacConfig: TACConfig;
+  private readonly twimlBuilder: TwiMLBuilderConversationRelay;
   private readonly webSocketConnections: Map<ConversationId, WebSocket>;
-  private readonly voiceCallbacks: VoiceChannelEvents;
-  private readonly streamTasks: Map<ConversationId, StreamTask>;
   private readonly promptQueues: Map<ConversationId, Promise<void>>;
   private readonly initializationRetries: Map<string, number>;
   private readonly callSidToConversationId: Map<string, ConversationId>;
   private readonly MAX_INITIALIZATION_RETRIES = 3;
-  private twilioClient: ReturnType<typeof Twilio> | undefined;
-  private readonly voiceConfig: VoiceChannelConfig;
-  private readonly twimlBuilder: TwiMLBuilderConversationRelay;
-  private onInboundCallTwimlHandler: InboundCallTwimlHandler | undefined;
-  private onCallStatusHandler: CallStatusHandler | undefined;
-  private onAmdHandler: AmdHandler | undefined;
-  private onRecordingHandler: RecordingHandler | undefined;
 
-  constructor(tac: TAC, options?: VoiceChannelConfig) {
-    super(tac, options);
-    this.voiceConfig = options ?? {};
-    this.twimlBuilder = new TwiMLBuilderConversationRelay(
-      this.config,
-      this.voiceConfig,
-      this.logger
-    );
-    this.webSocketConnections = new Map();
-    this.voiceCallbacks = {};
+  constructor(
+    channel: VoiceChannel,
+    tacConfig: TACConfig,
+    config: ConversationRelayProviderConfig
+  ) {
+    super(channel);
+    this.logger = channel.getLoggerInternal();
+    this.config = config;
+    this.tacConfig = tacConfig;
+    this.twimlBuilder = new TwiMLBuilderConversationRelay(tacConfig, config, this.logger);
     this.streamTasks = new Map();
+    this.webSocketConnections = new Map();
     this.promptQueues = new Map();
     this.initializationRetries = new Map();
     this.callSidToConversationId = new Map();
   }
 
-  /**
-   * Register a callback that produces per-call overrides for the TwiML inside
-   * `<ConversationRelay>` on inbound calls.
-   *
-   * The callback receives a framework-neutral {@link TwiMLRequest} (parsed from
-   * the Twilio webhook form) and returns {@link TwiMLOptions}. Fields the
-   * callback explicitly sets override `defaultTwimlOptions` and TAC defaults;
-   * unset fields fall through.
-   *
-   * @example
-   * ```typescript
-   * voiceChannel.onInboundCallTwiml(async req => {
-   *   if (req.callerCountry === 'MX') {
-   *     return { language: 'es-MX', welcomeGreeting: '¡Hola!' };
-   *   }
-   *   return {};
-   * });
-   * ```
-   *
-   * Outbound calls don't use this — pass per-call TwiML via
-   * `InitiateVoiceConversationOptions.twimlOptions` directly.
-   */
-  public onInboundCallTwiml(callback: InboundCallTwimlHandler): void {
-    this.onInboundCallTwimlHandler = callback;
-  }
-
-  /**
-   * Register a handler for Twilio `statusCallback` webhooks.
-   *
-   * This is the Calls-API status callback (call disposition), not the
-   * ConversationRelay session callback — see
-   * {@link handleConversationRelayCallback}.
-   *
-   * Registering does two things: it stores the handler, and it makes later
-   * outbound calls pass `statusCallback` to `calls.create`. With no handler
-   * registered TAC omits that parameter, so Twilio has nowhere to post and the
-   * event never arrives.
-   *
-   * Twilio reports only the terminal event by default, which covers every
-   * disposition; set `CallOptions.statusCallbackEvent` for ringing/answered.
-   *
-   * @example
-   * ```typescript
-   * voiceChannel.onCallStatus(async event => {
-   *   if (event.isUnreached) {
-   *     // queue a retry
-   *   }
-   * });
-   * ```
-   */
-  public onCallStatus(callback: CallStatusHandler): void {
-    this.onCallStatusHandler = callback;
-  }
-
-  /**
-   * Register a handler for Twilio `asyncAmdStatusCallback` webhooks.
-   *
-   * Registering makes later outbound calls pass `asyncAmdStatusCallback` to
-   * `calls.create`; without a handler TAC omits it and Twilio has nowhere to
-   * post the result. It does not enable detection — that's per-call, via
-   * `CallOptions.machineDetection` and `asyncAmd`, both of which are required
-   * for this to fire (at most once per call).
-   *
-   * @example
-   * ```typescript
-   * voiceChannel.onAmd(async event => {
-   *   if (event.isMachine) {
-   *     await voiceChannel.endCall(event.callSid); // voicemail → hang up
-   *   }
-   * });
-   * ```
-   */
-  public onAmd(callback: AmdHandler): void {
-    this.onAmdHandler = callback;
-  }
-
-  /**
-   * Register a handler for Twilio `recordingStatusCallback` webhooks.
-   *
-   * Registering makes later outbound calls pass `recordingStatusCallback` to
-   * `calls.create`; without a handler TAC omits it and Twilio has nowhere to
-   * post. It does not start recording — that's `CallOptions.record`, which is
-   * required for this to fire.
-   *
-   * @example
-   * ```typescript
-   * voiceChannel.onRecording(async event => {
-   *   if (event.recordingStatus === 'completed') {
-   *     // store event.recordingUrl
-   *   }
-   * });
-   * ```
-   */
-  public onRecording(callback: RecordingHandler): void {
-    this.onRecordingHandler = callback;
-  }
-
-  /**
-   * The registered call-event handlers, for a `VoiceProvider` deciding which
-   * callback URLs to derive. A provider is not a subclass of `VoiceChannel`,
-   * so the `private` fields are genuinely out of reach without this.
-   *
-   * @internal
-   */
-  public getCallEventHandlers(): {
-    status: CallStatusHandler | undefined;
-    amd: AmdHandler | undefined;
-    recording: RecordingHandler | undefined;
-  } {
-    return {
-      status: this.onCallStatusHandler,
-      amd: this.onAmdHandler,
-      recording: this.onRecordingHandler,
-    };
-  }
-
-  /**
-   * This channel's `TACConfig`, for a `VoiceProvider` deriving default URLs.
-   * `BaseChannel.config` is `protected`, and a provider is not a subclass.
-   *
-   * @internal
-   */
-  public getTacConfig(): TACConfig {
-    return this.config;
-  }
-
-  private getTwilioClient(): ReturnType<typeof Twilio> {
-    if (!this.twilioClient) {
-      this.twilioClient = Twilio(this.config.apiKey, this.config.apiSecret, {
-        accountSid: this.config.accountSid,
-      });
-    }
-    return this.twilioClient;
-  }
-
-  public get channelType(): ChannelType {
-    return 'voice';
-  }
-
-  /**
-   * Register event callbacks (override for Voice-specific events)
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic event callback needs to accept any args
-  public override on(event: string, callback: (...args: any[]) => void): void {
-    switch (event) {
-      case 'setup':
-        this.voiceCallbacks.onSetup = callback;
-        break;
-      case 'prompt':
-        this.voiceCallbacks.onPrompt = callback;
-        break;
-      case 'interrupt':
-        this.voiceCallbacks.onInterrupt = callback;
-        break;
-      case 'webSocketConnected':
-        this.voiceCallbacks.onWebSocketConnected = callback;
-        break;
-      case 'webSocketDisconnected':
-        this.voiceCallbacks.onWebSocketDisconnected = callback;
-        break;
-      default:
-        // Delegate to parent for base events
-        super.on(event, callback);
-        break;
-    }
-  }
-
-  /**
-   * Process conversation webhooks for cleanup.
-   *
-   * Voice channel processes CONVERSATION_UPDATED events:
-   * - CLOSED status: Clean up local session state
-   *
-   * Note: Conversation tracking uses instance-local memory. In multi-instance
-   * deployments, webhooks may route to a different instance, preventing cleanup.
-   *
-   * @param payload - Raw webhook event data from Twilio
-   * @param idempotencyToken - Optional Twilio idempotency token from request headers
-   */
-  public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
-    try {
-      const result = this.preprocessWebhook(payload, idempotencyToken);
-      if (!result) {
-        return;
-      }
-
-      const { webhookData, eventType, conversationId } = result;
-
-      switch (eventType) {
-        case 'CONVERSATION_UPDATED':
-          this.logger.debug(
-            { conversation_id: conversationId, status: webhookData.data?.status },
-            'Handling CONVERSATION_UPDATED'
-          );
-          await this.handleConversationUpdated(webhookData);
-          break;
-
-        default:
-          this.logger.debug(
-            {
-              event_type: eventType,
-              raw_event_type: webhookData.eventType,
-              conversation_id: conversationId,
-            },
-            'Unhandled event type - this event will be ignored'
-          );
-      }
-
-      this.logger.debug({ event_type: eventType }, 'Webhook processing completed');
-    } catch (error) {
-      // Remove the token so retries are not blocked
-      if (idempotencyToken) {
-        this.removeWebhookToken(idempotencyToken);
-      }
-      this.handleError(error instanceof Error ? error : new Error(String(error)), { payload });
-    }
-  }
-
-  /**
-   * Handle conversation updated event
-   */
-  private async handleConversationUpdated(payload: ConversationWebhookPayload): Promise<void> {
-    const conversationId = this.extractConversationId(payload);
-
-    if (!conversationId) {
-      throw new Error('Missing conversation ID in conversation.updated event');
-    }
-
-    // Check if conversation is closed
-    if (payload.data?.status === 'CLOSED') {
-      this.logger.debug(
-        { conversation_id: conversationId, status: payload.data.status },
-        'Conversation closed, cleaning up'
-      );
-      await this.endConversation(conversationId);
-    } else if (payload.data?.status === 'INACTIVE') {
-      // "once" mode: drop the cache so the next message re-fetches.
-      this.invalidateCachedMemory(conversationId);
-    }
+  public override get channelName(): string {
+    return 'VOICE';
   }
 
   /**
    * Get active WebSocket connection for a conversation
    */
-  public getWebsocket(conversationId: ConversationId): WebSocket | null {
+  public override getWebSocket(conversationId: ConversationId): WebSocket | null {
     return this.webSocketConnections.get(conversationId) || null;
   }
 
@@ -424,16 +109,17 @@ export class VoiceChannel extends BaseChannel {
     fromNumber: string | null,
     ws: WebSocket
   ): Promise<ConversationId> {
-    if (!this.conversationClient) {
+    const conversationClient = this.channel.getConversationClientInternal();
+    if (!conversationClient) {
       throw new Error('Conversation client is required in orchestrated mode');
     }
 
-    let conversations: Awaited<ReturnType<typeof this.conversationClient.listConversations>> = [];
+    let conversations: Awaited<ReturnType<ConversationClient['listConversations']>> = [];
 
     for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
       // ACTIVE only: a stale conversation on the same CallSid would break the
       // "exactly 1" check below.
-      conversations = await this.conversationClient.listConversations({
+      conversations = await conversationClient.listConversations({
         channelId: callSid,
         status: ['ACTIVE'],
       });
@@ -458,7 +144,7 @@ export class VoiceChannel extends BaseChannel {
     const conversation = conversations[0]!;
     const conversationId = conversation.id as ConversationId;
 
-    const participants = await this.conversationClient.listParticipants(conversationId);
+    const participants = await conversationClient.listParticipants(conversationId);
 
     const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
     const customerAddress =
@@ -471,7 +157,7 @@ export class VoiceChannel extends BaseChannel {
 
     this.webSocketConnections.set(conversationId, ws);
     this.callSidToConversationId.set(callSid, conversationId);
-    const session = this.startConversation(conversationId, profileId);
+    const session = this.channel.startConversationInternal(conversationId, profileId);
     // conversationId is the Orchestrator's, so record the CallSid too —
     // out-of-band call webhooks resolve via getConversationSessionByCallSid.
     session.callSid = callSid;
@@ -482,8 +168,9 @@ export class VoiceChannel extends BaseChannel {
       };
     }
 
-    if (this.voiceCallbacks.onWebSocketConnected) {
-      this.voiceCallbacks.onWebSocketConnected({ conversationId });
+    const voiceCallbacks = this.channel.getVoiceCallbacks();
+    if (voiceCallbacks.onWebSocketConnected) {
+      voiceCallbacks.onWebSocketConnected({ conversationId });
     }
 
     return conversationId;
@@ -492,7 +179,7 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Handle WebSocket connection from ConversationRelay
    */
-  public handleWebSocketConnection(ws: WebSocket): void {
+  public override handleWebSocket(ws: WebSocket): void {
     let conversationId: ConversationId | null = null;
     let callSid: string | null = null;
     let fromNumber: string | null = null;
@@ -530,7 +217,7 @@ export class VoiceChannel extends BaseChannel {
               // ConversationRelay creates the conversation at call-connect, so
               // start the lookup now and let it overlap the wait for the
               // caller's first utterance instead of delaying it.
-              if (this.tac.isOrchestratorEnabled()) {
+              if (this.channel.isOrchestratorEnabledInternal()) {
                 this.logger.debug(
                   { call_sid: callSid },
                   'Starting background conversation initialization'
@@ -540,13 +227,16 @@ export class VoiceChannel extends BaseChannel {
                 void initPromise.catch(() => undefined);
               }
 
-              if (this.voiceCallbacks.onSetup) {
-                this.voiceCallbacks.onSetup({
-                  callSid,
-                  from: message.from,
-                  to: message.to,
-                  customParameters: message.customParameters,
-                });
+              {
+                const voiceCallbacks = this.channel.getVoiceCallbacks();
+                if (voiceCallbacks.onSetup) {
+                  voiceCallbacks.onSetup({
+                    callSid,
+                    from: message.from,
+                    to: message.to,
+                    customParameters: message.customParameters,
+                  });
+                }
               }
               break;
 
@@ -568,12 +258,12 @@ export class VoiceChannel extends BaseChannel {
                     );
                   }
 
-                  if (!this.tac.isOrchestratorEnabled()) {
+                  if (!this.channel.isOrchestratorEnabledInternal()) {
                     // Voice-only mode: use callSid as conversationId directly
                     conversationId = callSid as ConversationId;
                     this.webSocketConnections.set(conversationId, ws);
                     this.callSidToConversationId.set(callSid, conversationId);
-                    const session = this.startConversation(conversationId);
+                    const session = this.channel.startConversationInternal(conversationId);
                     // Relay-only: conversationId === callSid.
                     session.callSid = callSid;
 
@@ -581,8 +271,9 @@ export class VoiceChannel extends BaseChannel {
                       session.authorInfo = { address: fromNumber };
                     }
 
-                    if (this.voiceCallbacks.onWebSocketConnected) {
-                      this.voiceCallbacks.onWebSocketConnected({ conversationId });
+                    const voiceCallbacks = this.channel.getVoiceCallbacks();
+                    if (voiceCallbacks.onWebSocketConnected) {
+                      voiceCallbacks.onWebSocketConnected({ conversationId });
                     }
                   } else {
                     // Await the lookup from `setup` — usually already done.
@@ -624,10 +315,13 @@ export class VoiceChannel extends BaseChannel {
                 const currentPrompt = previousPrompt
                   .then(() => this.handlePromptMessage(conversationId!, message))
                   .catch((err: unknown) => {
-                    this.handleError(err instanceof Error ? err : new Error(String(err)), {
-                      conversationId,
-                      message: data.toString(),
-                    });
+                    this.channel.handleErrorInternal(
+                      err instanceof Error ? err : new Error(String(err)),
+                      {
+                        conversationId,
+                        message: data.toString(),
+                      }
+                    );
                   });
                 this.promptQueues.set(conversationId, currentPrompt);
               } else {
@@ -652,11 +346,14 @@ export class VoiceChannel extends BaseChannel {
               break;
           }
         } catch (error) {
-          this.handleError(error instanceof Error ? error : new Error(String(error)), {
-            conversationId,
-            callSid,
-            message: data.toString(),
-          });
+          this.channel.handleErrorInternal(
+            error instanceof Error ? error : new Error(String(error)),
+            {
+              conversationId,
+              callSid,
+              message: data.toString(),
+            }
+          );
         }
       })().catch((err: unknown) => {
         this.logger.error({ err }, 'Unhandled error in WebSocket message handler');
@@ -699,7 +396,7 @@ export class VoiceChannel extends BaseChannel {
     });
 
     ws.on('error', (error: Error) => {
-      this.handleError(error, { conversationId });
+      this.channel.handleErrorInternal(error, { conversationId });
     });
   }
 
@@ -717,15 +414,16 @@ export class VoiceChannel extends BaseChannel {
     const streamTask = this.startStreamTask(conversationId);
 
     // Get session for memory retrieval
-    const session = this.getConversationSession(conversationId);
+    const session = this.channel.getConversationSession(conversationId);
 
     // Retrieve memory if enabled via memoryMode
     const userMemory = session
-      ? await this.retrieveMemoryIfEnabled(session, transcript)
+      ? await this.channel.retrieveMemoryInternal(session, transcript)
       : undefined;
 
-    if (this.voiceCallbacks.onPrompt) {
-      await this.voiceCallbacks.onPrompt({
+    const voiceCallbacks = this.channel.getVoiceCallbacks();
+    if (voiceCallbacks.onPrompt) {
+      await voiceCallbacks.onPrompt({
         conversationId,
         transcript,
         abortSignal: streamTask.controller.signal,
@@ -771,8 +469,9 @@ export class VoiceChannel extends BaseChannel {
       }
     }
 
-    if (this.voiceCallbacks.onInterrupt) {
-      this.voiceCallbacks.onInterrupt({
+    const voiceCallbacks = this.channel.getVoiceCallbacks();
+    if (voiceCallbacks.onInterrupt) {
+      voiceCallbacks.onInterrupt({
         conversationId,
         utteranceUntilInterrupt,
         durationUntilInterruptMs,
@@ -790,19 +489,20 @@ export class VoiceChannel extends BaseChannel {
     this.webSocketConnections.delete(conversationId);
     this.promptQueues.delete(conversationId);
 
-    if (this.voiceCallbacks.onWebSocketDisconnected) {
-      this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
+    const voiceCallbacks = this.channel.getVoiceCallbacks();
+    if (voiceCallbacks.onWebSocketDisconnected) {
+      voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
 
-    if (!this.tac.isOrchestratorEnabled()) {
-      await this.endConversation(conversationId);
+    if (!this.channel.isOrchestratorEnabledInternal()) {
+      await this.channel.endConversationInternal(conversationId);
     }
   }
 
   /**
    * Send voice response via WebSocket
    */
-  public sendResponse(
+  public override sendResponse(
     conversationId: ConversationId,
     message: string,
     metadata?: Record<string, unknown>
@@ -824,7 +524,7 @@ export class VoiceChannel extends BaseChannel {
 
       // If a handoff is pending, send the WS "end" message now that the
       // LLM's final response has been delivered to the caller.
-      const session = this.getConversationSession(conversationId);
+      const session = this.channel.getConversationSession(conversationId);
       if (session?.pendingHandoffData) {
         try {
           ws.send(JSON.stringify(session.pendingHandoffData));
@@ -839,7 +539,7 @@ export class VoiceChannel extends BaseChannel {
 
       return Promise.resolve();
     } catch (error) {
-      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+      this.channel.handleErrorInternal(error instanceof Error ? error : new Error(String(error)), {
         conversationId,
         message,
         metadata,
@@ -859,7 +559,7 @@ export class VoiceChannel extends BaseChannel {
    *
    * @returns The accumulated full response text.
    */
-  public async sendStreamingResponse(
+  public override async sendStreamingResponse(
     conversationId: ConversationId,
     stream: AsyncIterable<string>,
     options?: { signal?: AbortSignal }
@@ -910,7 +610,7 @@ export class VoiceChannel extends BaseChannel {
         ws.send(JSON.stringify({ type: 'text', token: '', last: true }));
       }
     } catch (error) {
-      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+      this.channel.handleErrorInternal(error instanceof Error ? error : new Error(String(error)), {
         conversationId,
       });
       throw error;
@@ -926,449 +626,11 @@ export class VoiceChannel extends BaseChannel {
   }
 
   // =========================================================================
-  // Incoming Call Handling
-  // =========================================================================
-
-  /**
-   * Generate the TwiML response for an incoming voice call.
-   *
-   * ConversationRelay automatically handles conversation creation and
-   * participant management via the `conversationConfiguration` parameter.
-   *
-   * The WebSocket URL and default session-cleanup action URL are derived from
-   * `TACConfig.voicePublicDomain` + `TACConfig.voiceWebsocketPath` /
-   * `voiceActionPath`.
-   *
-   * TwiML fields are merged per-field, highest precedence first:
-   *   1. Output of the customizer registered via
-   *      `VoiceChannel.onInboundCallTwiml(...)` if configured and `twimlRequest`
-   *      is given. (Application-owned.)
-   *   2. `VoiceChannelConfig.defaultTwimlOptions` — per-channel defaults.
-   *   3. `hostTwimlOptions` — per-call transport facts supplied by the host (the
-   *      code owning the route), e.g. a per-call `websocketUrl` with an affinity
-   *      token.
-   *   4. TAC defaults: a fixed default welcomeGreeting, `conversationConfiguration`
-   *      from `TACConfig`, `actionUrl` resolved via Studio handoff (when
-   *      `studioHandoffFlowSid` is configured), else derived from
-   *      `TACConfig.voicePublicDomain` + `voiceActionPath`, and the `websocketUrl`
-   *      derived from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`.
-   *
-   * Fields not set at a layer fall through to lower layers. Arrays (`languages`)
-   * and nested objects (`customParameters`) replace wholesale when set at a
-   * higher-priority layer. `websocketUrl` falls back to the `TACConfig`-derived
-   * URL if unset at every layer.
-   *
-   * @param twimlRequest - Parsed Twilio webhook fields. Passed to the customizer
-   *   if one is configured on the channel.
-   * @param options - Additional per-call inputs.
-   * @param options.hostTwimlOptions - Per-call TwiML supplied by a custom
-   *   in-process host (e.g. an affinity-routed deployment injecting a per-call
-   *   `websocketUrl`), layered below `defaultTwimlOptions` and the application
-   *   customizer but above the TAC defaults.
-   * @returns TwiML XML string for call connection.
-   */
-  public async handleIncomingCall(
-    twimlRequest?: TwiMLRequest,
-    options?: { hostTwimlOptions?: TwiMLOptions }
-  ): Promise<string> {
-    let customized: TwiMLOptions | undefined;
-    if (this.onInboundCallTwimlHandler && twimlRequest) {
-      customized = await this.onInboundCallTwimlHandler(twimlRequest);
-    }
-
-    return this.twimlBuilder.build('handleIncomingCall', {
-      host: options?.hostTwimlOptions,
-      perCall: customized,
-    });
-  }
-
-  // =========================================================================
-  // Outbound Call Handling
-  // =========================================================================
-
-  /**
-   * Overlay `perCall` onto `VoiceChannelConfig.defaultCallOptions`.
-   *
-   * Per-field via key presence, the same convention `TwiMLBuilderBase.overlayFields`
-   * uses for TwiML options — so a per-call `{ machineDetection: undefined }`
-   * explicitly clears the channel default rather than falling through to it.
-   *
-   * The result is always validated, for two reasons: a combination only
-   * reachable by layering — per-call clearing `machineDetection` while the
-   * default set `asyncAmd` — must still fail instead of reaching Twilio, and
-   * `VoiceChannelConfig` is a plain interface, so `defaultCallOptions` has had
-   * no runtime validation of its own.
-   */
-  private mergeCallOptions(perCall: CallOptions | undefined): CallOptions | undefined {
-    const defaults = this.voiceConfig.defaultCallOptions;
-    if (!defaults && !perCall) {
-      return undefined;
-    }
-
-    const merged: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(defaults ?? {})) {
-      if (value !== undefined) {
-        merged[key] = value;
-      }
-    }
-    for (const key of Object.keys(perCall ?? {})) {
-      merged[key] = (perCall as Record<string, unknown>)[key];
-    }
-    return CallOptionsSchema.parse(merged);
-  }
-
-  /**
-   * Build the extra arguments for `client.calls.create`.
-   *
-   * Layers, highest precedence first: this call's `callOptions`,
-   * `VoiceChannelConfig.defaultCallOptions`, then callback URLs derived from
-   * `voicePublicDomain` + `voiceCallEventPath`.
-   *
-   * A URL is derived only when its handler is registered. That's a deliberate
-   * deviation from `websocketUrl` / `actionUrl`, which derive unconditionally:
-   * those are load-bearing, so a wrong one fails loudly on the first call,
-   * whereas an unwanted call-event URL fails as silent 11200 alerts for a
-   * feature nobody asked for. Set the URLs in `defaultCallOptions` when TAC
-   * isn't serving the routes.
-   */
-  private buildCallParams(callOptions: CallOptions | undefined): Record<string, unknown> {
-    const merged = this.mergeCallOptions(callOptions);
-    const params = merged ? callOptionsToCreateParams(merged) : {};
-
-    const wiring: [CallEventKind, string, unknown][] = [
-      ['status', 'statusCallback', this.onCallStatusHandler],
-      ['amd', 'asyncAmdStatusCallback', this.onAmdHandler],
-      ['recording', 'recordingStatusCallback', this.onRecordingHandler],
-    ];
-    for (const [kind, param, handler] of wiring) {
-      if (!handler) continue;
-      const url = this.config.callEventUrl(kind);
-      // An explicit URL from either options layer is never overwritten.
-      if (url !== undefined && params[param] === undefined) {
-        params[param] = url;
-      }
-    }
-
-    return params;
-  }
-
-  /**
-   * Initiate an outbound voice conversation
-   *
-   * Places an outbound call with inline TwiML that connects to ConversationRelay.
-   * The conversationConfiguration attribute tells CO to create and manage the
-   * conversation during passive hydration. The session is initialized when the
-   * background callSid lookup started at WebSocket setup finds it.
-   *
-   * TwiML fields are merged per-field, highest precedence first:
-   *   1. `options.twimlOptions` — per-call overrides
-   *   2. `VoiceChannelConfig.defaultTwimlOptions` — channel-wide defaults
-   *   3. TAC defaults: welcome greeting, `conversationConfiguration` from
-   *      `TACConfig`, and `actionUrl` from Studio handoff (if configured), else
-   *      derived from `TACConfig.voicePublicDomain` + `voiceActionPath`.
-   *
-   * Calls-API parameters merge the same way:
-   *   1. `options.callOptions` — per-call overrides
-   *   2. `VoiceChannelConfig.defaultCallOptions` — channel-wide defaults
-   *   3. Callback URLs derived from `TACConfig.voicePublicDomain` +
-   *      `voiceCallEventPath`, for handlers that are registered
-   *
-   * The WebSocket URL is derived from `TACConfig.voicePublicDomain` +
-   * `TACConfig.voiceWebsocketPath`, unless overridden per-call via
-   * `options.websocketUrl`.
-   */
-  public async initiateOutboundConversation(
-    options: InitiateVoiceConversationOptions
-  ): Promise<InitiateVoiceConversationResult> {
-    const validated = InitiateVoiceConversationOptionsSchema.parse(options);
-    const fromNumber = this.config.phoneNumber;
-
-    this.logger.info(
-      { to: validated.to, from: fromNumber },
-      'Initiating outbound voice conversation'
-    );
-
-    try {
-      // Outbound has no inbound customizer and no host layer; the per-call
-      // override is options.twimlOptions. `options.websocketUrl` is the
-      // dedicated per-call outbound override and wins over any websocketUrl
-      // that came through the layered twimlOptions merge; both fall back to the
-      // TACConfig-derived URL.
-      const twiml = this.twimlBuilder.build('initiateOutboundConversation', {
-        perCall: validated.twimlOptions,
-        websocketUrl: validated.websocketUrl,
-      });
-      const callParams = this.buildCallParams(validated.callOptions);
-
-      // The inline TwiML handed to Twilio, useful for debugging the
-      // <Connect action> handoff target. customParameters values are masked —
-      // they're arbitrary developer data (profile IDs, caller names), unlike
-      // the WS/action URLs and conversation config.
-      this.logger.debug(
-        { twiml: redactTwimlParameters(twiml), to: maskAddress(validated.to) },
-        'Outbound call TwiML'
-      );
-
-      // Place the outbound call with inline TwiML
-      const client = this.getTwilioClient();
-      const call = await client.calls.create({
-        to: validated.to,
-        from: fromNumber,
-        twiml,
-        ...callParams,
-      });
-
-      this.logger.info(
-        { call_sid: call.sid, to: maskAddress(validated.to) },
-        'Outbound voice call placed'
-      );
-
-      return { callSid: call.sid };
-    } catch (error) {
-      this.logger.error(
-        { err: error, to: maskAddress(validated.to) },
-        'Failed to initiate outbound call'
-      );
-      this.handleError(error instanceof Error ? error : new Error(String(error)), {
-        to: validated.to,
-      });
-      throw error;
-    }
-  }
-
-  // =========================================================================
-  // ConversationRelay Callback Handling
-  // =========================================================================
-
-  /**
-   * Handle ConversationRelay callback from Twilio. Cleans up on call completion
-   * in voice-only mode; in orchestrated mode the CO webhook owns cleanup.
-   *
-   * @param payload - Callback payload from Twilio
-   * @returns Response with status, content, and content type
-   */
-  public async handleConversationRelayCallback(
-    payload: ConversationRelayCallbackPayload
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    this.logger.debug(
-      { call_sid: payload.CallSid, call_status: payload.CallStatus },
-      'ConversationRelay callback received'
-    );
-
-    if (payload.AccountSid !== this.config.accountSid) {
-      this.logger.warn(
-        { expected: this.config.accountSid, received: payload.AccountSid },
-        'ConversationRelay callback AccountSid mismatch, ignoring'
-      );
-      return { status: 403, content: 'Forbidden', contentType: 'text/plain' };
-    }
-
-    if (payload.CallStatus === 'completed' && !this.tac.isOrchestratorEnabled()) {
-      const conversationId = this.callSidToConversationId.get(payload.CallSid);
-      if (conversationId) {
-        this.callSidToConversationId.delete(payload.CallSid);
-        await this.endConversation(conversationId);
-      }
-    }
-
-    return { status: 200, content: 'OK', contentType: 'text/plain' };
-  }
-
-  // =========================================================================
-  // Call Event Handling (status callback, async AMD, recording)
-  // =========================================================================
-
-  /**
-   * Whether a call-webhook payload belongs to the configured account.
-   *
-   * Twilio signature validation already gates the route; this is defense in
-   * depth. A payload with no `AccountSid` is allowed through.
-   *
-   * Subaccounts: events carry the SID the call was placed on, so configure TAC
-   * with that account or its events get dropped here.
-   */
-  private callEventAccountOk(form: Record<string, string>): boolean {
-    const accountSid = form['AccountSid'];
-    if (accountSid && accountSid !== this.config.accountSid) {
-      this.logger.warn(
-        { expected: this.config.accountSid, received: accountSid },
-        'Call event AccountSid mismatch, ignoring'
-      );
-      return false;
-    }
-    return true;
-  }
-
-  /**
-   * Parse a call-event webhook form and dispatch it to its handler.
-   *
-   * Returns 400 when the payload can't be parsed (no `CallSid`) or the handler
-   * throws — better than handing Twilio a 200 for an event that wasn't
-   * processed. Everything else, including no handler registered and an
-   * account mismatch, is a 200 no-op.
-   */
-  private async dispatchCallEvent<T>(
-    kind: CallEventKind,
-    form: Record<string, string>,
-    handler: ((event: T) => Promise<void> | void) | undefined,
-    parse: (form: Record<string, string>) => T,
-    logFields: (event: T) => Record<string, unknown>
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    const ok = { status: 200, content: 'OK', contentType: 'text/plain' };
-    if (!handler || !this.callEventAccountOk(form)) {
-      return ok;
-    }
-
-    try {
-      const event = parse(form);
-      this.logger.debug(logFields(event), `Call ${kind} event received`);
-      await handler(event);
-    } catch (error) {
-      this.logger.error({ err: error, kind }, 'Failed to process call event callback');
-      return { status: 400, content: 'Bad Request', contentType: 'text/plain' };
-    }
-    return ok;
-  }
-
-  /**
-   * Handle a Twilio `statusCallback` webhook.
-   *
-   * The developer routes the request here (`TACServer` does this automatically
-   * for its `/status` call-event route). Parsed into a {@link CallStatusEvent}
-   * and dispatched to the {@link onCallStatus} handler. No-op if no handler is
-   * registered.
-   *
-   * @param form - Raw form data from the webhook request.
-   */
-  public async handleCallStatusEvent(
-    form: Record<string, string>
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    return this.dispatchCallEvent(
-      'status',
-      form,
-      this.onCallStatusHandler,
-      callStatusEventFromForm,
-      event => ({ call_sid: event.callSid, call_status: event.callStatus })
-    );
-  }
-
-  /**
-   * Handle a Twilio `asyncAmdStatusCallback` webhook.
-   *
-   * The developer routes the request here (`TACServer` does this automatically
-   * for its `/amd` call-event route). Parsed into an {@link AmdEvent} and
-   * dispatched to the {@link onAmd} handler. No-op if no handler is registered.
-   *
-   * @param form - Raw form data from the webhook request.
-   */
-  public async handleAmdEvent(
-    form: Record<string, string>
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    return this.dispatchCallEvent('amd', form, this.onAmdHandler, amdEventFromForm, event => ({
-      call_sid: event.callSid,
-      answered_by: event.answeredBy,
-    }));
-  }
-
-  /**
-   * Handle a Twilio `recordingStatusCallback` webhook.
-   *
-   * The developer routes the request here (`TACServer` does this automatically
-   * for its `/recording` call-event route). Parsed into a
-   * {@link RecordingEvent} and dispatched to the {@link onRecording} handler.
-   * No-op if no handler is registered.
-   *
-   * @param form - Raw form data from the webhook request.
-   */
-  public async handleRecordingEvent(
-    form: Record<string, string>
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    return this.dispatchCallEvent(
-      'recording',
-      form,
-      this.onRecordingHandler,
-      recordingEventFromForm,
-      event => ({ call_sid: event.callSid, recording_status: event.recordingStatus })
-    );
-  }
-
-  /**
-   * Hang up a call and clean up its ConversationRelay session.
-   *
-   * Works on `callSid` alone, whether or not a session exists yet. No-ops the
-   * session cleanup if none is tracked.
-   *
-   * Does not throw — hanging up an already-ended call is routine (the callee
-   * hangs up while AMD is still resolving), and handlers shouldn't have to
-   * guard against it.
-   *
-   * @param callSid - Twilio Call SID (from a call event, the outbound result, or
-   *   `ConversationSession.callSid`).
-   * @returns True if Twilio accepted the hangup, false if it failed (logged).
-   *   Session cleanup runs either way.
-   */
-  public async endCall(callSid: string): Promise<boolean> {
-    const client = this.getTwilioClient();
-    let hungUp = true;
-    try {
-      await client.calls(callSid).update({ status: 'completed' });
-    } catch (error) {
-      hungUp = false;
-      this.logger.error({ err: error, call_sid: callSid }, 'Failed to hang up call');
-    }
-
-    const session = this.getConversationSessionByCallSid(callSid);
-    if (session) {
-      await this.endConversation(session.conversationId as ConversationId);
-    }
-    return hungUp;
-  }
-
-  /**
-   * Look up the active voice session for a Twilio Call SID.
-   *
-   * Out-of-band code holding a CallSid — a dashboard route, an operator action,
-   * a call-event handler — can't reach the session-facing methods, which are
-   * keyed by conversation id: the Orchestrator conversation id in orchestrator
-   * mode, the CallSid only in ConversationRelay-only mode.
-   *
-   * Relay-only mode creates the session on the first prompt; orchestrated
-   * mode creates it when the lookup started at setup finishes, so it may
-   * exist before the caller speaks — including before `onAmd` fires. Treat it
-   * as racy and hang up with {@link endCall}, which needs no session.
-   *
-   * At the other end, orchestrator mode keeps the session until Conversation
-   * Orchestrator's CLOSED webhook, so it outlives the call and `onCallStatus` /
-   * `onRecording` do resolve. Relay-only mode tears down on the
-   * ConversationRelay callback instead, which races them.
-   *
-   * @example
-   * ```typescript
-   * async function nudge(callSid: string): Promise<void> {
-   *   const session = voiceChannel.getConversationSessionByCallSid(callSid);
-   *   if (session) {
-   *     await voiceChannel.sendResponse(session.conversationId, 'Still there?');
-   *   }
-   * }
-   * ```
-   *
-   * @param callSid - Twilio Call SID, e.g. from
-   *   `InitiateVoiceConversationResult.callSid` or a call event.
-   * @returns The session, or `undefined` — not created yet, the call ended, or
-   *   it landed on another instance (see the horizontal-scaling note in
-   *   CLAUDE.md).
-   */
-  public getConversationSessionByCallSid(callSid: string): ConversationSession | undefined {
-    for (const session of this.activeConversations.values()) {
-      if (session.callSid === callSid) {
-        return session;
-      }
-    }
-    return undefined;
-  }
-
-  // =========================================================================
   // Stream Task Management
+  //
+  // ConversationRelay-specific: these track the AbortController for a text
+  // token stream. Full-duplex audio transports have no equivalent, so this
+  // stays off `VoiceProvider`.
   // =========================================================================
 
   /**
@@ -1424,6 +686,245 @@ export class VoiceChannel extends BaseChannel {
   public hasActiveStreamTask(conversationId: ConversationId): boolean {
     const task = this.streamTasks.get(conversationId);
     return task !== undefined && !task.controller.signal.aborted;
+  }
+
+  // =========================================================================
+  // Incoming Call Handling
+  // =========================================================================
+
+  /**
+   * Generate the TwiML response for an incoming voice call.
+   *
+   * ConversationRelay automatically handles conversation creation and
+   * participant management via the `conversationConfiguration` parameter.
+   *
+   * The WebSocket URL and default session-cleanup action URL are derived from
+   * `TACConfig.voicePublicDomain` + `TACConfig.voiceWebsocketPath` /
+   * `voiceActionPath`.
+   *
+   * TwiML fields are merged per-field, highest precedence first:
+   *   1. Output of the customizer registered via
+   *      `VoiceChannel.onInboundCallTwiml(...)` if configured and `twimlRequest`
+   *      is given. (Application-owned.)
+   *   2. `ConversationRelayProviderConfig.defaultTwimlOptions` — per-channel
+   *      defaults.
+   *   3. `hostTwimlOptions` — per-call transport facts supplied by the host (the
+   *      code owning the route), e.g. a per-call `websocketUrl` with an affinity
+   *      token.
+   *   4. TAC defaults: a fixed default welcomeGreeting, `conversationConfiguration`
+   *      from `TACConfig`, `actionUrl` resolved via Studio handoff (when
+   *      `studioHandoffFlowSid` is configured), else derived from
+   *      `TACConfig.voicePublicDomain` + `voiceActionPath`, and the `websocketUrl`
+   *      derived from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`.
+   *
+   * Fields not set at a layer fall through to lower layers. Arrays (`languages`)
+   * and nested objects (`customParameters`) replace wholesale when set at a
+   * higher-priority layer. `websocketUrl` falls back to the `TACConfig`-derived
+   * URL if unset at every layer.
+   *
+   * @param twimlRequest - Parsed Twilio webhook fields. Passed to the customizer
+   *   if one is configured on the channel.
+   * @param options - Additional per-call inputs.
+   * @param options.hostTwimlOptions - Per-call TwiML supplied by a custom
+   *   in-process host (e.g. an affinity-routed deployment injecting a per-call
+   *   `websocketUrl`), layered below `defaultTwimlOptions` and the application
+   *   customizer but above the TAC defaults.
+   * @returns TwiML XML string for call connection.
+   */
+  public override async handleIncomingCall(
+    twimlRequest?: TwiMLRequest,
+    options?: { hostTwimlOptions?: TwiMLOptions }
+  ): Promise<string> {
+    const onInboundCallTwimlHandler = this.channel.getInboundCallTwimlHandler();
+    let customized: TwiMLOptions | undefined;
+    if (onInboundCallTwimlHandler && twimlRequest) {
+      customized = await onInboundCallTwimlHandler(twimlRequest);
+    }
+
+    return this.twimlBuilder.build('handleIncomingCall', {
+      host: options?.hostTwimlOptions,
+      perCall: customized,
+    });
+  }
+
+  // =========================================================================
+  // Outbound Call Handling
+  // =========================================================================
+
+  /**
+   * Overlay `perCall` onto `ConversationRelayProviderConfig.defaultCallOptions`.
+   *
+   * Per-field via key presence, the same convention `TwiMLBuilderBase.overlayFields`
+   * uses for TwiML options — so a per-call `{ machineDetection: undefined }`
+   * explicitly clears the channel default rather than falling through to it.
+   *
+   * The result is always validated, for two reasons: a combination only
+   * reachable by layering — per-call clearing `machineDetection` while the
+   * default set `asyncAmd` — must still fail instead of reaching Twilio, and
+   * `ConversationRelayProviderConfigOptions` is a plain interface, so
+   * `defaultCallOptions` has had no runtime validation of its own.
+   */
+  private mergeCallOptions(perCall: CallOptions | undefined): CallOptions | undefined {
+    const defaults = this.config.defaultCallOptions;
+    if (!defaults && !perCall) {
+      return undefined;
+    }
+
+    const merged: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(defaults ?? {})) {
+      if (value !== undefined) {
+        merged[key] = value;
+      }
+    }
+    for (const key of Object.keys(perCall ?? {})) {
+      merged[key] = (perCall as Record<string, unknown>)[key];
+    }
+    return CallOptionsSchema.parse(merged);
+  }
+
+  /**
+   * Build the extra arguments for `client.calls.create`.
+   *
+   * Layers, highest precedence first: this call's `callOptions`,
+   * `ConversationRelayProviderConfig.defaultCallOptions`, then callback URLs
+   * derived from `voicePublicDomain` + `voiceCallEventPath`.
+   *
+   * A URL is derived only when its handler is registered. That's a deliberate
+   * deviation from `websocketUrl` / `actionUrl`, which derive unconditionally:
+   * those are load-bearing, so a wrong one fails loudly on the first call,
+   * whereas an unwanted call-event URL fails as silent 11200 alerts for a
+   * feature nobody asked for. Set the URLs in `defaultCallOptions` when TAC
+   * isn't serving the routes.
+   */
+  private buildCallParams(callOptions: CallOptions | undefined): Record<string, unknown> {
+    const merged = this.mergeCallOptions(callOptions);
+    const params = merged ? callOptionsToCreateParams(merged) : {};
+
+    return this.applyCallEventCallbacks(params);
+  }
+
+  /**
+   * Initiate an outbound voice conversation
+   *
+   * Places an outbound call with inline TwiML that connects to ConversationRelay.
+   * The conversationConfiguration attribute tells CO to create and manage the
+   * conversation during passive hydration. The session is initialized when the
+   * background callSid lookup started at WebSocket setup finds it.
+   *
+   * TwiML fields are merged per-field, highest precedence first:
+   *   1. `options.twimlOptions` — per-call overrides
+   *   2. `ConversationRelayProviderConfig.defaultTwimlOptions` — channel-wide
+   *      defaults
+   *   3. TAC defaults: welcome greeting, `conversationConfiguration` from
+   *      `TACConfig`, and `actionUrl` from Studio handoff (if configured), else
+   *      derived from `TACConfig.voicePublicDomain` + `voiceActionPath`.
+   *
+   * Calls-API parameters merge the same way:
+   *   1. `options.callOptions` — per-call overrides
+   *   2. `ConversationRelayProviderConfig.defaultCallOptions` — channel-wide
+   *      defaults
+   *   3. Callback URLs derived from `TACConfig.voicePublicDomain` +
+   *      `voiceCallEventPath`, for handlers that are registered
+   *
+   * The WebSocket URL is derived from `TACConfig.voicePublicDomain` +
+   * `TACConfig.voiceWebsocketPath`, unless overridden per-call via
+   * `options.websocketUrl`.
+   */
+  public override async initiateOutboundConversation(
+    options: InitiateVoiceConversationOptions
+  ): Promise<InitiateVoiceConversationResult> {
+    const validated = InitiateVoiceConversationOptionsSchema.parse(options);
+    const fromNumber = this.tacConfig.phoneNumber;
+
+    this.logger.info(
+      { to: validated.to, from: fromNumber },
+      'Initiating outbound voice conversation'
+    );
+
+    try {
+      // Outbound has no inbound customizer and no host layer; the per-call
+      // override is options.twimlOptions. `options.websocketUrl` is the
+      // dedicated per-call outbound override and wins over any websocketUrl
+      // that came through the layered twimlOptions merge; both fall back to the
+      // TACConfig-derived URL.
+      const twiml = this.twimlBuilder.build('initiateOutboundConversation', {
+        perCall: validated.twimlOptions,
+        websocketUrl: validated.websocketUrl,
+      });
+      const callParams = this.buildCallParams(validated.callOptions);
+
+      // The inline TwiML handed to Twilio, useful for debugging the
+      // <Connect action> handoff target. customParameters values are masked —
+      // they're arbitrary developer data (profile IDs, caller names), unlike
+      // the WS/action URLs and conversation config.
+      this.logger.debug(
+        { twiml: redactTwimlParameters(twiml), to: maskAddress(validated.to) },
+        'Outbound call TwiML'
+      );
+
+      // Place the outbound call with inline TwiML
+      const client = this.channel.getTwilioClientInternal();
+      const call = await client.calls.create({
+        to: validated.to,
+        from: fromNumber,
+        twiml,
+        ...callParams,
+      });
+
+      this.logger.info(
+        { call_sid: call.sid, to: maskAddress(validated.to) },
+        'Outbound voice call placed'
+      );
+
+      return { callSid: call.sid };
+    } catch (error) {
+      this.logger.error(
+        { err: error, to: maskAddress(validated.to) },
+        'Failed to initiate outbound call'
+      );
+      this.channel.handleErrorInternal(error instanceof Error ? error : new Error(String(error)), {
+        to: validated.to,
+      });
+      throw error;
+    }
+  }
+
+  // =========================================================================
+  // ConversationRelay Callback Handling
+  // =========================================================================
+
+  /**
+   * Handle ConversationRelay callback from Twilio. Cleans up on call completion
+   * in voice-only mode; in orchestrated mode the CO webhook owns cleanup.
+   *
+   * @param payload - Callback payload from Twilio
+   * @returns Response with status, content, and content type
+   */
+  public async handleConversationRelayCallback(
+    payload: ConversationRelayCallbackPayload
+  ): Promise<{ status: number; content: string; contentType: string }> {
+    this.logger.debug(
+      { call_sid: payload.CallSid, call_status: payload.CallStatus },
+      'ConversationRelay callback received'
+    );
+
+    if (payload.AccountSid !== this.tacConfig.accountSid) {
+      this.logger.warn(
+        { expected: this.tacConfig.accountSid, received: payload.AccountSid },
+        'ConversationRelay callback AccountSid mismatch, ignoring'
+      );
+      return { status: 403, content: 'Forbidden', contentType: 'text/plain' };
+    }
+
+    if (payload.CallStatus === 'completed' && !this.channel.isOrchestratorEnabledInternal()) {
+      const conversationId = this.callSidToConversationId.get(payload.CallSid);
+      if (conversationId) {
+        this.callSidToConversationId.delete(payload.CallSid);
+        await this.channel.endConversationInternal(conversationId);
+      }
+    }
+
+    return { status: 200, content: 'OK', contentType: 'text/plain' };
   }
 
   // =========================================================================
@@ -1487,17 +988,17 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Cleanup channel state on shutdown
+   * Drop this provider's ConversationRelay transport state on channel shutdown.
    *
    * Note: WebSocket connections are managed by the server and closed there.
-   * This method only cleans up internal channel state.
+   * This method only cleans up internal provider state.
    */
   public override shutdown(): void {
+    super.shutdown();
     this.streamTasks.clear();
     this.webSocketConnections.clear();
     this.promptQueues.clear();
     this.initializationRetries.clear();
     this.callSidToConversationId.clear();
-    super.shutdown();
   }
 }

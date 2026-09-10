@@ -10,7 +10,8 @@ import type {
   TwiMLRequest,
 } from '../../types/index';
 import type { InitiateVoiceConversationResult } from '../../types/conversation';
-import type { VoiceChannel } from '../voice';
+import type { BaseChannelOptions } from '../base';
+import type { VoiceChannel } from './channel';
 
 /**
  * Base class for a {@link VoiceChannel}'s real-time media provider.
@@ -131,6 +132,18 @@ export class VoiceProvider {
   }
 
   /**
+   * Drop this provider's transport state on channel shutdown.
+   *
+   * Called by {@link VoiceChannel.shutdown} before the channel clears its own
+   * conversation bookkeeping. Default no-op — providers override this to drop
+   * whatever transport state they track. Live WebSocket connections are owned
+   * and closed by the server, so an override only clears in-process tracking.
+   */
+  public shutdown(): void {
+    return undefined;
+  }
+
+  /**
    * Set callback URLs on `callParams` for every registered call-event handler.
    *
    * A URL is derived only when its handler is registered — an unwanted
@@ -170,8 +183,22 @@ export class VoiceProviderConfig {
   /** Memory retrieval mode for this channel. Defaults to `'never'`. */
   public memoryMode: MemoryMode;
 
-  constructor(options?: { memoryMode?: MemoryMode }) {
+  /**
+   * The {@link BaseChannelOptions} this config was constructed with, retained
+   * verbatim so `VoiceChannel` can hand them to `BaseChannel`.
+   *
+   * A provider config carries channel-level options (`dedupCapacity` and
+   * friends) alongside its own provider settings; without this they would be
+   * dropped on the config path while still applying on the plain-object path,
+   * which is the same channel configured two ways.
+   *
+   * @internal
+   */
+  public readonly channelOptions: BaseChannelOptions;
+
+  constructor(options?: BaseChannelOptions) {
     this.memoryMode = options?.memoryMode ?? 'never';
+    this.channelOptions = { ...options };
   }
 
   /**

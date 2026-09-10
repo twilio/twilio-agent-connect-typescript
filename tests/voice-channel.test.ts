@@ -1348,7 +1348,7 @@ describe('VoiceChannel', () => {
       const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
 
       // Simulate an established call mapping so the guard is what prevents cleanup.
-      (voiceChannel as any).callSidToConversationId.set('CA123', 'CH123');
+      (voiceChannel as any).provider.callSidToConversationId.set('CA123', 'CH123');
 
       const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACtest123',
@@ -1361,7 +1361,7 @@ describe('VoiceChannel', () => {
       expect(result.status).toBe(200);
       expect(endSpy).not.toHaveBeenCalled();
       // Mapping is left intact; CO webhook cleanup owns teardown.
-      expect((voiceChannel as any).callSidToConversationId.has('CA123')).toBe(true);
+      expect((voiceChannel as any).provider.callSidToConversationId.has('CA123')).toBe(true);
     });
 
     it('ends the conversation on completion in voice-only mode', async () => {
@@ -1371,7 +1371,7 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
 
-      (voiceChannel as any).callSidToConversationId.set('CA123', 'CH123');
+      (voiceChannel as any).provider.callSidToConversationId.set('CA123', 'CH123');
 
       const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACtest123',
@@ -1384,7 +1384,7 @@ describe('VoiceChannel', () => {
       expect(result.status).toBe(200);
       expect(endSpy).toHaveBeenCalledWith('CH123');
       // Mapping is cleared as part of cleanup.
-      expect((voiceChannel as any).callSidToConversationId.has('CA123')).toBe(false);
+      expect((voiceChannel as any).provider.callSidToConversationId.has('CA123')).toBe(false);
     });
   });
 
