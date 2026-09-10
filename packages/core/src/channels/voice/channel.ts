@@ -9,7 +9,7 @@ import {
   ConversationRelayConfig,
   ConversationRelayCallbackPayload,
   InitiateVoiceConversationOptions,
-  TwiMLOptions,
+  VoiceTwiMLOptionsConversationRelay,
   TwiMLRequest,
   ConversationWebhookPayload,
   CallEventKind,
@@ -37,9 +37,19 @@ import { VoiceProviderConfig } from './provider';
 /**
  * Callback that produces per-call overrides for the TwiML inside
  * `<ConversationRelay>` on inbound calls. Receives a framework-neutral
- * {@link TwiMLRequest} and returns {@link TwiMLOptions}.
+ * {@link TwiMLRequest} and returns {@link VoiceTwiMLOptionsConversationRelay}.
+ *
+ * Stays typed against the ConversationRelay subtype rather than the
+ * provider-agnostic base ({@link VoiceProvider.handleIncomingCall} is widened
+ * to the base, this consumer-facing surface is not): the base has only
+ * optional shared fields, so TypeScript's object-literal freshness check
+ * rejects the documented inline form `async () => ({ voice: '...' })` for
+ * having no properties in common with it. It widens once a second
+ * inbound-capable provider exists.
  */
-export type InboundCallTwimlHandler = (req: TwiMLRequest) => Promise<TwiMLOptions>;
+export type InboundCallTwimlHandler = (
+  req: TwiMLRequest
+) => Promise<VoiceTwiMLOptionsConversationRelay>;
 
 /** Handler for Twilio `statusCallback` webhooks. */
 export type CallStatusHandler = (event: CallStatusEvent) => Promise<void> | void;
@@ -145,7 +155,8 @@ export class VoiceChannel extends BaseChannel {
    * `<ConversationRelay>` on inbound calls.
    *
    * The callback receives a framework-neutral {@link TwiMLRequest} (parsed from
-   * the Twilio webhook form) and returns {@link TwiMLOptions}. Fields the
+   * the Twilio webhook form) and returns
+   * {@link VoiceTwiMLOptionsConversationRelay}. Fields the
    * callback explicitly sets override `defaultTwimlOptions` and TAC defaults;
    * unset fields fall through.
    *
@@ -567,12 +578,13 @@ export class VoiceChannel extends BaseChannel {
    * @param options - Additional per-call inputs.
    * @param options.hostTwimlOptions - Per-call TwiML supplied by a custom
    *   in-process host (e.g. an affinity-routed deployment injecting a per-call
-   *   `websocketUrl`).
+   *   `websocketUrl`). Typed against the ConversationRelay subtype for the same
+   *   reason as {@link InboundCallTwimlHandler}.
    * @returns TwiML XML string for call connection.
    */
   public async handleIncomingCall(
     twimlRequest?: TwiMLRequest,
-    options?: { hostTwimlOptions?: TwiMLOptions }
+    options?: { hostTwimlOptions?: VoiceTwiMLOptionsConversationRelay }
   ): Promise<string> {
     return this.provider.handleIncomingCall(twimlRequest, options);
   }

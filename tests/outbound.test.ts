@@ -6,6 +6,8 @@ import {
   VoiceChannel,
   TAC,
   CallOptionsSchema,
+  VoiceTwiMLOptionsSchema,
+  VoiceTwiMLOptionsConversationRelaySchema,
 } from '@twilio/tac-core';
 import type { CallOptions } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
@@ -1241,5 +1243,20 @@ describe('Outbound Conversations', () => {
       // Instantiating RCSChannel itself throws — which is what we want users to see
       expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId is required/);
     });
+  });
+});
+
+describe('VoiceTwiMLOptions provider-agnostic base', () => {
+  it('accepts a base VoiceTwiMLOptions where a provider-specific one is expected', () => {
+    const parsed = VoiceTwiMLOptionsSchema.parse({ websocketUrl: 'wss://example.test/ws' });
+    expect(parsed.websocketUrl).toBe('wss://example.test/ws');
+  });
+
+  it('keeps ConversationRelay-only fields on the ConversationRelay subtype', () => {
+    const parsed = VoiceTwiMLOptionsConversationRelaySchema.parse({
+      welcomeGreeting: 'Hi there',
+      websocketUrl: 'wss://example.test/ws',
+    });
+    expect(parsed.welcomeGreeting).toBe('Hi there');
   });
 });

@@ -17,8 +17,10 @@ import {
   ProfileId,
   PromptMessage,
   TextTokenMessage,
-  TwiMLOptions,
   TwiMLRequest,
+  VoiceTwiMLOptions,
+  VoiceTwiMLOptionsConversationRelay,
+  VoiceTwiMLOptionsConversationRelaySchema,
   WebSocketMessageSchema,
   callOptionsToCreateParams,
 } from '../../../types/index';
@@ -730,21 +732,57 @@ export class ConversationRelayProvider extends VoiceProvider {
    *   `websocketUrl`), layered below `defaultTwimlOptions` and the application
    *   customizer but above the TAC defaults.
    * @returns TwiML XML string for call connection.
+   * @throws {Error} if either options layer isn't a
+   *   {@link VoiceTwiMLOptionsConversationRelay}.
    */
   public override async handleIncomingCall(
     twimlRequest?: TwiMLRequest,
-    options?: { hostTwimlOptions?: TwiMLOptions }
+    options?: { hostTwimlOptions?: VoiceTwiMLOptions }
   ): Promise<string> {
+    const host = this.narrowTwimlOptions(options?.hostTwimlOptions, 'options.hostTwimlOptions');
+
     const onInboundCallTwimlHandler = this.channel.getInboundCallTwimlHandler();
-    let customized: TwiMLOptions | undefined;
+    let customized: VoiceTwiMLOptionsConversationRelay | undefined;
     if (onInboundCallTwimlHandler && twimlRequest) {
-      customized = await onInboundCallTwimlHandler(twimlRequest);
+      customized = this.narrowTwimlOptions(
+        await onInboundCallTwimlHandler(twimlRequest),
+        'the onInboundCallTwiml customizer output'
+      );
     }
 
     return this.twimlBuilder.build('handleIncomingCall', {
-      host: options?.hostTwimlOptions,
+      host,
       perCall: customized,
     });
+  }
+
+  /**
+   * Narrow provider-agnostic {@link VoiceTwiMLOptions} to this provider's
+   * concrete shape. `VoiceProvider.handleIncomingCall` is typed against the
+   * base so every provider can accept its own TwiML options, so the
+   * ConversationRelay shape has to be established at runtime.
+   *
+   * @param value - Options from a caller or the application customizer.
+   * @param label - What produced `value`, for the error message.
+   */
+  private narrowTwimlOptions(
+    value: VoiceTwiMLOptions | undefined,
+    label: string
+  ): VoiceTwiMLOptionsConversationRelay | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    const parsed = VoiceTwiMLOptionsConversationRelaySchema.safeParse(value);
+    if (!parsed.success) {
+      const errorMessage = parsed.error.issues
+        .map(issue => `${issue.path.join('.')}: ${issue.message}`)
+        .join(', ');
+      throw new Error(
+        `ConversationRelayProvider.handleIncomingCall requires ${label} to be a ` +
+          `VoiceTwiMLOptionsConversationRelay: ${errorMessage}`
+      );
+    }
+    return parsed.data;
   }
 
   // =========================================================================

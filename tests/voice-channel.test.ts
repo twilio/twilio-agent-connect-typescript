@@ -495,15 +495,40 @@ describe('VoiceChannel', () => {
 
       expect(twiml).toContain('action="https://customizer.example.com/end"');
     });
+
+    it('should reject hostTwimlOptions containing an unknown key', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      await expect(
+        voiceChannel.handleIncomingCall(
+          { extra: {} },
+          // Cast simulates an untyped JavaScript consumer passing a typo'd key.
+          { hostTwimlOptions: { welcomGreeting: 'typo' } as any }
+        )
+      ).rejects.toThrow(/VoiceTwiMLOptionsConversationRelay/);
+    });
+
+    it('should reject a customizer that returns an unknown key', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      // Cast simulates an untyped JavaScript consumer returning a typo'd key.
+      voiceChannel.onInboundCallTwiml(async () => ({ welcomGreeting: 'typo' }) as any);
+
+      await expect(voiceChannel.handleIncomingCall({ extra: {} })).rejects.toThrow(
+        /VoiceTwiMLOptionsConversationRelay/
+      );
+    });
   });
 
   describe('handleIncomingCall websocketUrl layering', () => {
     const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
 
-    // websocketUrl is a normal TwiMLOptions field, so it rides the same layered
-    // merge as every other attribute. This is the affinity-routed-host case
-    // (e.g. Azure Hosted Agents) appending a per-call token to the upgrade URL —
-    // done through the existing customizer, no new API surface.
+    // websocketUrl is a normal VoiceTwiMLOptionsConversationRelay field, so it
+    // rides the same layered merge as every other attribute. This is the
+    // affinity-routed-host case (e.g. Azure Hosted Agents) appending a per-call
+    // token to the upgrade URL — done through the existing customizer, no new
+    // API surface.
     it('should let a customizer override websocketUrl per call', async () => {
       const tac = await createTestTAC(getVoiceConfig());
       const voiceChannel = new VoiceChannel(tac, {
@@ -1999,9 +2024,9 @@ describe('VoiceChannel', () => {
   });
 
   describe('ConversationRelay attribute emission', () => {
-    // Exercises the merged-TwiMLOptions emit path via handleIncomingCall +
-    // defaultTwimlOptions. The widened TwiMLOptions surface should emit every
-    // documented attribute.
+    // Exercises the merged-VoiceTwiMLOptionsConversationRelay emit path via
+    // handleIncomingCall + defaultTwimlOptions. The widened options surface
+    // should emit every documented attribute.
     const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
 
     const emit = async (defaultTwimlOptions: Record<string, unknown>): Promise<string> => {

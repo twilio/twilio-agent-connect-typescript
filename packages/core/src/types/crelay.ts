@@ -236,7 +236,8 @@ export type InterruptMode = z.infer<typeof InterruptModeSchema>;
  *
  * Distinct from {@link LanguageAttributes} (the Twilio-SDK-shaped type used by
  * `connectConversationRelay`): this is the customization-facing model used in
- * {@link TwiMLOptions}, mirroring the Python SDK's `LanguageConfig`.
+ * {@link VoiceTwiMLOptionsConversationRelay}, mirroring the Python SDK's
+ * `LanguageConfig`.
  */
 export const LanguageConfigSchema = z.object({
   /**
@@ -257,6 +258,52 @@ export const LanguageConfigSchema = z.object({
 export type LanguageConfig = z.infer<typeof LanguageConfigSchema>;
 
 /**
+ * Raw object form of the provider-agnostic TwiML options — the single source
+ * of truth for the three fields every provider shares. The exported base
+ * schema below and each provider-specific subtype (ConversationRelay today,
+ * Media Streams next) build on this same const, so the shared fields stay
+ * defined once.
+ */
+const VoiceTwiMLOptionsBase = z.object({
+  /**
+   * Custom parameters to pass to the provider's TwiML element as `<Parameter>`
+   * children.
+   */
+  customParameters: CustomParametersSchema.optional(),
+  /**
+   * URL for Twilio to request when the call ends (`<Connect action>`). Set to
+   * a non-empty URL, or leave unset. An explicit `undefined` suppresses the
+   * action entirely (see the TwiML builder's actionUrl resolution); an empty
+   * string is rejected so it can't silently drop the action.
+   */
+  actionUrl: z.string().min(1, 'actionUrl must not be empty').optional(),
+  /**
+   * WebSocket URL for the provider's TwiML element (`<ConversationRelay url=...>`
+   * today). Leave unset (the default) to use the URL the channel derives
+   * from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`. Set it only for
+   * a per-call URL — e.g. an affinity-routed host that appends a token to the
+   * upgrade URL — typically from an `onInboundCallTwiml` customizer. Layers
+   * per-field like every other field. Must be non-empty when set.
+   */
+  websocketUrl: z.string().min(1, 'websocketUrl must not be empty').optional(),
+});
+
+/**
+ * Provider-agnostic base for a voice provider's inbound-call TwiML
+ * customization options.
+ *
+ * Each provider answers the inbound-call webhook with its own TwiML shape
+ * ({@link VoiceTwiMLOptionsConversationRelaySchema} for `<ConversationRelay>`,
+ * a future subtype for `<Connect><Stream>`), so `VoiceProvider.handleIncomingCall`'s
+ * `hostTwimlOptions` is typed against this base rather than a specific
+ * provider's options. It carries only what every provider shares: the
+ * `<Connect action>` URL, the transport URL, and `<Parameter>` children.
+ *
+ * Mirrors the Python SDK's `VoiceTwiMLOptions`.
+ */
+export const VoiceTwiMLOptionsSchema = VoiceTwiMLOptionsBase.strict();
+
+/**
  * Options for the TwiML inside `<ConversationRelay>` (plus the
  * `<Connect action>` URL).
  *
@@ -268,151 +315,132 @@ export type LanguageConfig = z.infer<typeof LanguageConfigSchema>;
  *
  * This is the customization-facing counterpart to {@link ConversationRelayConfig}
  * (which is the Twilio-SDK-shaped emit model and carries the required `url`).
- * Mirrors the Python SDK's `TwiMLOptions`.
+ * Mirrors the Python SDK's `VoiceTwiMLOptionsConversationRelay`.
  */
-export const TwiMLOptionsSchema = z
-  .object({
-    /** Custom parameters to pass to ConversationRelay as `<Parameter>` children */
-    customParameters: CustomParametersSchema.optional(),
-    /** Initial greeting message for the caller */
-    welcomeGreeting: z.string().optional(),
-    /**
-     * What caller input can interrupt the welcome greeting.
-     * Defaults to 'any' on Twilio.
-     */
-    welcomeGreetingInterruptible: InterruptModeSchema.optional(),
-    /**
-     * URL for Twilio to request when the call ends (`<Connect action>`). Set to
-     * a non-empty URL, or leave unset. An explicit `undefined` suppresses the
-     * action entirely (see `VoiceChannel`'s actionUrl resolution); an empty
-     * string is rejected so it can't silently drop the action.
-     */
-    actionUrl: z.string().min(1, 'actionUrl must not be empty').optional(),
-    /**
-     * Conversation Service SID. When set, ConversationRelay will manage
-     * conversation creation and participants.
-     */
-    conversationConfiguration: z.string().optional(),
-    /**
-     * ConversationRelay WebSocket URL (the `<ConversationRelay url=...>`
-     * attribute). Leave unset (the default) to use the URL the channel derives
-     * from `TACConfig.voicePublicDomain` + `voiceWebsocketPath`. Set it only for
-     * a per-call URL — e.g. an affinity-routed host that appends a token to the
-     * upgrade URL — typically from an `onInboundCallTwiml` customizer. Layers
-     * per-field like every other field. Must be non-empty when set.
-     */
-    websocketUrl: z.string().min(1, 'websocketUrl must not be empty').optional(),
+export const VoiceTwiMLOptionsConversationRelaySchema = VoiceTwiMLOptionsBase.extend({
+  /** Initial greeting message for the caller */
+  welcomeGreeting: z.string().optional(),
+  /**
+   * What caller input can interrupt the welcome greeting.
+   * Defaults to 'any' on Twilio.
+   */
+  welcomeGreetingInterruptible: InterruptModeSchema.optional(),
+  /**
+   * Conversation Service SID. When set, ConversationRelay will manage
+   * conversation creation and participants.
+   */
+  conversationConfiguration: z.string().optional(),
 
-    // Language, TTS, STT
-    /**
-     * Language for both STT and TTS, e.g. 'en-US'. Equivalent to setting both
-     * ttsLanguage and transcriptionLanguage.
-     */
-    language: z.string().optional(),
-    /** TTS language code; overrides `language` for TTS. */
-    ttsLanguage: z.string().optional(),
-    /**
-     * STT language code; overrides `language` for transcription. Can be
-     * 'multi' for automatic language detection (Deepgram only).
-     */
-    transcriptionLanguage: z.string().optional(),
-    /** TTS voice name (choices vary by ttsProvider) */
-    voice: z.string().optional(),
-    /** TTS provider: 'Google', 'Amazon', or 'ElevenLabs'. Defaults to 'ElevenLabs'. */
-    ttsProvider: z.string().optional(),
-    /**
-     * STT provider: 'Google' or 'Deepgram'. Defaults to 'Deepgram' (or 'Google'
-     * for accounts that used ConversationRelay before 2025-09-12).
-     */
-    transcriptionProvider: z.string().optional(),
-    /** Speech model for STT. Choices vary by transcriptionProvider. */
-    speechModel: z.string().optional(),
-    /**
-     * Text normalization for ElevenLabs TTS. Defaults to 'off'. 'auto' behaves
-     * like 'off' for ConversationRelay calls.
-     */
-    elevenlabsTextNormalization: z.enum(['on', 'auto', 'off']).optional(),
+  // Language, TTS, STT
+  /**
+   * Language for both STT and TTS, e.g. 'en-US'. Equivalent to setting both
+   * ttsLanguage and transcriptionLanguage.
+   */
+  language: z.string().optional(),
+  /** TTS language code; overrides `language` for TTS. */
+  ttsLanguage: z.string().optional(),
+  /**
+   * STT language code; overrides `language` for transcription. Can be
+   * 'multi' for automatic language detection (Deepgram only).
+   */
+  transcriptionLanguage: z.string().optional(),
+  /** TTS voice name (choices vary by ttsProvider) */
+  voice: z.string().optional(),
+  /** TTS provider: 'Google', 'Amazon', or 'ElevenLabs'. Defaults to 'ElevenLabs'. */
+  ttsProvider: z.string().optional(),
+  /**
+   * STT provider: 'Google' or 'Deepgram'. Defaults to 'Deepgram' (or 'Google'
+   * for accounts that used ConversationRelay before 2025-09-12).
+   */
+  transcriptionProvider: z.string().optional(),
+  /** Speech model for STT. Choices vary by transcriptionProvider. */
+  speechModel: z.string().optional(),
+  /**
+   * Text normalization for ElevenLabs TTS. Defaults to 'off'. 'auto' behaves
+   * like 'off' for ConversationRelay calls.
+   */
+  elevenlabsTextNormalization: z.enum(['on', 'auto', 'off']).optional(),
 
-    // Turn detection / interruption
-    /**
-     * Confidence required to finish a turn. Only applies with Deepgram + flux
-     * speech model. Twilio enforces the accepted range — see ConversationRelay docs.
-     */
-    eotThreshold: z.number().optional(),
-    /**
-     * Send unfinalized prompts and eager end-of-turn events (last=false). Only
-     * applies with Deepgram + flux speech model.
-     */
-    partialPrompts: z.boolean().optional(),
-    /**
-     * Use Deepgram Smart Format for transcription output. Defaults to true when
-     * transcriptionProvider='Deepgram'.
-     */
-    deepgramSmartFormat: z.boolean().optional(),
-    /**
-     * Silence (ms) after speech before finalizing the prompt. Integer
-     * milliseconds or the literal 'auto' (the platform default). Twilio enforces
-     * the accepted range — see ConversationRelay docs.
-     */
-    speechTimeout: z.union([z.number().int(), z.literal('auto')]).optional(),
-    /**
-     * What caller input interrupts TTS playback. Boolean accepted for backward
-     * compat: true='any', false='none'. Defaults to 'any'.
-     */
-    interruptible: z.union([InterruptModeSchema, z.boolean()]).optional(),
-    /** How easily caller speech triggers an interrupt. Defaults to 'high'. */
-    interruptSensitivity: z.enum(['high', 'medium', 'low']).optional(),
-    /**
-     * What caller input gets reported while the agent is speaking (independent
-     * of whether playback is interrupted). Defaults to 'none' since May 2025.
-     */
-    reportInputDuringAgentSpeech: InterruptModeSchema.optional(),
-    /**
-     * Filter short conversational feedback ('yeah', 'uh-huh', …) so it doesn't
-     * interrupt the agent. Defaults to false.
-     */
-    ignoreBackchannel: z.boolean().optional(),
-    /**
-     * Allow text tokens from the next talk cycle to interrupt the current one.
-     * Defaults to false.
-     */
-    preemptible: z.boolean().optional(),
-    /** Emit DTMF keypress events over the WebSocket. */
-    dtmfDetection: z.boolean().optional(),
+  // Turn detection / interruption
+  /**
+   * Confidence required to finish a turn. Only applies with Deepgram + flux
+   * speech model. Twilio enforces the accepted range — see ConversationRelay docs.
+   */
+  eotThreshold: z.number().optional(),
+  /**
+   * Send unfinalized prompts and eager end-of-turn events (last=false). Only
+   * applies with Deepgram + flux speech model.
+   */
+  partialPrompts: z.boolean().optional(),
+  /**
+   * Use Deepgram Smart Format for transcription output. Defaults to true when
+   * transcriptionProvider='Deepgram'.
+   */
+  deepgramSmartFormat: z.boolean().optional(),
+  /**
+   * Silence (ms) after speech before finalizing the prompt. Integer
+   * milliseconds or the literal 'auto' (the platform default). Twilio enforces
+   * the accepted range — see ConversationRelay docs.
+   */
+  speechTimeout: z.union([z.number().int(), z.literal('auto')]).optional(),
+  /**
+   * What caller input interrupts TTS playback. Boolean accepted for backward
+   * compat: true='any', false='none'. Defaults to 'any'.
+   */
+  interruptible: z.union([InterruptModeSchema, z.boolean()]).optional(),
+  /** How easily caller speech triggers an interrupt. Defaults to 'high'. */
+  interruptSensitivity: z.enum(['high', 'medium', 'low']).optional(),
+  /**
+   * What caller input gets reported while the agent is speaking (independent
+   * of whether playback is interrupted). Defaults to 'none' since May 2025.
+   */
+  reportInputDuringAgentSpeech: InterruptModeSchema.optional(),
+  /**
+   * Filter short conversational feedback ('yeah', 'uh-huh', …) so it doesn't
+   * interrupt the agent. Defaults to false.
+   */
+  ignoreBackchannel: z.boolean().optional(),
+  /**
+   * Allow text tokens from the next talk cycle to interrupt the current one.
+   * Defaults to false.
+   */
+  preemptible: z.boolean().optional(),
+  /** Emit DTMF keypress events over the WebSocket. */
+  dtmfDetection: z.boolean().optional(),
 
-    // Recognition hints / events / debug / intelligence
-    /**
-     * Comma-separated words/phrases likely to appear in speech. Capitalize
-     * proper nouns.
-     */
-    hints: z.string().optional(),
-    /** Space-separated event subscriptions, e.g. 'speaker-events tokens-played'. */
-    events: z.string().optional(),
-    /**
-     * Debug subscription, e.g. 'debugging'. Note: 'speaker-events' and
-     * 'tokens-played' have moved to the `events` attribute — only use them here
-     * for backward compatibility.
-     */
-    debug: z.string().optional(),
-    /**
-     * Conversation Intelligence (classic) Service SID or unique name for
-     * persisting transcripts and running Language Operators.
-     */
-    intelligenceService: z.string().optional(),
+  // Recognition hints / events / debug / intelligence
+  /**
+   * Comma-separated words/phrases likely to appear in speech. Capitalize
+   * proper nouns.
+   */
+  hints: z.string().optional(),
+  /** Space-separated event subscriptions, e.g. 'speaker-events tokens-played'. */
+  events: z.string().optional(),
+  /**
+   * Debug subscription, e.g. 'debugging'. Note: 'speaker-events' and
+   * 'tokens-played' have moved to the `events` attribute — only use them here
+   * for backward compatibility.
+   */
+  debug: z.string().optional(),
+  /**
+   * Conversation Intelligence (classic) Service SID or unique name for
+   * persisting transcripts and running Language Operators.
+   */
+  intelligenceService: z.string().optional(),
 
-    // Nested <Language> children
-    /** Additional `<Language>` children for multi-language support */
-    languages: z.array(LanguageConfigSchema).optional(),
+  // Nested <Language> children
+  /** Additional `<Language>` children for multi-language support */
+  languages: z.array(LanguageConfigSchema).optional(),
 
-    /**
-     * Escape hatch for ConversationRelay attributes not yet typed on this model.
-     * Keys are emitted as-is on `<ConversationRelay>`; Twilio's SDK converts
-     * snake_case to camelCase, lowercases bools to 'true'/'false', and
-     * stringifies numbers. Prefer a typed field when one exists — use `extra`
-     * only for newly-added Twilio attributes not yet in this SDK.
-     */
-    extra: z.record(z.string(), z.union([z.string(), z.boolean(), z.number()])).optional(),
-  })
+  /**
+   * Escape hatch for ConversationRelay attributes not yet typed on this model.
+   * Keys are emitted as-is on `<ConversationRelay>`; Twilio's SDK converts
+   * snake_case to camelCase, lowercases bools to 'true'/'false', and
+   * stringifies numbers. Prefer a typed field when one exists — use `extra`
+   * only for newly-added Twilio attributes not yet in this SDK.
+   */
+  extra: z.record(z.string(), z.union([z.string(), z.boolean(), z.number()])).optional(),
+})
   // Forbid unknown keys so a typo in a field name fails loudly rather than
   // being silently dropped from the emitted TwiML.
   .strict()
@@ -421,7 +449,9 @@ export const TwiMLOptionsSchema = z
   // serializer in favor of the typed default — a footgun.
   .superRefine((value, ctx) => {
     if (!value.extra) return;
-    const typed = new Set(Object.keys(TwiMLOptionsShape).filter(k => k !== 'extra'));
+    const typed = new Set(
+      Object.keys(VoiceTwiMLOptionsConversationRelayShape).filter(k => k !== 'extra')
+    );
     const shadowed = Object.keys(value.extra)
       .filter(k => typed.has(k))
       .sort();
@@ -430,18 +460,18 @@ export const TwiMLOptionsSchema = z
         code: 'custom',
         path: ['extra'],
         message:
-          `TwiMLOptions.extra keys [${shadowed.join(', ')}] shadow typed fields. ` +
+          `VoiceTwiMLOptionsConversationRelay.extra keys [${shadowed.join(', ')}] shadow typed fields. ` +
           'Set the typed field directly instead of using `extra`.',
       });
     }
   });
 
 /**
- * @internal Field names of {@link TwiMLOptionsSchema}, used by the shadow-guard
- * refinement above. Declared separately because `.strict().superRefine(...)`
- * erases the object shape on the schema instance.
+ * @internal Field names of {@link VoiceTwiMLOptionsConversationRelaySchema},
+ * used by the shadow-guard refinement above. Declared separately because
+ * `.strict().superRefine(...)` erases the object shape on the schema instance.
  */
-const TwiMLOptionsShape = {
+const VoiceTwiMLOptionsConversationRelayShape = {
   customParameters: true,
   welcomeGreeting: true,
   welcomeGreetingInterruptible: true,
@@ -474,14 +504,18 @@ const TwiMLOptionsShape = {
   extra: true,
 } as const;
 
-export type TwiMLOptions = z.infer<typeof TwiMLOptionsSchema>;
+export type VoiceTwiMLOptions = z.infer<typeof VoiceTwiMLOptionsSchema>;
+
+export type VoiceTwiMLOptionsConversationRelay = z.infer<
+  typeof VoiceTwiMLOptionsConversationRelaySchema
+>;
 
 /**
  * Framework-neutral view of the Twilio TwiML webhook form.
  *
  * Populated by `TACServer` from the incoming Twilio webhook, then passed to a
  * customizer registered via `VoiceChannel.onInboundCallTwiml(...)` so the
- * application can produce per-call {@link TwiMLOptions} overrides without
+ * application can produce per-call {@link VoiceTwiMLOptions} overrides without
  * depending on Fastify types. Mirrors the Python SDK's `TwiMLRequest`.
  */
 export const TwiMLRequestSchema = z.object({
@@ -495,8 +529,8 @@ export const TwiMLRequestSchema = z.object({
   /**
    * Any other fields from the Twilio webhook not captured above. Values are
    * always strings here (webhook form fields are url-encoded), unlike
-   * TwiMLOptions.extra which accepts string | boolean | number for emitted
-   * TwiML attributes.
+   * VoiceTwiMLOptionsConversationRelay.extra which accepts string | boolean |
+   * number for emitted TwiML attributes.
    */
   extra: z.record(z.string(), z.string()).default({}),
 });
@@ -1063,8 +1097,13 @@ export interface InitiateVoiceConversationOptions {
   /**
    * Per-call overrides for the TwiML inside `<ConversationRelay>`. Merged over
    * `VoiceChannelConfig.defaultTwimlOptions` and TAC defaults.
+   *
+   * Stays typed against the ConversationRelay subtype rather than the
+   * provider-agnostic base: this is parsed at the channel boundary, and a
+   * `.strict()` base would reject every ConversationRelay field. It widens
+   * once a second outbound-capable provider exists.
    */
-  twimlOptions?: TwiMLOptions | undefined;
+  twimlOptions?: VoiceTwiMLOptionsConversationRelay | undefined;
   /**
    * Parameters for Twilio's `calls.create()` — AMD, recording, status
    * callbacks, timeout (see {@link CallOptions}). Callback URLs auto-wire when
@@ -1077,7 +1116,7 @@ export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConv
   .object({
     to: z.string().min(1, 'Recipient phone number is required'),
     websocketUrl: z.url().optional(),
-    twimlOptions: TwiMLOptionsSchema.optional(),
+    twimlOptions: VoiceTwiMLOptionsConversationRelaySchema.optional(),
     callOptions: CallOptionsSchema.optional(),
   })
   // Reject removed flat fields (welcomeGreeting, actionUrl, customParameters,

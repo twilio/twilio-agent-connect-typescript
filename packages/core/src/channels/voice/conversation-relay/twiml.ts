@@ -1,5 +1,5 @@
 import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
-import type { TwiMLOptions } from '../../../types/index';
+import type { VoiceTwiMLOptionsConversationRelay } from '../../../types/index';
 import type { ConversationRelayProviderConfigOptions } from './config';
 import { studioVoiceHandoffUrl } from '../../../util/handoff-urls';
 import { TwiMLBuilderBase, filterUnsetValues } from '../twiml';
@@ -29,13 +29,13 @@ export interface BuildTwiMLInputs {
    * Per-call overrides from the host owning the route (e.g. a per-call
    * `websocketUrl` with an affinity token). Lowest of the option layers.
    */
-  host?: TwiMLOptions | undefined;
+  host?: VoiceTwiMLOptionsConversationRelay | undefined;
   /**
    * Per-call overrides — the `onInboundCallTwiml` customizer's output for
    * inbound, or `InitiateVoiceConversationOptions.twimlOptions` for outbound.
    * Highest layer.
    */
-  perCall?: TwiMLOptions | undefined;
+  perCall?: VoiceTwiMLOptionsConversationRelay | undefined;
   /**
    * Dedicated per-call WebSocket override that wins over any `websocketUrl`
    * coming through the option layers. Used by outbound, which takes it as its
@@ -50,38 +50,39 @@ export interface BuildTwiMLInputs {
  */
 export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<ConversationRelayProviderConfigOptions> {
   /**
-   * Field names on {@link TwiMLOptions} that map directly to `<ConversationRelay>`
+   * Field names on {@link VoiceTwiMLOptionsConversationRelay} that map directly to `<ConversationRelay>`
    * attributes (camelCase, emitted as-is). Excludes the fields handled specially
    * by {@link generateTwiml}: websocketUrl (resolved through the layered merge and
    * emitted as the `url` attribute), actionUrl, languages, customParameters, extra.
    */
-  protected static readonly RELAY_ATTR_FIELDS: readonly (keyof TwiMLOptions)[] = [
-    'welcomeGreeting',
-    'welcomeGreetingInterruptible',
-    'conversationConfiguration',
-    'language',
-    'ttsLanguage',
-    'transcriptionLanguage',
-    'voice',
-    'ttsProvider',
-    'transcriptionProvider',
-    'speechModel',
-    'elevenlabsTextNormalization',
-    'eotThreshold',
-    'partialPrompts',
-    'deepgramSmartFormat',
-    'speechTimeout',
-    'interruptible',
-    'interruptSensitivity',
-    'reportInputDuringAgentSpeech',
-    'ignoreBackchannel',
-    'preemptible',
-    'dtmfDetection',
-    'hints',
-    'events',
-    'debug',
-    'intelligenceService',
-  ];
+  protected static readonly RELAY_ATTR_FIELDS: readonly (keyof VoiceTwiMLOptionsConversationRelay)[] =
+    [
+      'welcomeGreeting',
+      'welcomeGreetingInterruptible',
+      'conversationConfiguration',
+      'language',
+      'ttsLanguage',
+      'transcriptionLanguage',
+      'voice',
+      'ttsProvider',
+      'transcriptionProvider',
+      'speechModel',
+      'elevenlabsTextNormalization',
+      'eotThreshold',
+      'partialPrompts',
+      'deepgramSmartFormat',
+      'speechTimeout',
+      'interruptible',
+      'interruptSensitivity',
+      'reportInputDuringAgentSpeech',
+      'ignoreBackchannel',
+      'preemptible',
+      'dtmfDetection',
+      'hints',
+      'events',
+      'debug',
+      'intelligenceService',
+    ];
 
   /**
    * Build the TwiML XML for one call.
@@ -117,10 +118,10 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
    * a lower layer that did.
    */
   protected buildTwimlOptions(
-    host: TwiMLOptions | undefined,
-    perCall: TwiMLOptions | undefined
-  ): TwiMLOptions {
-    const merged: TwiMLOptions = {
+    host: VoiceTwiMLOptionsConversationRelay | undefined,
+    perCall: VoiceTwiMLOptionsConversationRelay | undefined
+  ): VoiceTwiMLOptionsConversationRelay {
+    const merged: VoiceTwiMLOptionsConversationRelay = {
       welcomeGreeting: DEFAULT_WELCOME_GREETING,
       ...(this.tacConfig.isOrchestratorEnabled() &&
       this.tacConfig.conversationConfigurationId !== undefined
@@ -162,8 +163,8 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
    * `actionUrl` left absent (key not present) falls through to the next layer.
    */
   protected resolveActionUrl(
-    host: TwiMLOptions | undefined,
-    customized: TwiMLOptions | undefined
+    host: VoiceTwiMLOptionsConversationRelay | undefined,
+    customized: VoiceTwiMLOptionsConversationRelay | undefined
   ): string | undefined {
     if (customized && 'actionUrl' in customized) {
       return customized.actionUrl;
@@ -182,22 +183,25 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
   }
 
   /**
-   * Generate TwiML XML for ConversationRelay from a merged {@link TwiMLOptions}.
+   * Generate TwiML XML for ConversationRelay from a merged {@link VoiceTwiMLOptionsConversationRelay}.
    *
    * This is the low-level emitter used by {@link build} after layering. It
    * mirrors the Python SDK's `generate_twiml`.
    *
    * @param websocketUrl - Public WebSocket URL (e.g. 'wss://example.ngrok.app/ws').
-   * @param options - Merged TwiMLOptions to emit.
+   * @param options - Merged VoiceTwiMLOptionsConversationRelay to emit.
    * @returns TwiML XML string ready to return to Twilio.
    */
-  protected generateTwiml(websocketUrl: string, options: TwiMLOptions): string {
+  protected generateTwiml(
+    websocketUrl: string,
+    options: VoiceTwiMLOptionsConversationRelay
+  ): string {
     const response = new VoiceResponse();
 
     // <Connect action=...> — actionUrl undefined means no action attribute.
     const connect = response.connect(options.actionUrl ? { action: options.actionUrl } : {});
 
-    // Build ConversationRelay attributes. Keys on TwiMLOptions are already
+    // Build ConversationRelay attributes. Keys on VoiceTwiMLOptionsConversationRelay are already
     // camelCase; the Twilio SDK serializes booleans/numbers as TwiML attribute
     // values.
     const relayAttrs: Record<string, unknown> = { url: websocketUrl };
@@ -217,14 +221,14 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
 
     // `extra` is the escape hatch for attributes not yet typed. The schema's
     // shadow-guard rejects keys colliding with typed fields, so pass them
-    // through as-is — except `url`: it's not a TwiMLOptions field (invisible to
+    // through as-is — except `url`: it's not a VoiceTwiMLOptionsConversationRelay field (invisible to
     // the shadow-guard) but IS the resolved WebSocket endpoint, so letting
     // `extra.url` through would silently point the call at the wrong socket.
     if (options.extra) {
       for (const [key, value] of Object.entries(options.extra)) {
         if (key === 'url') {
           this.logger.warn(
-            'Ignoring `url` in TwiMLOptions.extra; set `websocketUrl` to override the ConversationRelay URL.'
+            'Ignoring `url` in VoiceTwiMLOptionsConversationRelay.extra; set `websocketUrl` to override the ConversationRelay URL.'
           );
           continue;
         }

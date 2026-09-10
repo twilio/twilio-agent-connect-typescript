@@ -6,7 +6,7 @@ import type {
   ConversationId,
   InitiateVoiceConversationOptions,
   MemoryMode,
-  TwiMLOptions,
+  VoiceTwiMLOptions,
   TwiMLRequest,
 } from '../../types/index';
 import type { InitiateVoiceConversationResult } from '../../types/conversation';
@@ -55,7 +55,7 @@ export class VoiceProvider {
   // eslint-disable-next-line @typescript-eslint/require-await -- Default rejects without awaiting, but stays `async` so callers always get a Promise
   public async handleIncomingCall(
     _twimlRequest?: TwiMLRequest,
-    _options?: { hostTwimlOptions?: TwiMLOptions }
+    _options?: { hostTwimlOptions?: VoiceTwiMLOptions }
   ): Promise<string> {
     throw new Error(`${this.constructor.name} does not support inbound calls.`);
   }

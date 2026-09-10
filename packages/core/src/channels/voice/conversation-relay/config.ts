@@ -1,5 +1,5 @@
 import type { TACConfig } from '../../../lib/config';
-import type { CallOptions, TwiMLOptions } from '../../../types/index';
+import type { CallOptions, VoiceTwiMLOptionsConversationRelay } from '../../../types/index';
 import type { BaseChannelOptions } from '../../base';
 import type { VoiceChannel } from '../channel';
 import type { VoiceProvider } from '../provider';
@@ -16,7 +16,7 @@ import { ConversationRelayProvider } from './provider';
  */
 export interface ConversationRelayProviderConfigOptions extends BaseChannelOptions {
   /**
-   * Static `TwiMLOptions` applied to every call (inbound and outbound).
+   * Static `VoiceTwiMLOptionsConversationRelay` applied to every call (inbound and outbound).
    * Controls the TwiML inside `<ConversationRelay>` — voice, language,
    * transcription provider, welcomeGreeting, `<Language>` children, etc. Use
    * this when the same ConversationRelay configuration is correct for every call.
@@ -27,7 +27,7 @@ export interface ConversationRelayProviderConfigOptions extends BaseChannelOptio
    * Note: `customParameters` and `languages` replace wholesale when a
    * higher-priority layer sets them.
    */
-  defaultTwimlOptions?: TwiMLOptions;
+  defaultTwimlOptions?: VoiceTwiMLOptionsConversationRelay;
 
   /**
    * Static {@link CallOptions} applied to every outbound call — the
@@ -72,10 +72,10 @@ export interface ConversationRelayProviderConfigOptions extends BaseChannelOptio
  */
 export class ConversationRelayProviderConfig extends VoiceProviderConfig {
   /**
-   * Static `TwiMLOptions` for the TwiML inside `<ConversationRelay>`, applied
+   * Static `VoiceTwiMLOptionsConversationRelay` for the TwiML inside `<ConversationRelay>`, applied
    * to every call (inbound and outbound).
    */
-  public readonly defaultTwimlOptions?: TwiMLOptions;
+  public readonly defaultTwimlOptions?: VoiceTwiMLOptionsConversationRelay;
 
   /** Static {@link CallOptions} applied to every outbound call. */
   public readonly defaultCallOptions?: CallOptions;
