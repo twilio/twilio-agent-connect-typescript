@@ -308,6 +308,11 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
    * first takes the other down with it, so a caller is never left connected to
    * silence.
    *
+   * Twilio streams audio without waiting for the GPT-Live socket to finish
+   * connecting, so audio that arrives during that handshake is held and
+   * forwarded, in order, once the model is ready — a caller who speaks the
+   * instant the call connects is heard in full.
+   *
    * Called by `VoiceChannel.handleWebSocketConnection`; hosts serve the socket
    * rather than calling this directly.
    *
@@ -324,12 +329,35 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         const event = typeof message.event === 'string' ? message.event : '';
 
         if (event === 'start') {
-          conversationId = this.registerCall(message.start, ws);
-          await this.connectModel(conversationId);
+          const registered = this.registerCall(message.start, ws);
+          conversationId = registered.conversationId;
+          // Published on the call before the first `await`, so caller audio
+          // arriving mid-handshake always finds something to wait on. Mapped to
+          // a boolean so waiting frames observe the outcome without re-raising
+          // the failure the outer `.catch` below already owns.
+          const connecting = this.connectModel(registered.conversationId);
+          registered.call.modelReady = connecting.then(
+            () => true,
+            () => false
+          );
+          await connecting;
         } else if (event === 'media') {
           const media = (message.media ?? {}) as Record<string, unknown>;
           const payload = media.payload;
           if (conversationId !== null && typeof payload === 'string' && payload) {
+            // Twilio does not wait for the GPT-Live handshake before streaming,
+            // so hold this frame until the model socket exists instead of
+            // discarding the caller's first word. See `modelReady` for why
+            // ordering survives the wait.
+            const call = this.calls.get(conversationId);
+            if (call === undefined) {
+              return;
+            }
+            if (call.modelReady !== null && !(await call.modelReady)) {
+              // The handshake failed and the `start` branch above has already
+              // logged it and ended the call. Drop the frame without comment.
+              return;
+            }
             this.modelSend(conversationId, {
               type: 'session.input_audio.append',
               audio: payload,
@@ -376,9 +404,13 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
    * @param start - The event's `start` body, parsed against
    *   `StreamStartMessageSchema`.
    * @param ws - The Twilio-facing socket this call arrived on.
-   * @returns The conversation id, which is the call SID.
+   * @returns The conversation id — which is the call SID — and the call's
+   *   freshly tracked transport state.
    */
-  private registerCall(start: unknown, ws: WebSocket): ConversationId {
+  private registerCall(
+    start: unknown,
+    ws: WebSocket
+  ): { conversationId: ConversationId; call: CallState } {
     const message = StreamStartMessageSchema.parse(start ?? {});
     const conversationId = message.callSid as ConversationId;
 
@@ -410,7 +442,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       { conversation_id: conversationId, media_format: message.mediaFormat },
       'Media stream started'
     );
-    return conversationId;
+    return { conversationId, call };
   }
 
   /**
@@ -591,6 +623,23 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       }
     }
     await this.channel.endConversationInternal(conversationId);
+  }
+
+  /**
+   * Drop this provider's transport state on channel shutdown, including the
+   * bookkeeping it keeps beyond the base class's.
+   *
+   * The token expiry timers are unref'd and delete themselves, so nothing hangs
+   * without this — but a shut-down provider must not still be holding entries
+   * for calls that can no longer arrive.
+   */
+  public override shutdown(): void {
+    for (const timer of this.pendingTokenExpiries.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingTokenExpiries.clear();
+    this.closingCalls.clear();
+    super.shutdown();
   }
 
   /** Apply one parsed GPT-Live event to the call. */

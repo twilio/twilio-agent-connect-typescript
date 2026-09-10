@@ -121,6 +121,40 @@ function startCall(
   return twilioWs;
 }
 
+/**
+ * Like {@link startCall}, but the model handshake stays pending until this
+ * test settles it — so `media` frames can be emitted while the GPT-Live socket
+ * is still connecting, which is what Twilio really does.
+ */
+function startCallWithPendingHandshake(provider: GPTLiveProvider): {
+  twilioWs: FakeSocket;
+  openModelSocket: (modelWs: FakeSocket) => void;
+} {
+  let openModelSocket!: (modelWs: FakeSocket) => void;
+  const handshake = new Promise<FakeSocket>(resolve => {
+    openModelSocket = resolve;
+  });
+  vi.spyOn(provider, 'openModelSocket' as never).mockReturnValue(handshake as never);
+
+  const twilioWs = new FakeSocket();
+  provider.handleWebSocket(twilioWs as never);
+  twilioWs.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        event: 'start',
+        start: { streamSid: 'MZ1', callSid: 'CA1', customParameters: {} },
+      })
+    )
+  );
+  return { twilioWs, openModelSocket };
+}
+
+/** Emit one Twilio `media` frame carrying `payload`. */
+function sendMedia(twilioWs: FakeSocket, payload: string): void {
+  twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'media', media: { payload } })));
+}
+
 describe('GPT-Live call state', () => {
   it('resolves its closed promise only once markClosed is called', async () => {
     const state = new CallState();
@@ -405,6 +439,31 @@ describe('GPTLiveProvider WebSocket bridge', () => {
     );
   });
 
+  it('holds caller audio that arrives while the model is still connecting', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const { twilioWs, openModelSocket } = startCallWithPendingHandshake(provider);
+
+    // Twilio never waits for the GPT-Live handshake: a caller who says "Hello?"
+    // the instant the call connects is already streaming audio by now.
+    sendMedia(twilioWs, 'FRAME_1');
+    sendMedia(twilioWs, 'FRAME_2');
+    sendMedia(twilioWs, 'FRAME_3');
+    expect(modelWs.sent).toEqual([]);
+
+    openModelSocket(modelWs);
+
+    // None of the three were dropped, and they arrive in the order they were
+    // spoken — behind the session config, which the handshake sends first.
+    await vi.waitFor(() => expect(modelWs.json()).toHaveLength(4));
+    expect(modelWs.json()).toEqual([
+      { type: 'session.start', session: validSessionConfig },
+      { type: 'session.input_audio.append', audio: 'FRAME_1' },
+      { type: 'session.input_audio.append', audio: 'FRAME_2' },
+      { type: 'session.input_audio.append', audio: 'FRAME_3' },
+    ]);
+  });
+
   it('tears down the Twilio socket when the model socket closes first', async () => {
     const { provider } = makeProvider();
     const modelWs = new FakeSocket();
@@ -413,6 +472,27 @@ describe('GPTLiveProvider WebSocket bridge', () => {
 
     modelWs.close();
     await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+  });
+
+  it('tears down the Twilio socket when the model socket errors', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    // An error, not a close: `ws` reports a broken socket either way, and only
+    // the error listener logs it.
+    modelWs.emit('error', new Error('model socket blew up'));
+
+    expect(twilioWs.closed).toBe(true);
+    expect(channel.logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ conversation_id: 'CA1' }),
+      'Model socket error'
+    );
+    // Let the graceful close finish rather than leaving its wait armed.
+    await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
+    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
+    await vi.waitFor(() => expect(channel.getActiveConversations().has('CA1')).toBe(false));
   });
 
   it('closes the model socket when Twilio sends stop', async () => {
@@ -843,6 +923,25 @@ describe('GPTLiveProvider teardown', () => {
     }
   });
 
+  it('closes the Twilio leg once the stop event has been handled', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+    await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
+    // The close waits behind the graceful handshake, so nothing hangs up on the
+    // caller before the session has been finalized.
+    expect(twilioWs.closed).toBe(false);
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
+
+    // Python drops the connection by returning from its endpoint; an event
+    // handler has to close the leg itself, and this is what proves it does.
+    await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+  });
+
   it('sends session.close only once when stop and close both fire', async () => {
     const { provider, channel } = makeProvider();
     const modelWs = new FakeSocket();
@@ -863,5 +962,28 @@ describe('GPTLiveProvider teardown', () => {
     const closes = modelWs.json().filter(m => m.type === 'session.close');
     expect(closes).toHaveLength(1);
     expect(channel.getActiveConversations().has('CA1')).toBe(false);
+  });
+
+  it('clears its pending token expiries on shutdown', async () => {
+    vi.useFakeTimers();
+    try {
+      const { provider, createCall } = makeProvider();
+      await provider.initiateOutboundConversation({
+        to: '+15551112222',
+        sessionConfig: { ...validSessionConfig },
+      } as never);
+      const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
+      expect(provider.peekPendingSessionConfig(token)).toBeDefined();
+      expect(vi.getTimerCount()).toBe(1);
+
+      provider.shutdown();
+
+      // The base class clears the stash; the expiry timer that would have
+      // cleared it later is this provider's own to cancel.
+      expect(provider.pendingSessionConfigCount()).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

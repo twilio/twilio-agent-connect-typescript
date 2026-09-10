@@ -37,23 +37,6 @@ export class BargeInState {
  */
 export class CallState extends MediaStreamsOpenAICallState {
   /**
-   * Resolves `true` once this call's OpenAI Realtime socket is open and its
-   * session config has been sent, or `false` if that handshake failed. `null`
-   * until the handshake has been started.
-   *
-   * Twilio begins streaming caller audio as soon as the media stream opens,
-   * which is well before the OpenAI handshake completes. Caller audio waits on
-   * this promise rather than being written to a socket that does not exist
-   * yet, so a caller who speaks the instant the call connects is not clipped.
-   * Every frame awaits this same promise, so the frames resume in the order
-   * they arrived.
-   *
-   * It resolves rather than rejects: a failed handshake is reported once, by
-   * the code that opened the socket, not once per waiting frame.
-   */
-  modelReady: Promise<boolean> | null = null;
-
-  /**
    * Tail of this call's model-event chain: each incoming OpenAI Realtime event
    * is appended to it rather than dispatched on arrival.
    *
