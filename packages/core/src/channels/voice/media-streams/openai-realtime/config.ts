@@ -1,7 +1,11 @@
 import type { TACTool } from '@twilio/tac-tools';
+import type { TACConfig } from '../../../../lib/config';
 import type { TwiMLRequest, VoiceTwiMLOptionsMediaStreams } from '../../../../types/index';
 import type { BaseChannelOptions } from '../../../base';
+import type { VoiceChannel } from '../../channel';
+import type { VoiceProvider } from '../../provider';
 import { VoiceProviderConfig } from '../../provider';
+import { OpenAIRealtimeProvider } from './provider';
 
 /**
  * Options accepted by {@link OpenAIRealtimeProviderConfig}.
@@ -139,5 +143,9 @@ export class OpenAIRealtimeProviderConfig extends VoiceProviderConfig {
     if (options?.onInboundCallSessionConfig !== undefined) {
       this.onInboundCallSessionConfig = options.onInboundCallSessionConfig;
     }
+  }
+
+  public override createProvider(channel: VoiceChannel, tacConfig: TACConfig): VoiceProvider {
+    return new OpenAIRealtimeProvider(channel, tacConfig, this);
   }
 }

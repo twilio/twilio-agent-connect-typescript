@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OpenAIRealtimeProviderConfig } from '@twilio/tac-core';
+import { OpenAIRealtimeProvider, OpenAIRealtimeProviderConfig } from '@twilio/tac-core';
+import type { VoiceChannel } from '@twilio/tac-core';
+import { TACConfig } from '../packages/core/src/lib/config';
+import type { Logger } from '../packages/core/src/lib/logger';
+
+const noopLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => noopLogger,
+} as unknown as Logger;
 
 describe('OpenAIRealtimeProviderConfig', () => {
   const original = process.env.OPENAI_API_KEY;
@@ -66,5 +77,32 @@ describe('OpenAIRealtimeProviderConfig', () => {
     expect(() => new OpenAIRealtimeProviderConfig({ openaiApiKey: '' })).toThrow(
       /openaiApiKey is required/
     );
+  });
+
+  // `createProvider` is the only path `new VoiceChannel(tac, config)` takes to
+  // reach the provider, so without this override the config inherits
+  // `VoiceProviderConfig.createProvider`, which throws. `createProvider` itself
+  // touches the channel only through the provider constructor's
+  // `getLoggerInternal()`, so a cast-based stub is enough here.
+  it('creates an OpenAIRealtimeProvider wired to the channel and config it is handed', () => {
+    const channel = { getLoggerInternal: () => noopLogger } as unknown as VoiceChannel;
+    const tacConfig = new TACConfig({
+      accountSid: 'ACtest123456789',
+      authToken: 'test_token_123',
+      apiKey: 'SKtest123456789',
+      apiSecret: 'test_api_secret_123',
+      phoneNumber: '+15551234567',
+      voicePublicDomain: 'example.ngrok.io',
+      voiceWebsocketPath: '/voice-stream',
+    });
+    const config = new OpenAIRealtimeProviderConfig({});
+
+    const provider = config.createProvider(channel, tacConfig);
+
+    expect(provider).toBeInstanceOf(OpenAIRealtimeProvider);
+    expect(provider.channelName).toBe('VOICE_MEDIA_STREAM_OPENAI_REALTIME');
+    expect(provider.channel).toBe(channel);
+    expect((provider as unknown as { config: OpenAIRealtimeProviderConfig }).config).toBe(config);
+    expect((provider as unknown as { tacConfig: TACConfig }).tacConfig).toBe(tacConfig);
   });
 });

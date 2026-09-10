@@ -19,6 +19,7 @@ export type {
 export {
   generateStreamTwiml,
   TwiMLBuilderMediaStreams,
+  OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
 } from './media-streams';
 export type {
