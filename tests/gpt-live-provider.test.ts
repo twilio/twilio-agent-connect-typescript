@@ -422,6 +422,11 @@ describe('GPTLiveProvider WebSocket bridge', () => {
     await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
 
     twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+    // Answering the `session.close` handshake, which teardown waits on before
+    // dropping the socket — see the teardown suite below.
+    await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
+    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
+
     await vi.waitFor(() => expect(modelWs.closed).toBe(true));
   });
 
@@ -792,5 +797,56 @@ describe('GPTLiveProvider session id', () => {
     );
     expect(idLogs).toHaveLength(1);
     expect(idLogs[0][0]).toEqual({ conversation_id: 'CA1', gpt_live_session_id: 'live_789' });
+  });
+});
+
+describe('GPTLiveProvider teardown', () => {
+  it('sends session.close and waits for session.closed before closing the socket', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+    await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+    expect(channel.getActiveConversations().has('CA1')).toBe(false);
+  });
+
+  it('closes anyway when session.closed never arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const { provider } = makeProvider();
+      const modelWs = new FakeSocket();
+      const twilioWs = startCall(provider, modelWs);
+      await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+      twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      expect(modelWs.closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sends session.close only once when stop and close both fire', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+    await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
+    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+
+    twilioWs.emit('close');
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+
+    const closes = modelWs.json().filter(m => m.type === 'session.close');
+    expect(closes).toHaveLength(1);
   });
 });

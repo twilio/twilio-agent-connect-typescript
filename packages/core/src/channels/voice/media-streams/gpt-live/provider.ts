@@ -62,6 +62,16 @@ const SESSION_CONFIG_TOKEN_TTL_MS = 120_000;
 const GPT_LIVE_URL = 'wss://api.openai.com/v1/live/sessions';
 
 /**
+ * How long teardown waits for the `session.closed` acknowledging its
+ * `session.close`, before dropping the socket anyway.
+ *
+ * A timeout is tolerable: the handshake only lets the server finalize the
+ * session cleanly, and the call is over either way — so a server that never
+ * answers must not hold the caller's teardown open indefinitely.
+ */
+const CLOSE_TIMEOUT_MS = 5_000;
+
+/**
  * Whether `value` is exactly {@link TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE}.
  *
  * Compared field by field rather than by serializing both sides, so key order
@@ -80,6 +90,26 @@ function isTwilioMediaStreamAudioFormat(value: unknown): boolean {
 }
 
 /**
+ * Await `promise`, giving up after `ms`. Resolves true if it settled first,
+ * false on timeout.
+ *
+ * The `finally` is load-bearing, not tidiness: a bare `Promise.race` leaves the
+ * losing timer armed, so a wait that settled early still holds the event loop
+ * open for the full timeout.
+ */
+async function waitWithTimeout(promise: Promise<void>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>(resolve => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([promise.then(() => true), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * A {@link VoiceProvider} bridging Twilio Media Streams to OpenAI's GPT-Live
  * API.
  */
@@ -92,6 +122,9 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
   declare protected readonly config: GPTLiveProviderConfig;
 
   private readonly pendingTokenExpiries = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Calls whose teardown has begun but is still awaiting `session.closed`. */
+  private readonly closingCalls = new Set<ConversationId>();
 
   public override get channelName(): string {
     return 'VOICE_MEDIA_STREAM_OPENAI_GPT_LIVE';
@@ -486,23 +519,63 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
   }
 
   /**
-   * Drop this call's transport state, close the model socket, and end the
-   * session.
+   * Close this call's GPT-Live session gracefully, drop its transport state,
+   * and end the session.
+   *
+   * `session.close` asks the server to finalize the session, and teardown waits
+   * up to {@link CLOSE_TIMEOUT_MS} for the `session.closed` answering it before
+   * the socket goes away — otherwise the socket would be gone before the server
+   * could finish.
    *
    * Both legs can report the call ending, and the first one to arrive tears
    * down the other, so this runs at most once per call: a second invocation
-   * finds nothing tracked and returns.
+   * finds the call either untracked or already closing, and returns.
    */
   private async cleanupCall(conversationId: ConversationId): Promise<void> {
     const call = this.calls.get(conversationId);
-    if (call === undefined) {
+    if (call === undefined || this.closingCalls.has(conversationId)) {
       return;
     }
-    this.calls.delete(conversationId);
+    // The call stays in `this.calls` across the wait below, unlike the sibling
+    // provider's teardown: `session.closed` is dispatched through that map, so
+    // dropping the entry first would make the acknowledgement unreachable and
+    // send every graceful close through the timeout instead. This set is the
+    // re-entrancy guard in its place, written before any `await` so a second
+    // teardown of the same call cannot interleave with the first.
+    this.closingCalls.add(conversationId);
 
-    if (call.modelWs !== null) {
+    const modelWs = call.modelWs;
+    if (modelWs !== null) {
+      let requested = true;
       try {
-        call.modelWs.close();
+        // Sent on the socket directly rather than through `modelSend`, which
+        // reports a send on an untracked call by doing nothing at all — and
+        // this call stops being tracked moments from now.
+        modelWs.send(JSON.stringify({ type: 'session.close' }));
+      } catch (err) {
+        requested = false;
+        this.logger.debug(
+          { err, conversation_id: conversationId },
+          'Error sending session.close to model socket'
+        );
+      }
+      if (requested) {
+        const acknowledged = await waitWithTimeout(call.closed, CLOSE_TIMEOUT_MS);
+        if (!acknowledged) {
+          this.logger.debug(
+            { conversation_id: conversationId },
+            'Timed out waiting for session.closed'
+          );
+        }
+      }
+    }
+
+    this.calls.delete(conversationId);
+    this.closingCalls.delete(conversationId);
+
+    if (modelWs !== null) {
+      try {
+        modelWs.close();
       } catch (err) {
         this.logger.debug({ err, conversation_id: conversationId }, 'Error closing model socket');
       }
