@@ -8,7 +8,12 @@ export type { MediaStreamsProviderConfigOptions } from './config';
 // provider living outside this package reaches it only through
 // `@twilio/tac-core`, and its own call state must extend it. `@internal` keeps
 // it off the docs site.
-export { MediaStreamsOpenAIProviderConfig, MediaStreamsOpenAICallState } from './shared';
+export {
+  MediaStreamsOpenAIProvider,
+  MediaStreamsOpenAIProviderConfig,
+  MediaStreamsOpenAICallState,
+  OPENAI_USER_AGENT,
+} from './shared';
 export type { MediaStreamsOpenAIProviderConfigOptions } from './shared';
 
 export {

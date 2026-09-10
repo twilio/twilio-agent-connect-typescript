@@ -1,25 +1,22 @@
 import { WebSocket } from 'ws';
-import type { TACTool } from '@twilio/tac-tools';
 import type { TACConfig } from '../../../../lib/config';
-import type { Logger } from '../../../../lib/logger';
 import {
   InitiateVoiceConversationOptionsOpenAIRealtimeSchema,
   StreamStartMessageSchema,
-  VoiceTwiMLOptionsMediaStreamsSchema,
   callOptionsToCreateParams,
   type ConversationId,
   type ConversationSession,
   type InitiateVoiceConversationOptions,
   type InitiateVoiceConversationOptionsOpenAIRealtime,
-  type TwiMLRequest,
-  type VoiceTwiMLOptions,
-  type VoiceTwiMLOptionsMediaStreams,
 } from '../../../../types/index';
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
 import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
 import type { VoiceChannel } from '../../channel';
-import { VoiceProvider } from '../../provider';
-import { TwiMLBuilderMediaStreams } from '../twiml';
+import {
+  MediaStreamsOpenAIProvider,
+  OPENAI_USER_AGENT,
+  describeIssues,
+} from '../shared/openai-provider';
 import type { OpenAIRealtimeProviderConfig } from './config';
 import { CallState } from './state';
 
@@ -73,20 +70,6 @@ function isTwilioMediaStreamAudioFormat(value: unknown): boolean {
 }
 
 /**
- * Render Zod validation issues as a compact `path: message` list, so a thrown
- * `TypeError` names the fields that actually failed rather than dumping the
- * raw error.
- *
- * Typed structurally rather than against Zod's issue type so it stays usable
- * with the result of any schema's `safeParse`.
- */
-function describeIssues(
-  issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[]
-): string {
-  return issues.map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`).join(', ');
-}
-
-/**
  * A {@link VoiceProvider} bridging Twilio Media Streams to OpenAI's Realtime
  * API.
  *
@@ -101,185 +84,27 @@ function describeIssues(
  * );
  * ```
  */
-export class OpenAIRealtimeProvider extends VoiceProvider {
+export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState> {
   /**
-   * The owning channel's logger, so this provider logs under the same name the
-   * rest of the voice channel does.
-   */
-  protected override readonly logger: Logger;
-
-  /** Executable tools from the config, looked up by the name the model sends. */
-  private readonly toolsByName: Map<string, TACTool>;
-
-  /** Per-call transport state, keyed by conversation id. */
-  private readonly calls: Map<ConversationId, CallState>;
-
-  private readonly config: OpenAIRealtimeProviderConfig;
-  private readonly tacConfig: TACConfig;
-  private readonly twimlBuilder: TwiMLBuilderMediaStreams;
-
-  /**
-   * Session config overrides awaiting the call they belong to.
+   * The Realtime-specific config this provider was built with.
    *
-   * Inbound entries are keyed by call SID (known when the TwiML webhook is
-   * answered); outbound entries by {@link SESSION_CONFIG_TOKEN_PARAM}'s token.
+   * `declare`: `target: ES2022` implies `useDefineForClassFields`, so a plain
+   * redeclaration would emit a field definition that runs after `super()` and
+   * overwrite the value the base constructor assigned with `undefined`. This
+   * exists only to narrow the base's `MediaStreamsOpenAIProviderConfig` to the
+   * Realtime shape `connectModel` reads `welcomeGreetingResponse` from.
+   *
+   * No `override`: TypeScript rejects it alongside `declare` (TS1243), and
+   * `noImplicitOverride` does not require it for a `declare`d field.
    */
-  private readonly pendingSessionConfigs: Map<string, Record<string, unknown>>;
+  declare protected readonly config: OpenAIRealtimeProviderConfig;
 
   constructor(channel: VoiceChannel, tacConfig: TACConfig, config: OpenAIRealtimeProviderConfig) {
-    super(channel);
-    this.logger = channel.getLoggerInternal();
-    this.config = config;
-    this.tacConfig = tacConfig;
-    this.toolsByName = new Map(config.tools.map(tool => [tool.name, tool as TACTool]));
-    this.calls = new Map();
-    this.twimlBuilder = new TwiMLBuilderMediaStreams(tacConfig, config, this.logger);
-    this.pendingSessionConfigs = new Map();
+    super(channel, tacConfig, config);
   }
 
   public override get channelName(): string {
     return 'VOICE_MEDIA_STREAM_OPENAI_REALTIME';
-  }
-
-  /** The Twilio-facing WebSocket for a conversation, if one is tracked. */
-  public override getWebSocket(conversationId: ConversationId): WebSocket | null {
-    return this.calls.get(conversationId)?.twilioWs ?? null;
-  }
-
-  /**
-   * The transcript captured so far for an in-progress call.
-   *
-   * It lives on `ConversationSession.metadata.transcript`, so once the call
-   * ends and the session is dropped it is no longer reachable here — read it
-   * from the session an `onConversationEnded` handler receives instead.
-   */
-  public getTranscript(conversationId: ConversationId): Record<string, string>[] {
-    const transcript = this.channel.getConversationSession(conversationId)?.metadata.transcript;
-    return Array.isArray(transcript) ? [...(transcript as Record<string, string>[])] : [];
-  }
-
-  /**
-   * The session config stashed for `key` — a call SID for inbound calls, a
-   * token for outbound ones.
-   *
-   * @internal
-   */
-  public peekPendingSessionConfig(key: string): Record<string, unknown> | undefined {
-    return this.pendingSessionConfigs.get(key);
-  }
-
-  /**
-   * How many session config overrides are waiting for their call.
-   *
-   * @internal
-   */
-  public pendingSessionConfigCount(): number {
-    return this.pendingSessionConfigs.size;
-  }
-
-  /**
-   * The executable tool the model would run for `name`, if the config supplied
-   * one.
-   *
-   * @internal
-   */
-  public peekTool(name: string): TACTool | undefined {
-    return this.toolsByName.get(name);
-  }
-
-  // =========================================================================
-  // Inbound Call Handling
-  // =========================================================================
-
-  /**
-   * Build the `<Connect><Stream>` TwiML for an inbound call.
-   *
-   * TwiML fields are merged per-field, highest precedence first:
-   *   1. Output of the customizer registered via
-   *      `VoiceChannel.onInboundCallTwiml(...)`, if configured and
-   *      `twimlRequest` is given
-   *   2. `OpenAIRealtimeProviderConfig.defaultTwimlOptions` — channel-wide
-   *      defaults
-   *   3. `options.hostTwimlOptions` — per-call transport facts supplied by the
-   *      host
-   *   4. TAC defaults: the WebSocket URL derived from
-   *      `TACConfig.voicePublicDomain` + `voiceWebsocketPath`
-   *
-   * Also runs `OpenAIRealtimeProviderConfig.onInboundCallSessionConfig`, if
-   * set, and stashes its result for the call to pick up once it connects. The
-   * hook runs only after the TwiML builds, so a call that never connects
-   * leaves nothing stashed behind it.
-   *
-   * @param twimlRequest - Parsed Twilio webhook fields for the inbound call.
-   * @param options - Additional per-call inputs.
-   * @param options.hostTwimlOptions - Per-call TwiML supplied by a custom
-   *   in-process host.
-   * @throws {TypeError} if either the host options or the customizer's output
-   *   is not a `VoiceTwiMLOptionsMediaStreams`.
-   * @throws {Error} if no WebSocket URL can be resolved — none of the TwiML
-   *   layers set one and `TACConfig.voicePublicDomain` is unset.
-   */
-  public override async handleIncomingCall(
-    twimlRequest?: TwiMLRequest,
-    options?: { hostTwimlOptions?: VoiceTwiMLOptions }
-  ): Promise<string> {
-    const host = this.narrowTwimlOptions(
-      options?.hostTwimlOptions,
-      'handleIncomingCall',
-      'options.hostTwimlOptions'
-    );
-
-    const onInboundCallTwimlHandler = this.channel.getInboundCallTwimlHandler();
-    let customized: VoiceTwiMLOptionsMediaStreams | undefined;
-    if (onInboundCallTwimlHandler && twimlRequest) {
-      customized = this.narrowTwimlOptions(
-        await onInboundCallTwimlHandler(twimlRequest),
-        'handleIncomingCall',
-        'the onInboundCallTwiml customizer output'
-      );
-    }
-
-    // Built before the stash, not after: build() throws when no WebSocket URL
-    // can be resolved, and a throw here 500s the webhook so the call never
-    // connects to drain the entry. Nothing would ever remove it.
-    const twiml = this.twimlBuilder.build('handleIncomingCall', { host, perCall: customized });
-
-    if (this.config.onInboundCallSessionConfig && twimlRequest?.callSid) {
-      const sessionConfig = await this.config.onInboundCallSessionConfig(twimlRequest);
-      if (sessionConfig !== null) {
-        this.pendingSessionConfigs.set(twimlRequest.callSid, sessionConfig);
-      }
-    }
-
-    return twiml;
-  }
-
-  /**
-   * Narrow provider-agnostic {@link VoiceTwiMLOptions} to this provider's
-   * concrete shape. `VoiceProvider.handleIncomingCall` is typed against the
-   * base so every provider can accept its own TwiML options, so the Media
-   * Streams shape has to be established at runtime.
-   *
-   * @param value - Options from a caller or the application customizer.
-   * @param caller - Name of the calling method, for the error message.
-   * @param label - What produced `value`, for the error message.
-   */
-  private narrowTwimlOptions(
-    value: VoiceTwiMLOptions | undefined,
-    caller: string,
-    label: string
-  ): VoiceTwiMLOptionsMediaStreams | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-    const parsed = VoiceTwiMLOptionsMediaStreamsSchema.safeParse(value);
-    if (!parsed.success) {
-      throw new TypeError(
-        `OpenAIRealtimeProvider.${caller} requires ${label} to be a ` +
-          `VoiceTwiMLOptionsMediaStreams: ${describeIssues(parsed.error.issues)}`
-      );
-    }
-    return parsed.data;
   }
 
   // =========================================================================
@@ -584,7 +409,10 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
 
     const modelWs = await this.openModelSocket(
       `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(String(sessionConfig.model))}`,
-      { Authorization: `Bearer ${this.config.openaiApiKey}` }
+      {
+        Authorization: `Bearer ${this.config.openaiApiKey}`,
+        'User-Agent': OPENAI_USER_AGENT,
+      }
     );
 
     const call = this.calls.get(conversationId);
@@ -739,33 +567,8 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     });
   }
 
-  /**
-   * Handle one OpenAI Realtime event.
-   *
-   * A failure here is logged and skipped rather than ending the call: one
-   * malformed delta must not hang up on the caller.
-   */
-  private async handleModelMessage(
-    conversationId: ConversationId,
-    raw: Buffer | string
-  ): Promise<void> {
-    try {
-      const event = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8')) as Record<
-        string,
-        unknown
-      >;
-      const session = this.channel.getConversationSession(conversationId);
-      if (session === undefined) {
-        return;
-      }
-      await this.dispatchModelEvent(conversationId, session, event);
-    } catch (err) {
-      this.logger.error({ err, conversation_id: conversationId }, 'Error handling model event');
-    }
-  }
-
   /** Apply one parsed OpenAI Realtime event to the call. */
-  private async dispatchModelEvent(
+  protected override async dispatchModelEvent(
     conversationId: ConversationId,
     session: ConversationSession,
     event: Record<string, unknown>
@@ -996,72 +799,6 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
   }
 
   /**
-   * Look up a model-requested tool by name, run it, and return its output.
-   *
-   * Errors are returned as part of the output rather than thrown, so a bad
-   * tool call does not kill the call.
-   */
-  private async runToolCall(
-    conversationId: ConversationId,
-    name: string,
-    argumentsJson: unknown
-  ): Promise<unknown> {
-    this.logger.debug(
-      { conversation_id: conversationId, tool_name: name, tool_arguments: argumentsJson },
-      'Tool call'
-    );
-
-    const tool = this.toolsByName.get(name);
-    if (tool === undefined) {
-      return { error: `Unknown tool '${name}'` };
-    }
-
-    try {
-      const parsedArguments: unknown = JSON.parse(
-        typeof argumentsJson === 'string' && argumentsJson ? argumentsJson : '{}'
-      );
-      const output: unknown = await tool.implementation(parsedArguments);
-      this.logger.debug(
-        { conversation_id: conversationId, tool_name: name, tool_result: output },
-        'Tool result'
-      );
-      return output;
-    } catch (err) {
-      // Only the generic message goes back: the model may read tool output
-      // aloud, so a stack trace or upstream payload must never reach the caller.
-      this.logger.error({ err, conversation_id: conversationId, tool_name: name }, 'Tool failed');
-      return { error: `Tool '${name}' failed to execute.` };
-    }
-  }
-
-  /** Write one event to this call's model socket, if it still has one. */
-  private modelSend(conversationId: ConversationId, payload: Record<string, unknown>): void {
-    const modelWs = this.calls.get(conversationId)?.modelWs;
-    if (!modelWs) {
-      return;
-    }
-    try {
-      modelWs.send(JSON.stringify(payload));
-    } catch (err) {
-      // A socket closing under a write is ordinary end-of-call, not an error.
-      this.logger.debug({ err, conversation_id: conversationId }, 'Failed to send to model');
-    }
-  }
-
-  /** Write one message to this call's Twilio socket, if it still has one. */
-  private twilioSend(conversationId: ConversationId, payload: Record<string, unknown>): void {
-    const twilioWs = this.calls.get(conversationId)?.twilioWs;
-    if (!twilioWs) {
-      return;
-    }
-    try {
-      twilioWs.send(JSON.stringify(payload));
-    } catch (err) {
-      this.logger.debug({ err, conversation_id: conversationId }, 'Failed to send to Twilio');
-    }
-  }
-
-  /**
    * Drop this call's transport state, close the model socket, and end the
    * session.
    *
@@ -1084,21 +821,6 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
       }
     }
     await this.channel.endConversationInternal(conversationId);
-  }
-
-  /**
-   * Always throws: the model streams its reply as audio straight to Twilio, so
-   * this transport has no text response to send.
-   */
-  // eslint-disable-next-line @typescript-eslint/require-await -- Rejects without awaiting, but stays `async` so callers always get a Promise
-  public override async sendResponse(
-    _conversationId: ConversationId,
-    _message: string,
-    _metadata?: Record<string, unknown>
-  ): Promise<void> {
-    throw new Error(
-      `${this.constructor.name} produces audio via the model; it has no text sendResponse.`
-    );
   }
 
   /**
