@@ -35,10 +35,8 @@ import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
 import { maskAddress, redactTwimlParameters } from '../util/log-redaction';
-import { studioVoiceHandoffUrl } from '../util/handoff-urls';
-
-/** Fixed default welcome greeting applied when no layer sets one. */
-const DEFAULT_WELCOME_GREETING = 'Hello! How can I assist you today?';
+import { TwiMLBuilderConversationRelay } from './voice/conversation-relay/twiml';
+import { filterUnsetValues } from './voice/twiml';
 
 /** Poll window from call-connect: 10 attempts, 250ms doubling to a 1.5s cap (~11s). */
 const POLL_ATTEMPTS = 10;
@@ -94,19 +92,6 @@ export type AmdHandler = (event: AmdEvent) => Promise<void> | void;
 export type RecordingHandler = (event: RecordingEvent) => Promise<void> | void;
 
 /**
- * Stringify a custom-parameter value for emission as a `<Parameter value=...>`.
- * Parameter values are scalars in practice; objects are JSON-encoded rather
- * than producing '[object Object]'.
- */
-function stringifyParameterValue(value: unknown): string {
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  // string | number | boolean | bigint | symbol — all safely stringifiable.
-  return String(value as string | number | boolean | bigint);
-}
-
-/**
  * Voice channel event callbacks extending base callbacks
  */
 export interface VoiceChannelEvents extends BaseChannelEvents {
@@ -157,6 +142,7 @@ export class VoiceChannel extends BaseChannel {
   private readonly MAX_INITIALIZATION_RETRIES = 3;
   private twilioClient: ReturnType<typeof Twilio> | undefined;
   private readonly voiceConfig: VoiceChannelConfig;
+  private readonly twimlBuilder: TwiMLBuilderConversationRelay;
   private onInboundCallTwimlHandler: InboundCallTwimlHandler | undefined;
   private onCallStatusHandler: CallStatusHandler | undefined;
   private onAmdHandler: AmdHandler | undefined;
@@ -165,6 +151,11 @@ export class VoiceChannel extends BaseChannel {
   constructor(tac: TAC, options?: VoiceChannelConfig) {
     super(tac, options);
     this.voiceConfig = options ?? {};
+    this.twimlBuilder = new TwiMLBuilderConversationRelay(
+      this.config,
+      this.voiceConfig,
+      this.logger
+    );
     this.webSocketConnections = new Map();
     this.voiceCallbacks = {};
     this.streamTasks = new Map();
@@ -268,34 +259,6 @@ export class VoiceChannel extends BaseChannel {
    */
   public onRecording(callback: RecordingHandler): void {
     this.onRecordingHandler = callback;
-  }
-
-  /**
-   * Resolve the public WebSocket URL from `TACConfig.voicePublicDomain` +
-   * `TACConfig.voiceWebsocketPath`. Throws if `voicePublicDomain` isn't set.
-   */
-  private resolveWebsocketUrl(action: string): string {
-    if (this.config.voicePublicDomain) {
-      return `wss://${this.config.voicePublicDomain}${this.config.voiceWebsocketPath}`;
-    }
-    throw new Error(
-      `${action} needs a WebSocket URL. Set TWILIO_VOICE_PUBLIC_DOMAIN ` +
-        '(or TACConfig.voicePublicDomain).'
-    );
-  }
-
-  /**
-   * Resolve the default `<Connect action=...>` cleanup URL.
-   *
-   * Returns undefined if `voicePublicDomain` isn't set; that's fine because
-   * actionUrl has higher-priority layers (customizer, twimlOptions, Studio
-   * handoff) above this fallback.
-   */
-  private resolveDefaultActionUrl(): string | undefined {
-    if (this.config.voicePublicDomain) {
-      return `https://${this.config.voicePublicDomain}${this.config.voiceActionPath}`;
-    }
-    return undefined;
   }
 
   private getTwilioClient(): ReturnType<typeof Twilio> {
@@ -983,107 +946,10 @@ export class VoiceChannel extends BaseChannel {
       customized = await this.onInboundCallTwimlHandler(twimlRequest);
     }
 
-    const merged = this.buildTwimlOptions(options?.hostTwimlOptions, customized);
-    const websocketUrl = merged.websocketUrl ?? this.resolveWebsocketUrl('handleIncomingCall');
-    return this.generateTwiml(websocketUrl, merged);
-  }
-
-  /**
-   * Layer TwiML options, lowest precedence first: TAC defaults → `host`
-   * (calling host's per-call values) → channel `defaultTwimlOptions` → `perCall`
-   * (application customizer output for inbound, or
-   * `InitiateVoiceConversationOptions.twimlOptions` for outbound).
-   */
-  private buildTwimlOptions(
-    host: TwiMLOptions | undefined,
-    perCall: TwiMLOptions | undefined
-  ): TwiMLOptions {
-    const merged: TwiMLOptions = {
-      welcomeGreeting: DEFAULT_WELCOME_GREETING,
-      ...(this.tac.isOrchestratorEnabled() && this.config.conversationConfigurationId !== undefined
-        ? { conversationConfiguration: this.config.conversationConfigurationId }
-        : {}),
-    };
-    const resolvedActionUrl = this.resolveActionUrl(host, perCall);
-    if (resolvedActionUrl !== undefined) {
-      merged.actionUrl = resolvedActionUrl;
-    }
-    if (host) {
-      this.overlayFields(merged, host);
-    }
-    if (this.voiceConfig.defaultTwimlOptions) {
-      this.overlayFields(merged, this.voiceConfig.defaultTwimlOptions);
-    }
-    if (perCall) {
-      this.overlayFields(merged, perCall);
-    }
-    return merged;
-  }
-
-  /**
-   * Apply fields explicitly present on `source` onto `target`.
-   *
-   * Nested objects (`customParameters`), arrays (`languages`), and dicts
-   * (`extra`) replace wholesale — there's no per-key merging.
-   *
-   * `actionUrl` is skipped here on purpose — it's resolved once via
-   * `resolveActionUrl` looking at every layer at once, and that resolved value
-   * is written into `target` before this overlay runs. Letting it through here
-   * would let a higher-priority layer that didn't set actionUrl silently clobber
-   * a lower layer that did.
-   *
-   * "Explicitly present" is detected via key presence (`key in source`), which
-   * mirrors Python's `model_fields_set`: a key set to `undefined` is still
-   * "present" and overrides lower layers, while an absent key falls through.
-   */
-  private overlayFields(target: TwiMLOptions, source: TwiMLOptions): void {
-    for (const key of Object.keys(source) as (keyof TwiMLOptions)[]) {
-      if (key === 'actionUrl') {
-        continue;
-      }
-      // Index assignment across a heterogeneous record; both sides are TwiMLOptions.
-      (target as Record<string, unknown>)[key] = (source as Record<string, unknown>)[key];
-    }
-  }
-
-  /**
-   * Resolve the TwiML `<Connect action=...>` URL.
-   *
-   * Precedence (highest to lowest):
-   *   1. application customizer
-   *   2. channel `defaultTwimlOptions`
-   *   3. `host` (calling host's per-call options)
-   *   4. Studio handoff (when `studioHandoffFlowSid` is configured)
-   *   5. Channel default — derived from `TACConfig.voicePublicDomain` +
-   *      `TACConfig.voiceActionPath`.
-   *
-   * User-expressed intent (Studio handoff is configured explicitly on
-   * `TACConfig`) beats the SDK's generated cleanup default.
-   *
-   * Explicit `actionUrl: undefined` on a layer (key present, value undefined)
-   * suppresses `<Connect action=...>` entirely — all lower layers are skipped.
-   * `actionUrl` left absent (key not present) falls through to the next layer.
-   */
-  private resolveActionUrl(
-    host: TwiMLOptions | undefined,
-    customized: TwiMLOptions | undefined
-  ): string | undefined {
-    if (customized && 'actionUrl' in customized) {
-      return customized.actionUrl;
-    }
-    if (
-      this.voiceConfig.defaultTwimlOptions &&
-      'actionUrl' in this.voiceConfig.defaultTwimlOptions
-    ) {
-      return this.voiceConfig.defaultTwimlOptions.actionUrl;
-    }
-    if (host && 'actionUrl' in host) {
-      return host.actionUrl;
-    }
-    if (this.config.studioHandoffFlowSid) {
-      return studioVoiceHandoffUrl(this.config.accountSid, this.config.studioHandoffFlowSid);
-    }
-    return this.resolveDefaultActionUrl();
+    return this.twimlBuilder.build('handleIncomingCall', {
+      host: options?.hostTwimlOptions,
+      perCall: customized,
+    });
   }
 
   // =========================================================================
@@ -1093,8 +959,8 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Overlay `perCall` onto `VoiceChannelConfig.defaultCallOptions`.
    *
-   * Per-field via key presence, the same convention {@link overlayFields} uses
-   * for TwiML options — so a per-call `{ machineDetection: undefined }`
+   * Per-field via key presence, the same convention `TwiMLBuilderBase.overlayFields`
+   * uses for TwiML options — so a per-call `{ machineDetection: undefined }`
    * explicitly clears the channel default rather than falling through to it.
    *
    * The result is always validated, for two reasons: a combination only
@@ -1194,17 +1060,14 @@ export class VoiceChannel extends BaseChannel {
 
     try {
       // Outbound has no inbound customizer and no host layer; the per-call
-      // override is options.twimlOptions.
-      const merged = this.buildTwimlOptions(undefined, validated.twimlOptions);
-
-      // `options.websocketUrl` is the dedicated per-call outbound override and
-      // wins over any websocketUrl that came through the layered twimlOptions
-      // merge; both fall back to the TACConfig-derived URL.
-      const websocketUrl =
-        validated.websocketUrl ??
-        merged.websocketUrl ??
-        this.resolveWebsocketUrl('initiateOutboundConversation');
-      const twiml = this.generateTwiml(websocketUrl, merged);
+      // override is options.twimlOptions. `options.websocketUrl` is the
+      // dedicated per-call outbound override and wins over any websocketUrl
+      // that came through the layered twimlOptions merge; both fall back to the
+      // TACConfig-derived URL.
+      const twiml = this.twimlBuilder.build('initiateOutboundConversation', {
+        perCall: validated.twimlOptions,
+        websocketUrl: validated.websocketUrl,
+      });
       const callParams = this.buildCallParams(validated.callOptions);
 
       // The inline TwiML handed to Twilio, useful for debugging the
@@ -1538,127 +1401,6 @@ export class VoiceChannel extends BaseChannel {
   // =========================================================================
 
   /**
-   * Field names on {@link TwiMLOptions} that map directly to `<ConversationRelay>`
-   * attributes (camelCase, emitted as-is). Excludes the fields handled specially
-   * by {@link generateTwiml}: websocketUrl (resolved through the layered merge and
-   * emitted as the `url` attribute), actionUrl, languages, customParameters, extra.
-   */
-  private static readonly RELAY_ATTR_FIELDS: readonly (keyof TwiMLOptions)[] = [
-    'welcomeGreeting',
-    'welcomeGreetingInterruptible',
-    'conversationConfiguration',
-    'language',
-    'ttsLanguage',
-    'transcriptionLanguage',
-    'voice',
-    'ttsProvider',
-    'transcriptionProvider',
-    'speechModel',
-    'elevenlabsTextNormalization',
-    'eotThreshold',
-    'partialPrompts',
-    'deepgramSmartFormat',
-    'speechTimeout',
-    'interruptible',
-    'interruptSensitivity',
-    'reportInputDuringAgentSpeech',
-    'ignoreBackchannel',
-    'preemptible',
-    'dtmfDetection',
-    'hints',
-    'events',
-    'debug',
-    'intelligenceService',
-  ];
-
-  /**
-   * Generate TwiML XML for ConversationRelay from a merged {@link TwiMLOptions}.
-   *
-   * This is the low-level emitter used by `handleIncomingCall` and
-   * `initiateOutboundConversation` after layering. It mirrors the Python SDK's
-   * `generate_twiml`. The WebSocket URL may be passed as `websocketUrl` or via
-   * `options.websocketUrl` (the explicit argument wins when both are given), so a
-   * channel-less caller can pass everything in one object.
-   *
-   * @param websocketUrl - Public WebSocket URL (e.g. 'wss://example.ngrok.app/ws').
-   *   Optional if `options.websocketUrl` is set.
-   * @param options - Merged TwiMLOptions to emit.
-   * @returns TwiML XML string ready to return to Twilio.
-   * @throws {Error} if no WebSocket URL is provided via either source.
-   */
-  private generateTwiml(websocketUrl: string | undefined, options: TwiMLOptions): string {
-    const resolvedWebsocketUrl = websocketUrl || options.websocketUrl;
-    if (!resolvedWebsocketUrl) {
-      throw new Error(
-        'generateTwiml requires a WebSocket URL — pass it explicitly or set options.websocketUrl.'
-      );
-    }
-
-    const response = new VoiceResponse();
-
-    // <Connect action=...> — actionUrl undefined means no action attribute.
-    const connect = response.connect(options.actionUrl ? { action: options.actionUrl } : {});
-
-    // Build ConversationRelay attributes. Keys on TwiMLOptions are already
-    // camelCase; the Twilio SDK serializes booleans/numbers as TwiML attribute
-    // values.
-    const relayAttrs: Record<string, unknown> = { url: resolvedWebsocketUrl };
-    for (const field of VoiceChannel.RELAY_ATTR_FIELDS) {
-      let value = options[field];
-      if (value === undefined) {
-        continue;
-      }
-      // Twilio accepts true/false on `interruptible` for backward-compat but the
-      // documented enum is none|dtmf|speech|any. Normalize so we emit canonical
-      // values regardless of the SDK's bool serialization.
-      if (field === 'interruptible' && typeof value === 'boolean') {
-        value = value ? 'any' : 'none';
-      }
-      relayAttrs[field] = value;
-    }
-
-    // `extra` is the escape hatch for attributes not yet typed. The schema's
-    // shadow-guard rejects keys colliding with typed fields, so pass them
-    // through as-is — except `url`: it's not a TwiMLOptions field (invisible to
-    // the shadow-guard) but IS the resolved WebSocket endpoint, so letting
-    // `extra.url` through would silently point the call at the wrong socket.
-    if (options.extra) {
-      for (const [key, value] of Object.entries(options.extra)) {
-        if (key === 'url') {
-          this.logger.warn(
-            'Ignoring `url` in TwiMLOptions.extra; set `websocketUrl` to override the ConversationRelay URL.'
-          );
-          continue;
-        }
-        relayAttrs[key] = value;
-      }
-    }
-
-    const relay = connect.conversationRelay(
-      relayAttrs as Parameters<typeof connect.conversationRelay>[0]
-    );
-
-    // Emit <Language> children, if any.
-    if (options.languages && options.languages.length > 0) {
-      for (const lang of options.languages) {
-        const langAttrs = this.filterUnsetValues(lang);
-        relay.language(langAttrs as Parameters<typeof relay.language>[0]);
-      }
-    }
-
-    // Emit custom parameters as <Parameter> children, skipping null/undefined.
-    if (options.customParameters) {
-      for (const [name, value] of Object.entries(options.customParameters)) {
-        if (value !== null && value !== undefined) {
-          relay.parameter({ name, value: stringifyParameterValue(value) });
-        }
-      }
-    }
-
-    return response.toString();
-  }
-
-  /**
    * Generate TwiML to connect a call to ConversationRelay.
    * Validates configuration with Zod before generating TwiML.
    *
@@ -1687,7 +1429,7 @@ export class VoiceChannel extends BaseChannel {
     const { languages, ...conversationRelayAttributes } = validatedConfig;
 
     // Filter out undefined values to keep TwiML clean
-    const filteredConfig = this.filterUnsetValues(conversationRelayAttributes);
+    const filteredConfig = filterUnsetValues(conversationRelayAttributes);
 
     // Build TwiML using SDK
     const response = new VoiceResponse();
@@ -1699,7 +1441,7 @@ export class VoiceChannel extends BaseChannel {
       for (const lang of languages) {
         // Filter out undefined values to satisfy exactOptionalPropertyTypes
         // Type assertion is safe here because we've already validated with Zod
-        const filteredLang = this.filterUnsetValues(lang);
+        const filteredLang = filterUnsetValues(lang);
         relay.language(filteredLang as Parameters<typeof relay.language>[0]);
       }
     }
@@ -1712,20 +1454,6 @@ export class VoiceChannel extends BaseChannel {
     }
 
     return response.toString();
-  }
-
-  /**
-   * Filter out undefined values from configuration object.
-   * Keeps null, false, 0, and empty strings as they are valid values.
-   */
-  private filterUnsetValues(config: Record<string, unknown>): Record<string, unknown> {
-    const filtered: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(config)) {
-      if (value !== undefined) {
-        filtered[key] = value;
-      }
-    }
-    return filtered;
   }
 
   /**
