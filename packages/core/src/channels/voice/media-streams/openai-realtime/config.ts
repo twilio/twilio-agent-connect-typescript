@@ -23,7 +23,9 @@ export interface OpenAIRealtimeProviderConfigOptions extends BaseChannelOptions 
    * {@link OpenAIRealtimeProviderConfigOptions.defaultSessionConfig}'s `tools`
    * entry.
    */
-  tools?: TACTool[];
+  // `never`, not `unknown`: `implementation` is a property, so its parameter is
+  // contravariant and `TACTool[]` would reject every tool with typed params.
+  tools?: TACTool<never, unknown>[];
 
   /**
    * If set, sent verbatim as `response.create`'s `response` payload when the
@@ -77,7 +79,8 @@ export class OpenAIRealtimeProviderConfig extends VoiceProviderConfig {
    * add each tool's `toRealtimeFormat()` schema to
    * {@link OpenAIRealtimeProviderConfig.defaultSessionConfig}'s `tools` entry.
    */
-  public readonly tools: TACTool[];
+  // See the `never` note on `OpenAIRealtimeProviderConfigOptions.tools`.
+  public readonly tools: TACTool<never, unknown>[];
 
   /**
    * If set, sent verbatim as `response.create`'s `response` payload when the

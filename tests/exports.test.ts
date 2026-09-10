@@ -39,6 +39,14 @@ describe('package exports', () => {
   it('exports server class', () => {
     expect(tac.TACServer).toBeDefined();
   });
+
+  it('exports the Media Streams provider surface', () => {
+    expect(tac.OpenAIRealtimeProvider).toBeDefined();
+    expect(tac.OpenAIRealtimeProviderConfig).toBeDefined();
+    expect(tac.TwiMLBuilderMediaStreams).toBeDefined();
+    expect(tac.generateStreamTwiml).toBeDefined();
+    expect(tac.TWILIO_MEDIA_STREAM_AUDIO_FORMAT).toEqual({ type: 'audio/pcmu' });
+  });
 });
 
 describe('deprecated voice aliases', () => {

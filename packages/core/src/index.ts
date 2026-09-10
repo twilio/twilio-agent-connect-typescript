@@ -72,6 +72,7 @@ export {
   TwiMLBuilderMediaStreams,
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
+  TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
 } from './channels/voice/media-streams';
 export type {
   BuildStreamTwiMLInputs,

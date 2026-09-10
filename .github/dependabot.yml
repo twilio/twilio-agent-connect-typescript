@@ -15,6 +15,7 @@ updates:
       - "/getting_started/examples/chat"
       - "/getting_started/examples/handoff"
       - "/getting_started/examples/openai"
+      - "/getting_started/examples/openai-realtime"
       - "/getting_started/examples/openai-streaming"
       - "/getting_started/examples/outbound"
       - "/getting_started/examples/rcs"

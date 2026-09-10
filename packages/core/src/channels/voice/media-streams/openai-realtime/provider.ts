@@ -131,7 +131,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     this.logger = channel.getLoggerInternal();
     this.config = config;
     this.tacConfig = tacConfig;
-    this.toolsByName = new Map(config.tools.map(tool => [tool.name, tool]));
+    this.toolsByName = new Map(config.tools.map(tool => [tool.name, tool as TACTool]));
     this.calls = new Map();
     this.twimlBuilder = new TwiMLBuilderMediaStreams(tacConfig, config, this.logger);
     this.pendingSessionConfigs = new Map();

@@ -10,6 +10,7 @@ import {
   ConversationRelayCallbackPayload,
   TwilioProviderCallbackResponse,
   InitiateVoiceConversationOptions,
+  InitiateVoiceConversationOptionsOpenAIRealtime,
   VoiceTwiMLOptionsConversationRelay,
   TwiMLRequest,
   ConversationWebhookPayload,
@@ -600,14 +601,16 @@ export class VoiceChannel extends BaseChannel {
    * see {@link ConversationRelayProvider.initiateOutboundConversation} for the
    * TwiML and Calls-API merge/precedence rules.
    *
-   * Only {@link ConversationRelayProvider} places outbound calls today; any
-   * other provider declines.
+   * {@link ConversationRelayProvider} and `OpenAIRealtimeProvider` place
+   * outbound calls; any other provider declines.
    *
    * @param options - Destination, per-call TwiML and Calls-API overrides.
+   *   `OpenAIRealtimeProvider` additionally accepts a per-call `sessionConfig`.
+   *   Each provider validates against its own schema and rejects the other's.
    * @returns The placed call's `callSid`.
    */
   public async initiateOutboundConversation(
-    options: InitiateVoiceConversationOptions
+    options: InitiateVoiceConversationOptions | InitiateVoiceConversationOptionsOpenAIRealtime
   ): Promise<InitiateVoiceConversationResult> {
     return this.provider.initiateOutboundConversation(options);
   }
