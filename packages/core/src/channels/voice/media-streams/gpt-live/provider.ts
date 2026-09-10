@@ -563,13 +563,14 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         // No item_id or barge-in bookkeeping: GPT-Live is full-duplex and
         // handles interruption server-side, so there is nothing to truncate.
         const delta = event.delta;
-        if (delta) {
-          this.twilioSend(conversationId, {
-            event: 'media',
-            streamSid: session.metadata.streamSid,
-            media: { payload: delta },
-          });
+        if (typeof delta !== 'string' || !delta) {
+          break;
         }
+        this.twilioSend(conversationId, {
+          event: 'media',
+          streamSid: session.metadata.streamSid,
+          media: { payload: delta },
+        });
         break;
       }
 
@@ -618,7 +619,13 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       return;
     }
 
-    const transcript = (session.metadata.transcript ??= []) as { role: string; text: string }[];
+    const existing = session.metadata.transcript;
+    const transcript = Array.isArray(existing)
+      ? (existing as { role: string; text: string }[])
+      : [];
+    if (transcript !== existing) {
+      session.metadata.transcript = transcript;
+    }
     const last = transcript[transcript.length - 1];
     if (last !== undefined && last.role === role) {
       last.text += text;

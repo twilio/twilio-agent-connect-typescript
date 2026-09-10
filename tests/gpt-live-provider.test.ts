@@ -461,12 +461,17 @@ describe('GPTLiveProvider model events', () => {
   it('sends nothing on session.started when no welcome instruction is configured', async () => {
     const { provider } = makeProvider();
     const modelWs = new FakeSocket();
-    startCall(provider, modelWs);
+    const twilioWs = startCall(provider, modelWs);
     await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
     const before = modelWs.sent.length;
 
     modelWs.emit('message', JSON.stringify({ type: 'session.started' }));
-    await new Promise(resolve => setTimeout(resolve, 10));
+    // Events are dispatched in order, so waiting on a later one's effect proves
+    // session.started was handled — and that the pipeline is alive at all,
+    // which a bare sleep would not.
+    modelWs.emit('message', JSON.stringify({ type: 'session.output_audio.delta', delta: 'zz' }));
+    await vi.waitFor(() => expect(twilioWs.sent.length).toBeGreaterThan(0));
+
     expect(modelWs.sent.length).toBe(before);
   });
 
@@ -550,7 +555,11 @@ describe('GPTLiveProvider model events', () => {
     await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
 
     modelWs.emit('message', 'not json at all');
-    await new Promise(resolve => setTimeout(resolve, 10));
+    // The next event still lands, which is the actual claim: the bad one was
+    // skipped rather than poisoning the stream.
+    modelWs.emit('message', JSON.stringify({ type: 'session.output_audio.delta', delta: 'zz' }));
+    await vi.waitFor(() => expect(twilioWs.sent.length).toBeGreaterThan(0));
+
     expect(twilioWs.closed).toBe(false);
   });
 });
@@ -611,9 +620,18 @@ describe('GPTLiveProvider session id', () => {
     modelWs.emit('message', JSON.stringify({ type: 'session.started', session: {} }));
     modelWs.emit('message', JSON.stringify({ type: 'session.started', session: { id: '' } }));
     modelWs.emit('message', JSON.stringify({ type: 'session.started', session: { id: 42 } }));
+    // A usable id last, as the positive control: waiting for it proves the four
+    // above were processed and rejected, not merely not-yet-processed.
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'session.started', session: { id: 'live_ok' } })
+    );
 
-    await new Promise(resolve => setTimeout(resolve, 10));
-    expect(sessionFor(channel).metadata).not.toHaveProperty(GPT_LIVE_SESSION_ID_METADATA_KEY);
+    await vi.waitFor(() =>
+      expect(sessionFor(channel).metadata).toMatchObject({
+        [GPT_LIVE_SESSION_ID_METADATA_KEY]: 'live_ok',
+      })
+    );
   });
 
   it('logs the session id once per call even when both snapshots carry it', async () => {
