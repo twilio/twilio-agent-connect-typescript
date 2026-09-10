@@ -204,12 +204,34 @@ describe('GPTLiveProvider outbound', () => {
 
   it('rejects twimlOptions that are not Media Streams options', async () => {
     const { provider } = makeProvider();
-    await expect(
+    const call = () =>
+      // A ConversationRelay-shaped object: the Media Streams schema is strict,
+      // so `welcomeGreeting` is an unknown key.
       provider.initiateOutboundConversation({
         to: '+15551112222',
         twimlOptions: { welcomeGreeting: 'hi' },
-      } as never)
-    ).rejects.toThrow(/VoiceTwiMLOptionsMediaStreams/);
+      } as never);
+    await expect(call()).rejects.toThrow(TypeError);
+    // The whole options object is validated, so the message names the options
+    // type; pin the field path so this still proves `twimlOptions` was what
+    // was rejected.
+    await expect(call()).rejects.toThrow(
+      /InitiateVoiceConversationOptionsGPTLive: twimlOptions: .*welcomeGreeting/
+    );
+  });
+
+  it('rejects an unknown top-level option key', async () => {
+    const { provider, createCall } = makeProvider();
+    const call = () =>
+      // Typo'd key: the schema is `.strict()`, so it must not be silently
+      // dropped on the way to calls.create().
+      provider.initiateOutboundConversation({
+        to: '+15551112222',
+        sesionConfig: { instructions: 'typo' },
+      } as never);
+    await expect(call()).rejects.toThrow(TypeError);
+    await expect(call()).rejects.toThrow(/InitiateVoiceConversationOptionsGPTLive: .*sesionConfig/);
+    expect(createCall).not.toHaveBeenCalled();
   });
 
   it('purges an unclaimed token once its TTL elapses', async () => {

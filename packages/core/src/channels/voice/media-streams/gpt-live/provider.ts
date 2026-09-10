@@ -1,5 +1,6 @@
-import { MediaStreamsOpenAIProvider } from '../shared';
+import { MediaStreamsOpenAIProvider, describeIssues } from '../shared/openai-provider';
 import {
+  InitiateVoiceConversationOptionsGPTLiveSchema,
   callOptionsToCreateParams,
   type ConversationId,
   type ConversationSession,
@@ -76,8 +77,8 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
    * override `GPTLiveProviderConfig.defaultSessionConfig` for this call.
    *
    * @param options - Outbound call options.
-   * @throws {TypeError} if `options.twimlOptions` is not a
-   *   `VoiceTwiMLOptionsMediaStreams`.
+   * @throws {TypeError} if `options` does not satisfy
+   *   `InitiateVoiceConversationOptionsGPTLiveSchema`.
    * @throws {Error} if no WebSocket URL can be resolved — neither
    *   `options.websocketUrl` nor any TwiML layer sets one and
    *   `TACConfig.voicePublicDomain` is unset.
@@ -85,11 +86,20 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
   public override async initiateOutboundConversation(
     options: InitiateVoiceConversationOptions | InitiateVoiceConversationOptionsGPTLive
   ): Promise<InitiateVoiceConversationResult> {
-    let twimlOptions = this.narrowTwimlOptions(
-      options.twimlOptions,
-      'initiateOutboundConversation',
-      'options.twimlOptions'
-    );
+    // Validate the whole options object, not just twimlOptions: this is the
+    // only gate between a host's input and `calls.create()`, and it's what
+    // makes the schema's `.strict()` upgrade guard fire for this provider.
+    // Python gets the same coverage for free from Pydantic; TypeScript has no
+    // runtime type to lean on.
+    const parsedOptions = InitiateVoiceConversationOptionsGPTLiveSchema.safeParse(options);
+    if (!parsedOptions.success) {
+      throw new TypeError(
+        'GPTLiveProvider.initiateOutboundConversation requires options to be an ' +
+          `InitiateVoiceConversationOptionsGPTLive: ${describeIssues(parsedOptions.error.issues)}`
+      );
+    }
+    const validated = parsedOptions.data;
+    let twimlOptions = validated.twimlOptions;
 
     // Why a token instead of the call SID. `calls.create()` returning
     // `call.sid` does not happen-before Twilio connecting the media stream, so
@@ -99,7 +109,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     //
     // Minting it here touches nothing shared: the map is only written once the
     // TwiML has been built, so a `build()` failure has nothing to leak.
-    const sessionConfig = ('sessionConfig' in options ? options.sessionConfig : null) ?? null;
+    const sessionConfig = validated.sessionConfig ?? null;
     let sessionConfigToken: string | null = null;
     if (sessionConfig !== null) {
       sessionConfigToken = crypto.randomUUID().replace(/-/g, '');
@@ -118,7 +128,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     const fromNumber = this.tacConfig.phoneNumber;
 
     this.logger.info(
-      { to: maskPhone(options.to), from: maskPhone(fromNumber) },
+      { to: maskPhone(validated.to), from: maskPhone(fromNumber) },
       'Initiating outbound voice conversation'
     );
 
@@ -128,11 +138,11 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     // through the layered twimlOptions merge.
     const twiml = this.twimlBuilder.build('initiateOutboundConversation', {
       perCall: twimlOptions,
-      websocketUrl: options.websocketUrl,
+      websocketUrl: validated.websocketUrl,
     });
 
     const callParams = this.applyCallEventCallbacks(
-      options.callOptions ? callOptionsToCreateParams(options.callOptions) : {}
+      validated.callOptions ? callOptionsToCreateParams(validated.callOptions) : {}
     );
 
     if (sessionConfigToken !== null && sessionConfig !== null) {
@@ -144,20 +154,20 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       // they're arbitrary developer data (profile IDs, caller names), unlike the
       // WebSocket URL.
       this.logger.debug(
-        { twiml: redactTwimlParameters(twiml), to: maskPhone(options.to) },
+        { twiml: redactTwimlParameters(twiml), to: maskPhone(validated.to) },
         'Outbound call TwiML'
       );
 
       const client = this.channel.getTwilioClientInternal();
       const call = await client.calls.create({
-        to: options.to,
+        to: validated.to,
         from: fromNumber,
         twiml,
         ...callParams,
       });
 
       this.logger.info(
-        { call_sid: call.sid, to: maskPhone(options.to) },
+        { call_sid: call.sid, to: maskPhone(validated.to) },
         'Outbound voice call placed'
       );
 
@@ -171,7 +181,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         this.pendingSessionConfigs.delete(sessionConfigToken);
       }
       this.logger.error(
-        { err: error, to: maskPhone(options.to) },
+        { err: error, to: maskPhone(validated.to) },
         'Failed to initiate outbound call'
       );
       // Deliberately not routed through `channel.handleErrorInternal`, unlike
