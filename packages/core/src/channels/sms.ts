@@ -8,6 +8,7 @@ import {
   InitiateConversationResult,
 } from '../types/index';
 import { MessagingChannel } from './messaging';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress } from '../util/log-redaction';
 
 /**
@@ -38,7 +39,7 @@ export class SMSChannel extends MessagingChannel {
    * (COMMUNICATION_CREATED → reconcile) or after `initiateOutboundConversation`,
    * both of which populate the session.
    */
-  protected async doSendResponse(
+  public async sendResponse(
     conversationId: ConversationId,
     message: string,
     metadata?: Record<string, unknown>
@@ -121,6 +122,13 @@ export class SMSChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      response_type: 'full',
+    });
   }
 
   /**

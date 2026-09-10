@@ -113,26 +113,6 @@ export abstract class MessagingChannel extends BaseChannel {
    */
   protected abstract getAgentAddress(conversationId: ConversationId): ConversationAddress;
 
-  protected abstract doSendResponse(
-    conversationId: ConversationId,
-    message: string,
-    metadata?: Record<string, unknown>
-  ): Promise<void>;
-
-  public async sendResponse(
-    conversationId: ConversationId,
-    message: string,
-    metadata?: Record<string, unknown>
-  ): Promise<void> {
-    await this.doSendResponse(conversationId, message, metadata);
-    trackEvent('Response Sent', {
-      account_sid: this.config.accountSid,
-      channel: this.channelType,
-      conversation_id: conversationId,
-      response_type: 'full',
-    });
-  }
-
   /**
    * Check if a message is from the bot itself (2-tier).
    *

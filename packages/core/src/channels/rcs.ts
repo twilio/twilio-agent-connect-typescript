@@ -8,6 +8,7 @@ import {
   InitiateConversationResult,
 } from '../types/index';
 import { MessagingChannel, MessagingChannelConfig } from './messaging';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress } from '../util/log-redaction';
 import type { TAC } from '../lib/tac';
 
@@ -55,7 +56,7 @@ export class RCSChannel extends MessagingChannel {
    * (COMMUNICATION_CREATED → reconcile) or after `initiateOutboundConversation`,
    * both of which populate the session.
    */
-  protected async doSendResponse(
+  public async sendResponse(
     conversationId: ConversationId,
     message: string,
     metadata?: Record<string, unknown>
@@ -138,6 +139,13 @@ export class RCSChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      response_type: 'full',
+    });
   }
 
   /**
