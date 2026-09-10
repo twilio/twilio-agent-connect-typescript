@@ -1,4 +1,10 @@
-import { ToolFunction, JSONSchema, OpenAITool, AnthropicTool } from '@twilio/tac-core';
+import {
+  ToolFunction,
+  JSONSchema,
+  OpenAITool,
+  AnthropicTool,
+  OpenAIRealtimeTool,
+} from '@twilio/tac-core';
 
 /**
  * TAC Tool class with helper methods for LLM integration
@@ -24,6 +30,22 @@ export class TACTool<TParams = unknown, TResult = unknown> {
         description: this.description,
         parameters: this.parameters,
       },
+    };
+  }
+
+  /**
+   * Convert to OpenAI Realtime function calling format.
+   *
+   * Unlike {@link TACTool.toOpenAIFormat} (Chat Completions, which nests the
+   * schema under a `function` key), Realtime's `session.tools` expects the
+   * fields flat on the tool object.
+   */
+  toRealtimeFormat(): OpenAIRealtimeTool {
+    return {
+      type: 'function',
+      name: this.name,
+      description: this.description,
+      parameters: this.parameters,
     };
   }
 

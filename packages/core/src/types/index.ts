@@ -32,6 +32,8 @@ export {
   type OpenAITool,
   AnthropicToolSchema,
   type AnthropicTool,
+  OpenAIRealtimeToolSchema,
+  type OpenAIRealtimeTool,
   type ToolContext,
   ToolExecutionResultSchema,
   type ToolExecutionResult,

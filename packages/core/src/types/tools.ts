@@ -57,6 +57,22 @@ export const AnthropicToolSchema = z.object({
 export type AnthropicTool = z.infer<typeof AnthropicToolSchema>;
 
 /**
+ * OpenAI Realtime tool format.
+ *
+ * Realtime's `session.tools` expects the fields flat on the tool object,
+ * unlike Chat Completions ({@link OpenAIToolSchema}), which nests them under a
+ * `function` key.
+ */
+export const OpenAIRealtimeToolSchema = z.object({
+  type: z.literal('function'),
+  name: z.string(),
+  description: z.string(),
+  parameters: JSONSchemaSchema,
+});
+
+export type OpenAIRealtimeTool = z.infer<typeof OpenAIRealtimeToolSchema>;
+
+/**
  * Tool execution context
  */
 export interface ToolContext {
