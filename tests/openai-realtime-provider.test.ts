@@ -71,6 +71,15 @@ function makeChannel(options?: {
   inboundCallTwimlHandler?: InboundCallTwimlHandler;
   callsCreate?: (params: Record<string, unknown>) => Promise<{ sid: string }>;
   orchestratorEnabled?: boolean;
+  /**
+   * When a flag is `true`, `getCallEventHandlers()` returns a no-op async
+   * handler for that kind; otherwise `undefined`. Default: all three `undefined`.
+   */
+  callEventHandlers?: { status?: boolean; amd?: boolean; recording?: boolean };
+  /**
+   * What `getTacConfig()` returns. Default: the module-level `tacConfig`.
+   */
+  channelTacConfig?: TACConfig;
 }): StubChannel {
   const sessions = new Map<string, ConversationSession>();
   const ended: string[] = [];
@@ -78,11 +87,17 @@ function makeChannel(options?: {
   const callsCreate = vi.fn(
     options?.callsCreate ?? (() => Promise.resolve({ sid: 'CAoutbound00000000000000000000' }))
   );
+  const noopAsync = async (): Promise<void> => {};
+  const handlers = options?.callEventHandlers;
 
   const channel = {
     getLoggerInternal: () => noopLogger,
-    getTacConfig: () => tacConfig,
-    getCallEventHandlers: () => ({ status: undefined, amd: undefined, recording: undefined }),
+    getTacConfig: () => options?.channelTacConfig ?? tacConfig,
+    getCallEventHandlers: () => ({
+      status: handlers?.status ? noopAsync : undefined,
+      amd: handlers?.amd ? noopAsync : undefined,
+      recording: handlers?.recording ? noopAsync : undefined,
+    }),
     getInboundCallTwimlHandler: () => options?.inboundCallTwimlHandler,
     getTwilioClientInternal: () => ({ calls: { create: callsCreate } }),
     isOrchestratorEnabledInternal: () => options?.orchestratorEnabled ?? false,
@@ -1644,5 +1659,53 @@ describe('OpenAIRealtimeProvider tool calling', () => {
     });
     // No name means no tool can be selected, so none runs.
     expect(ran).toBe(false);
+  });
+});
+
+describe('OpenAIRealtimeProvider call-event callback wiring', () => {
+  /**
+   * Places an outbound call with the given handler flags and optional
+   * channel-level TACConfig, then returns the params passed to calls.create().
+   */
+  async function placeCall(
+    callEventHandlers: { status?: boolean; amd?: boolean; recording?: boolean },
+    channelTacConfig?: TACConfig
+  ): Promise<Record<string, unknown>> {
+    const { provider, stub } = makeProvider({ callEventHandlers, channelTacConfig });
+    await provider.initiateOutboundConversation({ to: '+15559876543' });
+    return stub.callsCreate.mock.calls[0][0] as Record<string, unknown>;
+  }
+
+  it('wires no callback URL when no handler is registered', async () => {
+    const params = await placeCall({});
+    expect(params.statusCallback).toBeUndefined();
+    expect(params.asyncAmdStatusCallback).toBeUndefined();
+    expect(params.recordingStatusCallback).toBeUndefined();
+  });
+
+  it('wires each callback only for its own registered handler', async () => {
+    const params = await placeCall({ amd: true });
+    expect(params.asyncAmdStatusCallback).toBe('https://example.ngrok.io/twilio/call-events/amd');
+    expect(params.statusCallback).toBeUndefined();
+    expect(params.recordingStatusCallback).toBeUndefined();
+  });
+
+  it('wires all three when all three handlers are registered', async () => {
+    const params = await placeCall({ status: true, amd: true, recording: true });
+    expect(params.statusCallback).toBe('https://example.ngrok.io/twilio/call-events/status');
+    expect(params.asyncAmdStatusCallback).toBe('https://example.ngrok.io/twilio/call-events/amd');
+    expect(params.recordingStatusCallback).toBe(
+      'https://example.ngrok.io/twilio/call-events/recording'
+    );
+  });
+
+  it('wires nothing when the config cannot derive a callback URL', async () => {
+    // The channel's config has no voicePublicDomain, so callEventUrl() returns
+    // undefined. The provider-level tacConfig still has the domain so TwiML
+    // generation succeeds — only callback wiring is suppressed.
+    const params = await placeCall({ status: true, amd: true, recording: true }, minimalTacConfig);
+    expect(params.statusCallback).toBeUndefined();
+    expect(params.asyncAmdStatusCallback).toBeUndefined();
+    expect(params.recordingStatusCallback).toBeUndefined();
   });
 });
