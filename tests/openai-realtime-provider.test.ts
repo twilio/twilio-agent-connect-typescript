@@ -498,6 +498,13 @@ describe('OpenAIRealtimeProvider accessors', () => {
     // live transcript through the returned array.
     expect(result).not.toBe(session.metadata.transcript);
   });
+
+  it('rejects sendResponse: the model streams audio, so there is no text path', async () => {
+    const { provider } = makeProvider();
+    await expect(provider.sendResponse('CA1' as ConversationId, 'hello')).rejects.toThrow(
+      /no text sendResponse/
+    );
+  });
 });
 
 describe('OpenAIRealtimeProvider session config resolution', () => {
@@ -1320,5 +1327,322 @@ describe('OpenAIRealtimeProvider openModelSocket', () => {
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
+  });
+});
+
+describe('OpenAIRealtimeProvider tool calling', () => {
+  /** Emit a completed `function_call` output item from the model. */
+  function sendFunctionCall(modelWs: FakeSocket, item: Record<string, unknown>): void {
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.output_item.done',
+        item: { type: 'function_call', status: 'completed', ...item },
+      })
+    );
+  }
+
+  /** The `function_call_output` item the provider sent back, if any. */
+  function functionCallOutput(modelWs: FakeSocket): Record<string, unknown> | undefined {
+    const event = modelWs
+      .json()
+      .find(sent => sent.type === 'conversation.item.create') as Record<string, unknown> | undefined;
+    return event?.item as Record<string, unknown> | undefined;
+  }
+
+  it('runs the tool and returns its result, then asks for a response', async () => {
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: { city: { type: 'string' } } },
+      () => Promise.resolve('sunny')
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, {
+      call_id: 'call_1',
+      name: 'get_weather',
+      arguments: '{"city":"Denver"}',
+    });
+
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.create',
+        item: {
+          type: 'function_call_output',
+          call_id: 'call_1',
+          output: '"sunny"',
+        },
+      })
+    );
+    // The result alone is inert: the model only speaks once asked to respond.
+    expect(modelWs.json()).toContainEqual({ type: 'response.create' });
+    // And the result has to land first — asked to respond before the output is
+    // in its context, the model answers from nothing and the result arrives
+    // orphaned.
+    const types = modelWs.json().map(sent => sent.type);
+    expect(types.indexOf('conversation.item.create')).toBeLessThan(
+      types.indexOf('response.create')
+    );
+  });
+
+  it('passes the parsed arguments to the tool as one object', async () => {
+    let received: unknown;
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: { city: { type: 'string' } } },
+      (params: unknown) => {
+        received = params;
+        return Promise.resolve('sunny');
+      }
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, {
+      call_id: 'call_1',
+      name: 'get_weather',
+      arguments: '{"city":"Denver"}',
+    });
+
+    // A single params object, not spread keyword arguments: TS tools take one
+    // argument, so spreading would call the tool with the wrong shape.
+    await vi.waitFor(() => expect(received).toEqual({ city: 'Denver' }));
+  });
+
+  it('reports an unknown tool as output rather than throwing', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, { call_id: 'call_2', name: 'no_such_tool', arguments: '{}' });
+
+    await vi.waitFor(() => expect(functionCallOutput(modelWs)).toBeDefined());
+    const item = functionCallOutput(modelWs) as Record<string, unknown>;
+    expect(item.call_id).toBe('call_2');
+    expect(JSON.parse(item.output as string)).toEqual({ error: "Unknown tool 'no_such_tool'" });
+  });
+
+  it('reports a throwing tool as output rather than killing the call', async () => {
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: {} },
+      () => {
+        throw new Error('upstream 500');
+      }
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, { call_id: 'call_1', name: 'get_weather', arguments: '{}' });
+
+    await vi.waitFor(() => expect(functionCallOutput(modelWs)).toBeDefined());
+    const item = functionCallOutput(modelWs) as Record<string, unknown>;
+    const output = JSON.parse(item.output as string) as { error: string };
+    expect(output.error).toMatch(/failed to execute/);
+    // The model may read its input aloud, so upstream detail must not reach it.
+    expect(output.error).not.toContain('upstream 500');
+    expect(provider.getWebSocket('CA1' as ConversationId)).not.toBeNull();
+  });
+
+  it('still answers the call_id when the tool result is not serializable', async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: {} },
+      () => Promise.resolve(circular)
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, { call_id: 'call_1', name: 'get_weather', arguments: '{}' });
+
+    await vi.waitFor(() => expect(functionCallOutput(modelWs)).toBeDefined());
+    const item = functionCallOutput(modelWs) as Record<string, unknown>;
+    expect(item.call_id).toBe('call_1');
+    expect((JSON.parse(item.output as string) as { error: string }).error).toMatch(
+      /non-serializable/
+    );
+  });
+
+  it('answers the call_id with null when the tool returns nothing', async () => {
+    const tool = new TACTool(
+      'log_complaint',
+      'Log a complaint',
+      { type: 'object', properties: {} },
+      async () => {}
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, { call_id: 'call_1', name: 'log_complaint', arguments: '{}' });
+
+    // `JSON.stringify(undefined)` is `undefined`, not `"null"`, and would drop
+    // the required `output` field — leaving the model waiting on `call_1`.
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.create',
+        item: { type: 'function_call_output', call_id: 'call_1', output: 'null' },
+      })
+    );
+  });
+
+  it('ignores an incomplete function call so a truncated arguments fragment never runs', async () => {
+    let ran = false;
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: { city: { type: 'string' } } },
+      () => {
+        ran = true;
+        return Promise.resolve('sunny');
+      }
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const before = modelWs.sent.length;
+
+    // A call cut short by an interruption: `arguments` is a partial fragment,
+    // so running the tool would mean running it on garbage.
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.output_item.done',
+        item: {
+          type: 'function_call',
+          status: 'incomplete',
+          call_id: 'call_1',
+          name: 'get_weather',
+          arguments: '{"cit',
+        },
+      })
+    );
+
+    await drain();
+    expect(modelWs.sent.length).toBe(before);
+    expect(ran).toBe(false);
+  });
+
+  it('ignores a completed message item so an ordinary assistant turn never reaches the tool handler', async () => {
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: {} },
+      () => Promise.resolve('sunny')
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const before = modelWs.sent.length;
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      // Every spoken assistant turn ends in one of these. Handled as a function
+      // call it is a malformed one, so each turn would error-log.
+      modelWs.emit(
+        'message',
+        JSON.stringify({
+          type: 'response.output_item.done',
+          item: {
+            id: 'item_1',
+            type: 'message',
+            status: 'completed',
+            role: 'assistant',
+            content: [{ type: 'audio', transcript: 'The weather is sunny.' }],
+          },
+        })
+      );
+
+      await drain();
+      expect(modelWs.sent.length).toBe(before);
+      expect(logError).not.toHaveBeenCalled();
+    } finally {
+      logError.mockRestore();
+    }
+  });
+
+  it('drops a function call with an empty call_id instead of sending an unaddressed output', async () => {
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: {} },
+      () => Promise.resolve('sunny')
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const before = modelWs.sent.length;
+
+    sendFunctionCall(modelWs, { call_id: '', name: 'get_weather', arguments: '{}' });
+
+    await drain();
+    expect(modelWs.sent.length).toBe(before);
+  });
+
+  it('drops a function call with no call_id instead of sending an unaddressed output', async () => {
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: {} },
+      () => Promise.resolve('sunny')
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const before = modelWs.sent.length;
+
+    sendFunctionCall(modelWs, { name: 'get_weather', arguments: '{}' });
+
+    await drain();
+    expect(modelWs.sent.length).toBe(before);
+  });
+
+  it('answers a function call with no name without running any tool', async () => {
+    let ran = false;
+    const tool = new TACTool(
+      'get_weather',
+      'Get the weather',
+      { type: 'object', properties: {} },
+      () => {
+        ran = true;
+        return Promise.resolve('sunny');
+      }
+    );
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig, tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    sendFunctionCall(modelWs, { call_id: 'call_3', arguments: '{}' });
+
+    await vi.waitFor(() => expect(functionCallOutput(modelWs)).toBeDefined());
+    const item = functionCallOutput(modelWs) as Record<string, unknown>;
+    expect(item.call_id).toBe('call_3');
+    expect(JSON.parse(item.output as string)).toEqual({
+      error: 'Malformed function call: missing tool name.',
+    });
+    // No name means no tool can be selected, so none runs.
+    expect(ran).toBe(false);
   });
 });

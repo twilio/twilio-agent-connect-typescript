@@ -937,12 +937,101 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     bargeIn.currentItemAudioMs = 0;
   }
 
-  // Tool calling arrives with the tool-calling task; see above.
-  private handleFunctionCall(
-    _conversationId: ConversationId,
-    _item: Record<string, unknown>
+  /**
+   * Run a model-requested tool call and hand the result back.
+   *
+   * Always sends a `function_call_output` once a `call_id` is present — even a
+   * tool that ran successfully can return something `JSON.stringify` throws on
+   * (a circular object, a `BigInt`) or has no JSON form at all, which
+   * `JSON.stringify` reports by returning `undefined` rather than throwing (a
+   * void tool, a bare function, a `Symbol`). Either way the model would
+   * otherwise be left waiting on a `call_id` it never gets a result for.
+   * Without a `call_id` there is nothing to reply to, so the item is dropped
+   * instead.
+   */
+  private async handleFunctionCall(
+    conversationId: ConversationId,
+    item: Record<string, unknown>
   ): Promise<void> {
-    return Promise.resolve();
+    const callId = item.call_id;
+    if (typeof callId !== 'string' || !callId) {
+      this.logger.error(
+        { conversation_id: conversationId, item },
+        'Received malformed function_call item without call_id'
+      );
+      return;
+    }
+
+    const name = item.name;
+    let output: string;
+    if (typeof name !== 'string' || !name) {
+      // No name means no tool can be selected, so none runs.
+      this.logger.error(
+        { conversation_id: conversationId, call_id: callId, item },
+        'Received malformed function_call item without tool name'
+      );
+      output = JSON.stringify({ error: 'Malformed function call: missing tool name.' });
+    } else {
+      const result = await this.runToolCall(conversationId, name, item.arguments);
+      try {
+        // `JSON.stringify` returns `undefined`, not a string, for a value with
+        // no JSON form (a void tool, a bare function): `null` keeps the reply
+        // addressed to `call_id` instead of dropping the required field.
+        const serialized: string | undefined = JSON.stringify(result);
+        output = serialized ?? 'null';
+      } catch (err) {
+        this.logger.error(
+          { err, conversation_id: conversationId, tool_name: name },
+          'Tool returned a non-JSON-serializable result'
+        );
+        output = JSON.stringify({ error: `Tool '${name}' returned a non-serializable result.` });
+      }
+    }
+
+    this.modelSend(conversationId, {
+      type: 'conversation.item.create',
+      item: { type: 'function_call_output', call_id: callId, output },
+    });
+    this.modelSend(conversationId, { type: 'response.create' });
+  }
+
+  /**
+   * Look up a model-requested tool by name, run it, and return its output.
+   *
+   * Errors are returned as part of the output rather than thrown, so a bad
+   * tool call does not kill the call.
+   */
+  private async runToolCall(
+    conversationId: ConversationId,
+    name: string,
+    argumentsJson: unknown
+  ): Promise<unknown> {
+    this.logger.debug(
+      { conversation_id: conversationId, tool_name: name, tool_arguments: argumentsJson },
+      'Tool call'
+    );
+
+    const tool = this.toolsByName.get(name);
+    if (tool === undefined) {
+      return { error: `Unknown tool '${name}'` };
+    }
+
+    try {
+      const parsedArguments: unknown = JSON.parse(
+        typeof argumentsJson === 'string' && argumentsJson ? argumentsJson : '{}'
+      );
+      const output: unknown = await tool.implementation(parsedArguments);
+      this.logger.debug(
+        { conversation_id: conversationId, tool_name: name, tool_result: output },
+        'Tool result'
+      );
+      return output;
+    } catch (err) {
+      // Only the generic message goes back: the model may read tool output
+      // aloud, so a stack trace or upstream payload must never reach the caller.
+      this.logger.error({ err, conversation_id: conversationId, tool_name: name }, 'Tool failed');
+      return { error: `Tool '${name}' failed to execute.` };
+    }
   }
 
   /** Write one event to this call's model socket, if it still has one. */
@@ -995,6 +1084,21 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
       }
     }
     await this.channel.endConversationInternal(conversationId);
+  }
+
+  /**
+   * Always throws: the model streams its reply as audio straight to Twilio, so
+   * this transport has no text response to send.
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await -- Rejects without awaiting, but stays `async` so callers always get a Promise
+  public override async sendResponse(
+    _conversationId: ConversationId,
+    _message: string,
+    _metadata?: Record<string, unknown>
+  ): Promise<void> {
+    throw new Error(
+      `${this.constructor.name} produces audio via the model; it has no text sendResponse.`
+    );
   }
 
   /**
