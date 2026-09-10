@@ -46,6 +46,23 @@ function makeChannelStub() {
   return Object.assign(channel, { createCall, logger });
 }
 
+function makeProvider(overrides: Record<string, unknown> = {}) {
+  const channel = makeChannelStub();
+  const config = new GPTLiveProviderConfig({
+    openaiApiKey: 'sk-test',
+    defaultSessionConfig: { ...validSessionConfig },
+    ...overrides,
+  });
+  const provider = new GPTLiveProvider(channel as never, makeTacConfigStub(), config);
+  return { provider, channel, createCall: channel.createCall };
+}
+
+function tokenFromTwiml(twiml: string): string {
+  const match = /_tac_session_config_token" value="([^"]+)"/.exec(twiml);
+  expect(match).not.toBeNull();
+  return match![1];
+}
+
 describe('GPT-Live call state', () => {
   it('resolves its closed promise only once markClosed is called', async () => {
     const state = new CallState();
@@ -114,5 +131,104 @@ describe('GPTLiveProviderConfig', () => {
     const config = new GPTLiveProviderConfig({ openaiApiKey: 'sk-test' });
     const provider = config.createProvider(makeChannelStub(), makeTacConfigStub());
     expect(provider.channelName).toBe('VOICE_MEDIA_STREAM_OPENAI_GPT_LIVE');
+  });
+});
+
+describe('GPTLiveProvider outbound', () => {
+  it('identifies itself distinctly from the Realtime provider', () => {
+    expect(makeProvider().provider.channelName).toBe('VOICE_MEDIA_STREAM_OPENAI_GPT_LIVE');
+  });
+
+  it('places a call with inline Stream TwiML and returns the sid', async () => {
+    const { provider, createCall } = makeProvider();
+    const result = await provider.initiateOutboundConversation({ to: '+15551112222' } as never);
+
+    expect(result.callSid).toBe('CA999');
+    expect(createCall.mock.calls[0][0].twiml).toContain('<Stream');
+  });
+
+  it('stashes a per-call sessionConfig under a token, never under the call sid', async () => {
+    const { provider, createCall } = makeProvider();
+    await provider.initiateOutboundConversation({
+      to: '+15551112222',
+      sessionConfig: { ...validSessionConfig, instructions: 'outbound override' },
+    } as never);
+
+    const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
+    expect(provider.peekPendingSessionConfig(token)).toMatchObject({
+      instructions: 'outbound override',
+    });
+    expect(provider.peekPendingSessionConfig('CA999')).toBeUndefined();
+  });
+
+  it('ignores a sessionConfig-less options object and stashes nothing', async () => {
+    const { provider } = makeProvider();
+    await provider.initiateOutboundConversation({ to: '+15551112222' } as never);
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
+
+  it('does not leak a stashed sessionConfig when the call fails to place', async () => {
+    const { provider, createCall } = makeProvider();
+    createCall.mockRejectedValueOnce(new Error('twilio down'));
+
+    await expect(
+      provider.initiateOutboundConversation({
+        to: '+15551112222',
+        sessionConfig: { ...validSessionConfig },
+      } as never)
+    ).rejects.toThrow('twilio down');
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
+
+  it('does not stash anything when TwiML construction fails before the call is placed', async () => {
+    const channel = makeChannelStub();
+    const config = new GPTLiveProviderConfig({
+      openaiApiKey: 'sk-test',
+      defaultSessionConfig: { ...validSessionConfig },
+    });
+    const provider = new GPTLiveProvider(
+      channel as never,
+      { voicePublicDomain: null, voiceWebsocketPath: '/voice-stream' } as never,
+      config
+    );
+
+    await expect(
+      provider.initiateOutboundConversation({
+        to: '+15551112222',
+        sessionConfig: { ...validSessionConfig },
+      } as never)
+    ).rejects.toThrow();
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+    expect(channel.createCall).not.toHaveBeenCalled();
+  });
+
+  it('rejects twimlOptions that are not Media Streams options', async () => {
+    const { provider } = makeProvider();
+    await expect(
+      provider.initiateOutboundConversation({
+        to: '+15551112222',
+        twimlOptions: { welcomeGreeting: 'hi' },
+      } as never)
+    ).rejects.toThrow(/VoiceTwiMLOptionsMediaStreams/);
+  });
+
+  it('purges an unclaimed token once its TTL elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const { provider, createCall } = makeProvider();
+      await provider.initiateOutboundConversation({
+        to: '+15551112222',
+        sessionConfig: { ...validSessionConfig },
+      } as never);
+
+      const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
+      expect(provider.peekPendingSessionConfig(token)).toBeDefined();
+
+      vi.advanceTimersByTime(120_000);
+      expect(provider.peekPendingSessionConfig(token)).toBeUndefined();
+      expect(provider.pendingSessionConfigCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
