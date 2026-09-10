@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as tac from '../src/index';
+import { VoiceChannel } from '../src/index';
+import { createTestTAC } from './helpers/tac';
 
 describe('package exports', () => {
   it('exports core classes', () => {
@@ -36,5 +38,43 @@ describe('package exports', () => {
 
   it('exports server class', () => {
     expect(tac.TACServer).toBeDefined();
+  });
+});
+
+describe('deprecated voice aliases', () => {
+  const getVoiceConfig = () => ({
+    accountSid: 'ACtest123',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  it('still exports TwiMLOptionsSchema as the ConversationRelay schema', () => {
+    expect(tac.TwiMLOptionsSchema).toBe(tac.VoiceTwiMLOptionsConversationRelaySchema);
+  });
+
+  it('warns once when handleConversationRelayCallback is called', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const voiceChannel = new VoiceChannel(await createTestTAC(getVoiceConfig()));
+      const payload = {
+        AccountSid: 'ACtest123',
+        CallSid: 'CA_deprecated_alias',
+        CallStatus: 'completed' as const,
+        From: '+15551112222',
+        To: '+15553334444',
+        Direction: 'inbound' as const,
+      };
+
+      await voiceChannel.handleConversationRelayCallback(payload);
+      await voiceChannel.handleConversationRelayCallback(payload);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain('handleConversationRelayCallback is deprecated');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

@@ -510,6 +510,19 @@ export type VoiceTwiMLOptionsConversationRelay = z.infer<
   typeof VoiceTwiMLOptionsConversationRelaySchema
 >;
 
+/** @deprecated Use {@link VoiceTwiMLOptionsConversationRelay} instead. */
+export type TwiMLOptions = VoiceTwiMLOptionsConversationRelay;
+
+/**
+ * Unlike Python, this emits no runtime warning. It is a plain alias so that
+ * `TwiMLOptionsSchema === VoiceTwiMLOptionsConversationRelaySchema`; wrapping it
+ * in a warning proxy would break that identity, and callers commonly compare or
+ * `.extend()` the schema.
+ *
+ * @deprecated Use {@link VoiceTwiMLOptionsConversationRelaySchema} instead.
+ */
+export const TwiMLOptionsSchema = VoiceTwiMLOptionsConversationRelaySchema;
+
 /**
  * Framework-neutral view of the Twilio TwiML webhook form.
  *
@@ -629,6 +642,13 @@ export const ConversationRelayCallbackPayloadSchema = z.object({
 export type ConversationRelayCallbackPayload = z.infer<
   typeof ConversationRelayCallbackPayloadSchema
 >;
+
+/** HTTP response a provider's out-of-band lifecycle webhook handler produces. */
+export interface TwilioProviderCallbackResponse {
+  status: number;
+  content: string;
+  contentType: string;
+}
 
 // =========================================================================
 // Call Events (status callback, async AMD, recording status)

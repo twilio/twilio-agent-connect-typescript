@@ -8,6 +8,7 @@ import {
   CustomParameters,
   ConversationRelayConfig,
   ConversationRelayCallbackPayload,
+  TwilioProviderCallbackResponse,
   InitiateVoiceConversationOptions,
   VoiceTwiMLOptionsConversationRelay,
   TwiMLRequest,
@@ -25,6 +26,7 @@ import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from '../base';
 import type { ConversationClient } from '../../clients/conversation';
 import type { TAC } from '../../lib/tac';
 import type { TACConfig } from '../../lib/config';
+import { warnDeprecated } from '../../lib/deprecation';
 import type { Logger } from '../../lib/logger';
 import type { TACMemoryResponse } from '../../lib/tac-memory-response';
 import { ConversationRelayProviderConfig } from './conversation-relay/config';
@@ -182,7 +184,7 @@ export class VoiceChannel extends BaseChannel {
    *
    * This is the Calls-API status callback (call disposition), not the
    * ConversationRelay session callback — see
-   * {@link handleConversationRelayCallback}.
+   * {@link handleTwilioProviderCallback}.
    *
    * Registering does two things: it stores the handler, and it makes later
    * outbound calls pass `statusCallback` to `calls.create`. With no handler
@@ -611,26 +613,34 @@ export class VoiceChannel extends BaseChannel {
   }
 
   // =========================================================================
-  // ConversationRelay Callback Handling
+  // Provider Callback Handling
   // =========================================================================
 
   /**
-   * Handle ConversationRelay callback from Twilio. Cleans up on call completion
-   * in voice-only mode; in orchestrated mode the CO webhook owns cleanup.
+   * Handle the provider's own out-of-band lifecycle webhook from Twilio.
    *
-   * @param payload - Callback payload from Twilio
+   * Not every provider has one; those that don't inherit a plain 200
+   * acknowledgement. ConversationRelay posts here when a session ends, and
+   * cleans up on call completion in voice-only mode — in orchestrated mode the
+   * CO webhook owns cleanup.
+   *
+   * @param payload - Raw callback payload from Twilio; the provider validates it.
    * @returns Response with status, content, and content type
-   * @throws {Error} if this channel's provider is not ConversationRelay-based.
+   */
+  public async handleTwilioProviderCallback(
+    payload: Record<string, unknown>
+  ): Promise<TwilioProviderCallbackResponse> {
+    return this.provider.handleTwilioProviderCallback(payload);
+  }
+
+  /**
+   * @deprecated Use {@link VoiceChannel.handleTwilioProviderCallback} instead.
    */
   public async handleConversationRelayCallback(
     payload: ConversationRelayCallbackPayload
-  ): Promise<{ status: number; content: string; contentType: string }> {
-    // Forced narrowing: the shipped signature here is incompatible with the
-    // base's `handleTwilioProviderCallback`, and can't change before PR 5,
-    // which owns reconciling this and the stream-task narrowings below.
-    return this.requireConversationRelayProvider(
-      'ConversationRelay callbacks'
-    ).handleConversationRelayCallback(payload);
+  ): Promise<TwilioProviderCallbackResponse> {
+    warnDeprecated('handleConversationRelayCallback', 'handleTwilioProviderCallback');
+    return this.handleTwilioProviderCallback(payload);
   }
 
   // =========================================================================
@@ -838,9 +848,11 @@ export class VoiceChannel extends BaseChannel {
    * Narrow `provider` to the ConversationRelay implementation for the
    * ConversationRelay-only forwarders on this channel.
    *
-   * Unreachable today — `ConversationRelayProvider` is the only provider — and
-   * PR 5 owns reconciling these narrowings alongside the one in
-   * {@link VoiceChannel.handleConversationRelayCallback}.
+   * Throws whenever a consumer supplies a non-ConversationRelay provider, which
+   * is the point of the guard. The provider callback used to narrow here too; it
+   * now rides {@link VoiceProvider.handleTwilioProviderCallback}'s
+   * base-compatible signature instead, which is the eventual shape for these
+   * forwarders.
    *
    * @throws {Error} if this channel's provider is not ConversationRelay-based.
    */

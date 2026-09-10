@@ -6,6 +6,7 @@ import type {
   ConversationId,
   InitiateVoiceConversationOptions,
   MemoryMode,
+  TwilioProviderCallbackResponse,
   VoiceTwiMLOptions,
   TwiMLRequest,
 } from '../../types/index';
@@ -68,11 +69,14 @@ export class VoiceProvider {
    * uses this as a WebSocket-disconnect backup); Media Streams instead has its
    * own independent `statusCallback` (`stream-started` / `stream-stopped` /
    * `stream-error`), which is purely informational and doesn't gate call flow.
-   * Default no-op for providers with nothing to do here.
+   * Default acknowledges with an empty 200 for providers with nothing to do
+   * here.
    */
-  // eslint-disable-next-line @typescript-eslint/require-await -- Default no-ops without awaiting, but stays `async` so callers always get a Promise
-  public async handleTwilioProviderCallback(_payload: Record<string, string>): Promise<void> {
-    return undefined;
+  // eslint-disable-next-line @typescript-eslint/require-await -- Default acknowledges without awaiting, but stays `async` so callers always get a Promise
+  public async handleTwilioProviderCallback(
+    _payload: Record<string, unknown>
+  ): Promise<TwilioProviderCallbackResponse> {
+    return { status: 200, content: '', contentType: 'text/plain' };
   }
 
   /**

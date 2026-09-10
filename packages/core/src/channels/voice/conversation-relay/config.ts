@@ -99,5 +99,7 @@ export class ConversationRelayProviderConfig extends VoiceProviderConfig {
  * Pre-provider-split name for {@link ConversationRelayProviderConfigOptions} —
  * the shape `new VoiceChannel(tac, {...})` accepts. Kept so the shipped public
  * export stays valid across the provider refactor.
+ *
+ * @deprecated Use {@link ConversationRelayProviderConfigOptions} instead.
  */
 export type VoiceChannelConfig = ConversationRelayProviderConfigOptions;

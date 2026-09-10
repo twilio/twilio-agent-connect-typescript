@@ -60,10 +60,12 @@ describe('VoiceProvider', () => {
     );
   });
 
-  it('treats handleTwilioProviderCallback as an opt-in no-op', async () => {
-    await expect(
-      new VoiceProvider({} as never).handleTwilioProviderCallback({})
-    ).resolves.toBeUndefined();
+  it('acknowledges handleTwilioProviderCallback with an empty 200 by default', async () => {
+    await expect(new VoiceProvider({} as never).handleTwilioProviderCallback({})).resolves.toEqual({
+      status: 200,
+      content: '',
+      contentType: 'text/plain',
+    });
   });
 
   it('returns null from getWebSocket by default', () => {
@@ -361,14 +363,14 @@ describe('VoiceChannel ConversationRelay-only forwarders', () => {
     );
   });
 
-  it('refuses ConversationRelay callbacks', async () => {
+  it('falls back to the base acknowledgement for provider callbacks', async () => {
     await expect(
-      channel.handleConversationRelayCallback({
+      channel.handleTwilioProviderCallback({
         CallSid: 'CA123',
         AccountSid: 'ACtest123',
         CallStatus: 'completed',
-      } as never)
-    ).rejects.toThrow('StubVoiceProvider does not support ConversationRelay callbacks.');
+      })
+    ).resolves.toEqual({ status: 200, content: '', contentType: 'text/plain' });
   });
 
   it('still generates ConversationRelay TwiML on the default provider', async () => {

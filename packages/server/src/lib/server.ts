@@ -386,7 +386,7 @@ export class TACServer {
             return;
           }
 
-          const result = await voiceChannel.handleConversationRelayCallback(parseResult.data);
+          const result = await voiceChannel.handleTwilioProviderCallback(parseResult.data);
 
           await reply.code(result.status).type(result.contentType).send(result.content);
         } catch (error) {

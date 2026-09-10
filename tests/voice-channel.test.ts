@@ -1342,6 +1342,7 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(200);
@@ -1360,6 +1361,7 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(403);
@@ -1381,6 +1383,7 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(200);
@@ -1404,12 +1407,24 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(200);
       expect(endSpy).toHaveBeenCalledWith('CH123');
       // Mapping is cleared as part of cleanup.
       expect((voiceChannel as any).provider.callSidToConversationId.has('CA123')).toBe(false);
+    });
+
+    it('should return 400 when the payload fails schema validation', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const result = await voiceChannel.handleTwilioProviderCallback({ CallSid: 'CA123' });
+
+      expect(result.status).toBe(400);
+      expect(result.content).toBe('Invalid payload');
+      expect(result.contentType).toBe('text/plain');
     });
   });
 

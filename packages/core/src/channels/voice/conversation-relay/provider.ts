@@ -7,7 +7,7 @@ import {
   CallOptions,
   CallOptionsSchema,
   ConversationId,
-  ConversationRelayCallbackPayload,
+  ConversationRelayCallbackPayloadSchema,
   ConversationRelayConfig,
   ConversationRelayConfigSchema,
   CustomParameters,
@@ -17,6 +17,7 @@ import {
   ProfileId,
   PromptMessage,
   TextTokenMessage,
+  TwilioProviderCallbackResponse,
   TwiMLRequest,
   VoiceTwiMLOptions,
   VoiceTwiMLOptionsConversationRelay,
@@ -935,12 +936,22 @@ export class ConversationRelayProvider extends VoiceProvider {
    * Handle ConversationRelay callback from Twilio. Cleans up on call completion
    * in voice-only mode; in orchestrated mode the CO webhook owns cleanup.
    *
-   * @param payload - Callback payload from Twilio
+   * @param rawPayload - Callback payload from Twilio
    * @returns Response with status, content, and content type
    */
-  public async handleConversationRelayCallback(
-    payload: ConversationRelayCallbackPayload
-  ): Promise<{ status: number; content: string; contentType: string }> {
+  public override async handleTwilioProviderCallback(
+    rawPayload: Record<string, unknown>
+  ): Promise<TwilioProviderCallbackResponse> {
+    const parsed = ConversationRelayCallbackPayloadSchema.safeParse(rawPayload);
+    if (!parsed.success) {
+      this.logger.warn(
+        { errors: parsed.error.issues },
+        'Invalid ConversationRelay callback payload'
+      );
+      return { status: 400, content: 'Invalid payload', contentType: 'text/plain' };
+    }
+    const payload = parsed.data;
+
     this.logger.debug(
       { call_sid: payload.CallSid, call_status: payload.CallStatus },
       'ConversationRelay callback received'
