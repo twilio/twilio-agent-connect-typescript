@@ -70,6 +70,7 @@ export type { ConversationRelayProviderConfigOptions } from './channels/voice/co
 export {
   generateStreamTwiml,
   TwiMLBuilderMediaStreams,
+  MediaStreamsProviderConfig,
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
   TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
@@ -77,6 +78,7 @@ export {
 export type {
   BuildStreamTwiMLInputs,
   MediaStreamsTwiMLBuilderConfig,
+  MediaStreamsProviderConfigOptions,
   OpenAIRealtimeProviderConfigOptions,
 } from './channels/voice/media-streams';
 

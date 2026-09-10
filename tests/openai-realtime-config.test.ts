@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OpenAIRealtimeProvider, OpenAIRealtimeProviderConfig } from '@twilio/tac-core';
+import {
+  OpenAIRealtimeProvider,
+  OpenAIRealtimeProviderConfig,
+  MediaStreamsProviderConfig,
+  VoiceProviderConfig,
+} from '@twilio/tac-core';
 import type { VoiceChannel } from '@twilio/tac-core';
 import { TACConfig } from '../packages/core/src/lib/config';
 import type { Logger } from '../packages/core/src/lib/logger';
@@ -104,5 +109,27 @@ describe('OpenAIRealtimeProviderConfig', () => {
     expect(provider.channel).toBe(channel);
     expect((provider as unknown as { config: OpenAIRealtimeProviderConfig }).config).toBe(config);
     expect((provider as unknown as { tacConfig: TACConfig }).tacConfig).toBe(tacConfig);
+  });
+});
+
+describe('MediaStreamsProviderConfig', () => {
+  it('is the layer OpenAIRealtimeProviderConfig inherits transport settings from', () => {
+    const config = new OpenAIRealtimeProviderConfig({ openaiApiKey: 'sk-test' });
+    expect(config).toBeInstanceOf(MediaStreamsProviderConfig);
+    expect(config).toBeInstanceOf(VoiceProviderConfig);
+  });
+
+  it('carries defaultTwimlOptions with no OpenAI dependency of its own', () => {
+    const config = new MediaStreamsProviderConfig({
+      defaultTwimlOptions: { name: 'my-stream' },
+    });
+    expect(config.defaultTwimlOptions).toEqual({ name: 'my-stream' });
+    expect(config.memoryMode).toBe('never');
+  });
+
+  it('still throws from createProvider, which only subclasses implement', () => {
+    expect(() =>
+      new MediaStreamsProviderConfig({}).createProvider({} as never, {} as never)
+    ).toThrow(/must implement createProvider/);
   });
 });

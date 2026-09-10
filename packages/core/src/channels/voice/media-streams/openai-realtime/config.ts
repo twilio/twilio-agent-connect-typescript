@@ -1,16 +1,16 @@
 import type { TACTool } from '@twilio/tac-tools';
 import type { TACConfig } from '../../../../lib/config';
-import type { TwiMLRequest, VoiceTwiMLOptionsMediaStreams } from '../../../../types/index';
-import type { BaseChannelOptions } from '../../../base';
+import type { TwiMLRequest } from '../../../../types/index';
 import type { VoiceChannel } from '../../channel';
 import type { VoiceProvider } from '../../provider';
-import { VoiceProviderConfig } from '../../provider';
+import { MediaStreamsProviderConfig } from '../config';
+import type { MediaStreamsProviderConfigOptions } from '../config';
 import { OpenAIRealtimeProvider } from './provider';
 
 /**
  * Options accepted by {@link OpenAIRealtimeProviderConfig}.
  */
-export interface OpenAIRealtimeProviderConfigOptions extends BaseChannelOptions {
+export interface OpenAIRealtimeProviderConfigOptions extends MediaStreamsProviderConfigOptions {
   /**
    * OpenAI API key. Defaults to the `OPENAI_API_KEY` environment variable.
    */
@@ -50,13 +50,6 @@ export interface OpenAIRealtimeProviderConfigOptions extends BaseChannelOptions 
   defaultSessionConfig?: Record<string, unknown>;
 
   /**
-   * Static `VoiceTwiMLOptionsMediaStreams` applied to every inbound call.
-   * Per-call customization is registered via
-   * `VoiceChannel.onInboundCallTwiml(...)`, which takes precedence over this.
-   */
-  defaultTwimlOptions?: VoiceTwiMLOptionsMediaStreams;
-
-  /**
    * Per-inbound-call override for
    * {@link OpenAIRealtimeProviderConfigOptions.defaultSessionConfig}, called
    * with the `TwiMLRequest`. Its return value is used verbatim (not merged with
@@ -69,7 +62,7 @@ export interface OpenAIRealtimeProviderConfigOptions extends BaseChannelOptions 
 /**
  * Configuration for `OpenAIRealtimeProvider`.
  */
-export class OpenAIRealtimeProviderConfig extends VoiceProviderConfig {
+export class OpenAIRealtimeProviderConfig extends MediaStreamsProviderConfig {
   /** OpenAI API key. Defaults to the `OPENAI_API_KEY` environment variable. */
   public readonly openaiApiKey: string;
 
@@ -104,13 +97,6 @@ export class OpenAIRealtimeProviderConfig extends VoiceProviderConfig {
   public readonly defaultSessionConfig?: Record<string, unknown>;
 
   /**
-   * Static `VoiceTwiMLOptionsMediaStreams` applied to every inbound call.
-   * Per-call customization is registered via
-   * `VoiceChannel.onInboundCallTwiml(...)`, which takes precedence over this.
-   */
-  public readonly defaultTwimlOptions?: VoiceTwiMLOptionsMediaStreams;
-
-  /**
    * Per-inbound-call override for
    * {@link OpenAIRealtimeProviderConfig.defaultSessionConfig}, called with the
    * `TwiMLRequest`. Its return value is used verbatim (not merged with
@@ -139,9 +125,6 @@ export class OpenAIRealtimeProviderConfig extends VoiceProviderConfig {
     }
     if (options?.defaultSessionConfig !== undefined) {
       this.defaultSessionConfig = options.defaultSessionConfig;
-    }
-    if (options?.defaultTwimlOptions !== undefined) {
-      this.defaultTwimlOptions = options.defaultTwimlOptions;
     }
     if (options?.onInboundCallSessionConfig !== undefined) {
       this.onInboundCallSessionConfig = options.onInboundCallSessionConfig;
