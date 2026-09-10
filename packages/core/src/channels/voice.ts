@@ -33,6 +33,7 @@ import {
 import type { InitiateVoiceConversationResult } from '../types/conversation';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import type { TAC } from '../lib/tac';
+import type { TACConfig } from '../lib/config';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
 import { maskAddress, redactTwimlParameters } from '../util/log-redaction';
 import { TwiMLBuilderConversationRelay } from './voice/conversation-relay/twiml';
@@ -259,6 +260,35 @@ export class VoiceChannel extends BaseChannel {
    */
   public onRecording(callback: RecordingHandler): void {
     this.onRecordingHandler = callback;
+  }
+
+  /**
+   * The registered call-event handlers, for a `VoiceProvider` deciding which
+   * callback URLs to derive. A provider is not a subclass of `VoiceChannel`,
+   * so the `private` fields are genuinely out of reach without this.
+   *
+   * @internal
+   */
+  public getCallEventHandlers(): {
+    status: CallStatusHandler | undefined;
+    amd: AmdHandler | undefined;
+    recording: RecordingHandler | undefined;
+  } {
+    return {
+      status: this.onCallStatusHandler,
+      amd: this.onAmdHandler,
+      recording: this.onRecordingHandler,
+    };
+  }
+
+  /**
+   * This channel's `TACConfig`, for a `VoiceProvider` deriving default URLs.
+   * `BaseChannel.config` is `protected`, and a provider is not a subclass.
+   *
+   * @internal
+   */
+  public getTacConfig(): TACConfig {
+    return this.config;
   }
 
   private getTwilioClient(): ReturnType<typeof Twilio> {

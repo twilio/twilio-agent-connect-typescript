@@ -61,6 +61,9 @@ export type {
   StreamTask,
 } from './channels/voice';
 
+// Voice provider abstraction
+export { VoiceProvider, VoiceProviderConfig } from './channels/voice/provider';
+
 // Log redaction utilities
 export {
   maskPhone,
