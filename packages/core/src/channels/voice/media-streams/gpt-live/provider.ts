@@ -511,7 +511,6 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
   }
 
   /** Apply one parsed GPT-Live event to the call. */
-  // eslint-disable-next-line @typescript-eslint/require-await -- Stays `async` to satisfy the base's abstract signature; the branch that awaits (tool calls) lands with `handleFunctionCall`.
   protected override async dispatchModelEvent(
     conversationId: ConversationId,
     session: ConversationSession,
@@ -574,9 +573,87 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         break;
       }
 
+      case 'response.event': {
+        // Tool calls arrive wrapped: GPT-Live delegates them to Responses and
+        // relays that API's own events inside this envelope.
+        const inner = (event.event ?? {}) as Record<string, unknown>;
+        if (inner.type !== 'response.output_item.done') {
+          break;
+        }
+        const item = (inner.item ?? {}) as Record<string, unknown>;
+        // Only `completed` runs: a call cut short mid-generation can carry a
+        // truncated `arguments` fragment, so running it would feed the tool
+        // garbage.
+        if (item.type === 'function_call' && item.status === 'completed') {
+          await this.handleFunctionCall(conversationId, item);
+        }
+        break;
+      }
+
       default:
         break;
     }
+  }
+
+  /**
+   * Run a Responses-delegated tool call and hand the result back.
+   *
+   * Always sends a `function_call_output` once a `call_id` is present — even a
+   * tool that ran successfully can return something `JSON.stringify` throws on
+   * (a circular object, a `BigInt`) or has no JSON form at all, which
+   * `JSON.stringify` reports by returning `undefined` rather than throwing (a
+   * void tool, a bare function, a `Symbol`). Either way the model would
+   * otherwise be left waiting on a `call_id` it never gets a result for.
+   * Without a `call_id` there is nothing to reply to, so the item is dropped
+   * instead.
+   */
+  private async handleFunctionCall(
+    conversationId: ConversationId,
+    item: Record<string, unknown>
+  ): Promise<void> {
+    const callId = item.call_id;
+    if (typeof callId !== 'string' || !callId) {
+      this.logger.error(
+        { conversation_id: conversationId, item },
+        'Received malformed function_call item without call_id'
+      );
+      return;
+    }
+
+    const name = item.name;
+    let output: string;
+    if (typeof name !== 'string' || !name) {
+      // No name means no tool can be selected, so none runs.
+      this.logger.error(
+        { conversation_id: conversationId, call_id: callId, item },
+        'Received malformed function_call item without tool name'
+      );
+      output = JSON.stringify({ error: 'Malformed function call: missing tool name.' });
+    } else {
+      const result = await this.runToolCall(conversationId, name, item.arguments);
+      try {
+        // `JSON.stringify` returns `undefined`, not a string, for a value with
+        // no JSON form (a void tool, a bare function): `null` keeps the reply
+        // addressed to `call_id` instead of dropping the required field.
+        const serialized: string | undefined = JSON.stringify(result);
+        output = serialized ?? 'null';
+      } catch (err) {
+        // Only the generic message goes back: a stack trace or upstream
+        // payload must never reach the model.
+        this.logger.error(
+          { err, conversation_id: conversationId, tool_name: name },
+          'Tool returned a non-JSON-serializable result'
+        );
+        output = JSON.stringify({ error: `Tool '${name}' returned a non-serializable result.` });
+      }
+    }
+
+    // `response.item.create`, not Realtime's `conversation.item.create`.
+    this.modelSend(conversationId, {
+      type: 'response.item.create',
+      item: { type: 'function_call_output', call_id: callId, output },
+    });
+    this.modelSend(conversationId, { type: 'response.create' });
   }
 
   /**

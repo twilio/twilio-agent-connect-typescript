@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi } from 'vitest';
 import { CallState } from '../packages/core/src/channels/voice/media-streams/gpt-live/state';
 import { InitiateVoiceConversationOptionsGPTLiveSchema } from '@twilio/tac-core';
-import type { ConversationId } from '@twilio/tac-core';
+import type { ConversationId, ToolFunction } from '@twilio/tac-core';
+import { defineTool } from '@twilio/tac-tools';
 import { GPTLiveProviderConfig } from '../packages/core/src/channels/voice/media-streams/gpt-live/config';
 import {
   GPTLiveProvider,
@@ -561,6 +562,138 @@ describe('GPTLiveProvider model events', () => {
     await vi.waitFor(() => expect(twilioWs.sent.length).toBeGreaterThan(0));
 
     expect(twilioWs.closed).toBe(false);
+  });
+});
+
+describe('GPTLiveProvider tool calls', () => {
+  async function callWithTool(implementation: ToolFunction<unknown, unknown>) {
+    const tool = defineTool(
+      'add',
+      'Add two numbers',
+      { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } } },
+      implementation
+    );
+    const { provider } = makeProvider({ tools: [tool] });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+    return modelWs;
+  }
+
+  function emitFunctionCall(modelWs: FakeSocket, item: Record<string, unknown>) {
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.event',
+        event: {
+          type: 'response.output_item.done',
+          item: { type: 'function_call', status: 'completed', ...item },
+        },
+      })
+    );
+  }
+
+  /** Every `function_call_output` item written back to the model. */
+  function outputItems(modelWs: FakeSocket): Record<string, string>[] {
+    return modelWs
+      .json()
+      .filter(m => m.type === 'response.item.create')
+      .map(m => m.item as Record<string, string>);
+  }
+
+  it('sends the tool result then asks the model to continue', async () => {
+    const modelWs = await callWithTool(async params => {
+      const { a, b } = params as { a: number; b: number };
+      return a + b;
+    });
+
+    emitFunctionCall(modelWs, { call_id: 'call_1', name: 'add', arguments: '{"a":2,"b":3}' });
+
+    await vi.waitFor(() => {
+      const output = modelWs.json().find(m => m.type === 'response.item.create');
+      const item = output!.item as Record<string, string>;
+      expect(item.call_id).toBe('call_1');
+      expect(JSON.parse(item.output)).toBe(5);
+    });
+    expect(modelWs.json()).toContainEqual({ type: 'response.create' });
+  });
+
+  it('still answers the call when the tool result cannot be serialized', async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const modelWs = await callWithTool(async () => circular);
+
+    emitFunctionCall(modelWs, { call_id: 'call_2', name: 'add', arguments: '{}' });
+
+    await vi.waitFor(() => {
+      const output = modelWs.json().find(m => m.type === 'response.item.create');
+      const item = output!.item as Record<string, string>;
+      expect(item.call_id).toBe('call_2');
+      expect(JSON.parse(item.output)).toHaveProperty('error');
+    });
+    expect(modelWs.json()).toContainEqual({ type: 'response.create' });
+  });
+
+  it('drops a function call with no call_id instead of sending an unaddressed output', async () => {
+    const modelWs = await callWithTool(async () => 5);
+
+    emitFunctionCall(modelWs, { name: 'add', arguments: '{"a":2,"b":3}' });
+    // Events are dispatched in order, so waiting on this one's output proves
+    // the call_id-less item ahead of it was processed and rejected — an
+    // elapsed-time wait would also pass with the pipeline dead.
+    emitFunctionCall(modelWs, { call_id: 'sentinel', name: 'add', arguments: '{"a":1,"b":1}' });
+
+    await vi.waitFor(() =>
+      expect(outputItems(modelWs).map(item => item.call_id)).toContain('sentinel')
+    );
+    expect(outputItems(modelWs).map(item => item.call_id)).toEqual(['sentinel']);
+  });
+
+  it('answers a function call with no name without running any tool', async () => {
+    let ran = false;
+    const modelWs = await callWithTool(async () => {
+      ran = true;
+      return 5;
+    });
+
+    emitFunctionCall(modelWs, { call_id: 'call_3', arguments: '{}' });
+
+    await vi.waitFor(() => {
+      const output = modelWs.json().find(m => m.type === 'response.item.create');
+      const item = output!.item as Record<string, string>;
+      expect(item.call_id).toBe('call_3');
+      expect(JSON.parse(item.output)).toHaveProperty('error');
+    });
+    expect(ran).toBe(false);
+  });
+
+  it('ignores a function call that was cut short mid-generation', async () => {
+    const modelWs = await callWithTool(async () => 5);
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.event',
+        event: {
+          type: 'response.output_item.done',
+          item: {
+            type: 'function_call',
+            status: 'incomplete',
+            call_id: 'call_4',
+            name: 'add',
+            arguments: '{"a":',
+          },
+        },
+      })
+    );
+    // Same sentinel argument as above: its output landing is what proves the
+    // truncated call was seen and skipped.
+    emitFunctionCall(modelWs, { call_id: 'sentinel', name: 'add', arguments: '{"a":1,"b":1}' });
+
+    await vi.waitFor(() =>
+      expect(outputItems(modelWs).map(item => item.call_id)).toContain('sentinel')
+    );
+    expect(outputItems(modelWs).map(item => item.call_id)).toEqual(['sentinel']);
   });
 });
 
