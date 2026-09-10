@@ -1,6 +1,8 @@
+import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi } from 'vitest';
 import { CallState } from '../packages/core/src/channels/voice/media-streams/gpt-live/state';
 import { InitiateVoiceConversationOptionsGPTLiveSchema } from '@twilio/tac-core';
+import type { ConversationId } from '@twilio/tac-core';
 import { GPTLiveProviderConfig } from '../packages/core/src/channels/voice/media-streams/gpt-live/config';
 import {
   GPTLiveProvider,
@@ -11,6 +13,9 @@ const validSessionConfig = {
   model: 'gpt-live-1',
   audio: { format: TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE },
 };
+
+/** Spelled out here because the provider keeps the constant module-private. */
+const SESSION_CONFIG_TOKEN_PARAM_LITERAL = '_tac_session_config_token';
 
 function makeTacConfigStub() {
   return { voicePublicDomain: 'example.ngrok.io', voiceWebsocketPath: '/voice-stream' } as never;
@@ -61,6 +66,55 @@ function tokenFromTwiml(twiml: string): string {
   const match = /_tac_session_config_token" value="([^"]+)"/.exec(twiml);
   expect(match).not.toBeNull();
   return match![1];
+}
+
+/**
+ * Stands in for either leg of the bridge: the Twilio-facing socket or the
+ * GPT-Live one. `close()` emits `close` synchronously, as `ws` does once the
+ * peer has gone away.
+ */
+class FakeSocket extends EventEmitter {
+  sent: string[] = [];
+  closed = false;
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    this.closed = true;
+    this.emit('close');
+  }
+
+  /** Everything written to this socket, parsed. */
+  json(): Record<string, unknown>[] {
+    return this.sent.map(s => JSON.parse(s) as Record<string, unknown>);
+  }
+}
+
+/**
+ * Drive a provider through Twilio's `start` event with `modelWs` standing in
+ * for the GPT-Live socket, and hand back the Twilio-facing socket.
+ */
+function startCall(
+  provider: GPTLiveProvider,
+  modelWs: FakeSocket,
+  customParameters: Record<string, string> = {}
+): FakeSocket {
+  // The one seam keeping these tests off the network.
+  vi.spyOn(provider, 'openModelSocket' as never).mockResolvedValue(modelWs as never);
+  const twilioWs = new FakeSocket();
+  provider.handleWebSocket(twilioWs as never);
+  twilioWs.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        event: 'start',
+        start: { streamSid: 'MZ1', callSid: 'CA1', customParameters },
+      })
+    )
+  );
+  return twilioWs;
 }
 
 describe('GPT-Live call state', () => {
@@ -252,5 +306,118 @@ describe('GPTLiveProvider outbound', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('GPTLiveProvider WebSocket bridge', () => {
+  it('opens the GPT-Live socket with auth headers and sends session.start', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const open = vi.spyOn(provider, 'openModelSocket' as never).mockResolvedValue(modelWs as never);
+
+    const twilioWs = new FakeSocket();
+    provider.handleWebSocket(twilioWs as never);
+    twilioWs.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          event: 'start',
+          start: { streamSid: 'MZ1', callSid: 'CA1', customParameters: {} },
+        })
+      )
+    );
+
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+    const [url, headers] = open.mock.calls[0] as [string, Record<string, string>];
+    expect(url).toBe('wss://api.openai.com/v1/live/sessions');
+    expect(headers['Authorization']).toBe('Bearer sk-test');
+    expect(headers['User-Agent']).toMatch(/^twilio-agent-connect\/TypeScript \d+\.\d+\.\d+/);
+    // Exactly two headers: Python #125 deleted the `OpenAI-Alpha:
+    // quicksilver=v3` header the pre-review draft sent, and nothing replaced it.
+    expect(Object.keys(headers).sort()).toEqual(['Authorization', 'User-Agent']);
+
+    const start = modelWs.json().find(m => m.type === 'session.start');
+    expect((start!.session as Record<string, string>).model).toBe('gpt-live-1');
+  });
+
+  it('rejects a session config whose audio.format is not the Twilio wire format', async () => {
+    const { provider } = makeProvider({
+      defaultSessionConfig: { model: 'gpt-live-1', audio: { format: { type: 'audio/pcm' } } },
+    });
+    await expect(provider.connectModel('CA_BAD' as ConversationId)).rejects.toThrow(
+      /audio\.format/
+    );
+  });
+
+  it('requires a model field on the session config', async () => {
+    const { provider } = makeProvider({
+      defaultSessionConfig: { audio: { format: TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE } },
+    });
+    await expect(provider.connectModel('CA_MODEL' as ConversationId)).rejects.toThrow(
+      /must include 'model'/
+    );
+  });
+
+  it('fails the call when neither the call nor the config supplies a session config', async () => {
+    const { provider } = makeProvider({ defaultSessionConfig: undefined });
+    await expect(provider.connectModel('CA_NONE' as ConversationId)).rejects.toThrow(
+      /No sessionConfig available/
+    );
+  });
+
+  it('rekeys a token-stashed session config onto the conversation id on start', async () => {
+    const { provider, createCall } = makeProvider();
+    await provider.initiateOutboundConversation({
+      to: '+15551112222',
+      sessionConfig: { ...validSessionConfig, instructions: 'outbound override' },
+    } as never);
+    const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
+
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs, { [SESSION_CONFIG_TOKEN_PARAM_LITERAL]: token });
+
+    await vi.waitFor(() => {
+      const start = modelWs.json().find(m => m.type === 'session.start');
+      expect((start!.session as Record<string, string>).instructions).toBe('outbound override');
+    });
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
+
+  it('forwards caller audio to the model as session.input_audio.append', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    twilioWs.emit(
+      'message',
+      Buffer.from(JSON.stringify({ event: 'media', media: { payload: 'BASE64AUDIO' } }))
+    );
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'session.input_audio.append',
+        audio: 'BASE64AUDIO',
+      })
+    );
+  });
+
+  it('tears down the Twilio socket when the model socket closes first', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    modelWs.close();
+    await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+  });
+
+  it('closes the model socket when Twilio sends stop', async () => {
+    const { provider } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+
+    twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
   });
 });

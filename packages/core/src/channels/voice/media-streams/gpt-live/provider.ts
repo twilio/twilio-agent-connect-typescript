@@ -1,6 +1,12 @@
-import { MediaStreamsOpenAIProvider, describeIssues } from '../shared/openai-provider';
+import { WebSocket } from 'ws';
+import {
+  MediaStreamsOpenAIProvider,
+  OPENAI_USER_AGENT,
+  describeIssues,
+} from '../shared/openai-provider';
 import {
   InitiateVoiceConversationOptionsGPTLiveSchema,
+  StreamStartMessageSchema,
   callOptionsToCreateParams,
   type ConversationId,
   type ConversationSession,
@@ -10,7 +16,7 @@ import {
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
 import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
 import type { GPTLiveProviderConfig } from './config';
-import type { CallState } from './state';
+import { CallState } from './state';
 
 /**
  * The audio format both directions of a call must use.
@@ -38,6 +44,30 @@ const SESSION_CONFIG_TOKEN_PARAM = '_tac_session_config_token';
  * never connects the media stream to consume it via `registerCall`.
  */
 const SESSION_CONFIG_TOKEN_TTL_MS = 120_000;
+
+/**
+ * The GPT-Live endpoint. Unlike Realtime's, it carries no `?model=` query
+ * param — the model is named inside the `session.start` payload instead.
+ */
+const GPT_LIVE_URL = 'wss://api.openai.com/v1/live/sessions';
+
+/**
+ * Whether `value` is exactly {@link TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE}.
+ *
+ * Compared field by field rather than by serializing both sides, so key order
+ * in a caller's session config can't decide the answer.
+ */
+function isTwilioMediaStreamAudioFormat(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const expected: Record<string, unknown> = TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE;
+  const actual = value as Record<string, unknown>;
+  const keys = Object.keys(actual);
+  return (
+    keys.length === Object.keys(expected).length && keys.every(key => actual[key] === expected[key])
+  );
+}
 
 /**
  * A {@link VoiceProvider} bridging Twilio Media Streams to OpenAI's GPT-Live
@@ -206,6 +236,299 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     }, SESSION_CONFIG_TOKEN_TTL_MS);
     timer.unref();
     this.pendingTokenExpiries.set(token, timer);
+  }
+
+  /**
+   * Stop the clock on a token, once the call it belongs to has claimed it.
+   *
+   * Without this a two-minute timer outlives every call that connected
+   * normally, waiting to purge an entry that is already gone.
+   */
+  private cancelTokenExpiry(token: string): void {
+    const timer = this.pendingTokenExpiries.get(token);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.pendingTokenExpiries.delete(token);
+    }
+  }
+
+  // =========================================================================
+  // Audio Bridge
+  // =========================================================================
+
+  /**
+   * Drive one Twilio Media Stream connection from `start` to disconnect.
+   *
+   * Twilio's `start` event names the call, which opens the matching GPT-Live
+   * socket; from then on caller audio is relayed to the model and the model's
+   * audio back to Twilio, until either side goes away. Whichever leg closes
+   * first takes the other down with it, so a caller is never left connected to
+   * silence.
+   *
+   * Called by `VoiceChannel.handleWebSocketConnection`; hosts serve the socket
+   * rather than calling this directly.
+   *
+   * @param ws - The accepted Twilio-facing WebSocket.
+   */
+  public override handleWebSocket(ws: WebSocket): void {
+    let conversationId: ConversationId | null = null;
+
+    ws.on('message', (data: Buffer) => {
+      // `EventEmitter` invokes this later with nothing awaiting it, so an async
+      // body's rejection would surface as an unhandled rejection. Own it here.
+      void (async (): Promise<void> => {
+        const message = JSON.parse(data.toString()) as Record<string, unknown>;
+        const event = typeof message.event === 'string' ? message.event : '';
+
+        if (event === 'start') {
+          conversationId = this.registerCall(message.start, ws);
+          await this.connectModel(conversationId);
+        } else if (event === 'media') {
+          const media = (message.media ?? {}) as Record<string, unknown>;
+          const payload = media.payload;
+          if (conversationId !== null && typeof payload === 'string' && payload) {
+            this.modelSend(conversationId, {
+              type: 'session.input_audio.append',
+              audio: payload,
+            });
+          }
+        } else if (event === 'stop') {
+          this.logger.info({ conversation_id: conversationId }, 'Media stream stopped');
+          if (conversationId !== null) {
+            await this.cleanupCall(conversationId);
+          }
+          // Python returns from its endpoint here, which drops the connection;
+          // an event handler has no such exit, so close the leg explicitly.
+          ws.close();
+        }
+      })().catch((err: unknown) => {
+        // Python breaks its read loop on any exception and cleans up in the
+        // `finally`; closing here reaches the same end through the `close`
+        // handler below, rather than holding the caller on a line to nothing.
+        this.logger.error({ err, conversation_id: conversationId }, 'Media stream WebSocket error');
+        ws.close();
+      });
+    });
+
+    ws.on('close', () => {
+      this.logger.info({ conversation_id: conversationId }, 'Media stream WebSocket closed');
+      if (conversationId !== null) {
+        void this.cleanupCall(conversationId).catch((err: unknown) => {
+          this.logger.error({ err, conversation_id: conversationId }, 'Call cleanup error');
+        });
+      }
+    });
+
+    ws.on('error', (error: Error) => {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        'Media stream socket error'
+      );
+    });
+  }
+
+  /**
+   * Handle Twilio's `start` event: track the call and open its session.
+   *
+   * @param start - The event's `start` body, parsed against
+   *   `StreamStartMessageSchema`.
+   * @param ws - The Twilio-facing socket this call arrived on.
+   * @returns The conversation id, which is the call SID.
+   */
+  private registerCall(start: unknown, ws: WebSocket): ConversationId {
+    const message = StreamStartMessageSchema.parse(start ?? {});
+    const conversationId = message.callSid as ConversationId;
+
+    // An outbound override was stashed under a token before the call was
+    // placed, because its SID wasn't known yet. Twilio hands the token back
+    // here, which is the first point the two can be joined up.
+    const token = message.customParameters[SESSION_CONFIG_TOKEN_PARAM];
+    if (token !== undefined) {
+      const pending = this.pendingSessionConfigs.get(token);
+      if (pending !== undefined) {
+        this.pendingSessionConfigs.delete(token);
+        this.pendingSessionConfigs.set(conversationId, pending);
+      }
+      this.cancelTokenExpiry(token);
+    }
+
+    const call = new CallState();
+    call.twilioWs = ws;
+    this.calls.set(conversationId, call);
+
+    // No profile id: this provider's session lifecycle is independent of
+    // Conversation Orchestrator, like ConversationRelay's relay-only mode.
+    const session = this.channel.startConversationInternal(conversationId);
+    session.callSid = message.callSid;
+    session.metadata.streamSid = message.streamSid;
+    session.metadata.transcript = [];
+
+    this.logger.debug(
+      { conversation_id: conversationId, media_format: message.mediaFormat },
+      'Media stream started'
+    );
+    return conversationId;
+  }
+
+  /**
+   * Open this call's GPT-Live socket and send its session config.
+   *
+   * @internal
+   */
+  public async connectModel(conversationId: ConversationId): Promise<void> {
+    const sessionConfig = this.resolveSessionConfig(conversationId);
+
+    const modelWs = await this.openModelSocket(GPT_LIVE_URL, {
+      Authorization: `Bearer ${this.config.openaiApiKey}`,
+      'User-Agent': OPENAI_USER_AGENT,
+    });
+
+    const call = this.calls.get(conversationId);
+    if (call === undefined) {
+      // The call ended while the handshake was in flight. Nothing tracks this
+      // socket now, so close it rather than leak it.
+      modelWs.close();
+      return;
+    }
+    call.modelWs = modelWs;
+    this.attachModelHandlers(conversationId, modelWs);
+    this.logger.info({ conversation_id: conversationId }, 'Connected to GPT-Live');
+
+    this.modelSend(conversationId, { type: 'session.start', session: sessionConfig });
+    // `welcomeInstruction` is sent once `session.started` arrives, not here —
+    // unlike the Realtime provider, which requests its greeting at connect time.
+  }
+
+  /**
+   * Open a WebSocket and resolve once it is ready to carry traffic.
+   *
+   * Isolated from {@link connectModel} so tests can substitute a socket
+   * without reaching the network.
+   *
+   * A resolved socket always carries at least one `'error'` listener, whatever
+   * the caller does with it next.
+   *
+   * @internal
+   */
+  public openModelSocket(url: string, headers: Record<string, string>): Promise<WebSocket> {
+    return new Promise<WebSocket>((resolve, reject) => {
+      const ws = new WebSocket(url, { headers });
+      const onOpen = (): void => {
+        ws.off('error', onError);
+        // A listener-less 'error' emission throws, and `ws` emits one for any
+        // frame its receiver rejects — including mid-close. Callers that never
+        // reach attachModelHandlers must still get a socket that can't do that.
+        ws.on('error', () => {});
+        resolve(ws);
+      };
+      const onError = (error: Error): void => {
+        ws.off('open', onOpen);
+        reject(error);
+      };
+      ws.once('open', onOpen);
+      ws.once('error', onError);
+    });
+  }
+
+  /**
+   * The validated session config for this call: its own stashed override if it
+   * has one, else the channel-wide default.
+   *
+   * @throws {Error} if neither exists, if the audio format is one Twilio can't
+   *   carry, or if it names no model.
+   */
+  private resolveSessionConfig(conversationId: ConversationId): Record<string, unknown> {
+    const sessionConfig =
+      this.pendingSessionConfigs.get(conversationId) ?? this.config.defaultSessionConfig;
+    this.pendingSessionConfigs.delete(conversationId);
+
+    if (sessionConfig === undefined) {
+      throw new Error(
+        `No sessionConfig available for call ${conversationId} — this call supplied none ` +
+          'and defaultSessionConfig is not set either.'
+      );
+    }
+
+    const audio = (sessionConfig.audio ?? {}) as Record<string, unknown>;
+    if (!isTwilioMediaStreamAudioFormat(audio.format)) {
+      throw new Error(
+        `sessionConfig for call ${conversationId} has audio.format=` +
+          `${JSON.stringify(audio.format)}, expected ` +
+          `${JSON.stringify(TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE)}. Twilio Media Streams is ` +
+          'always 8kHz G.711 u-law; set audio.format to TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE.'
+      );
+    }
+    if (!sessionConfig.model) {
+      throw new Error(`sessionConfig for call ${conversationId} must include 'model'.`);
+    }
+
+    return sessionConfig;
+  }
+
+  /**
+   * Wire up the model socket: dispatch its events, and tear the call down when
+   * it goes away.
+   *
+   * The Python SDK races its Twilio read against its model-event reader so the
+   * Twilio leg dies with the model leg; `ws` is event-driven, so the same
+   * guarantee is a close/error handler instead.
+   */
+  private attachModelHandlers(conversationId: ConversationId, modelWs: WebSocket): void {
+    modelWs.on('message', (raw: Buffer | string) => {
+      // `handleModelMessage` owns its own failures, so nothing here can reject.
+      void this.handleModelMessage(conversationId, raw);
+    });
+
+    modelWs.on('close', () => {
+      // Still tracked means the model leg went first: an ordinary Twilio `stop`
+      // has already run cleanup, which closed this socket itself.
+      if (this.calls.has(conversationId)) {
+        this.logger.info({ conversation_id: conversationId }, 'Model connection ended');
+      }
+      this.endCallFromModel(conversationId);
+    });
+
+    modelWs.on('error', (error: Error) => {
+      this.logger.error({ err: error, conversation_id: conversationId }, 'Model socket error');
+      this.endCallFromModel(conversationId);
+    });
+  }
+
+  /**
+   * Hang up the Twilio leg because the model leg is gone, then clean up. A
+   * no-op once the call has already been cleaned up, so both the model socket's
+   * `close` and its `error` can call it.
+   */
+  private endCallFromModel(conversationId: ConversationId): void {
+    this.calls.get(conversationId)?.twilioWs?.close();
+    void this.cleanupCall(conversationId).catch((err: unknown) => {
+      this.logger.error({ err, conversation_id: conversationId }, 'Call cleanup error');
+    });
+  }
+
+  /**
+   * Drop this call's transport state, close the model socket, and end the
+   * session.
+   *
+   * Both legs can report the call ending, and the first one to arrive tears
+   * down the other, so this runs at most once per call: a second invocation
+   * finds nothing tracked and returns.
+   */
+  private async cleanupCall(conversationId: ConversationId): Promise<void> {
+    const call = this.calls.get(conversationId);
+    if (call === undefined) {
+      return;
+    }
+    this.calls.delete(conversationId);
+
+    if (call.modelWs !== null) {
+      try {
+        call.modelWs.close();
+      } catch (err) {
+        this.logger.debug({ err, conversation_id: conversationId }, 'Error closing model socket');
+      }
+    }
+    await this.channel.endConversationInternal(conversationId);
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await -- Stub throws synchronously; Task 5 replaces with the real async dispatch.
