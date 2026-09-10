@@ -260,8 +260,8 @@ export type LanguageConfig = z.infer<typeof LanguageConfigSchema>;
 /**
  * Raw object form of the provider-agnostic TwiML options — the single source
  * of truth for the three fields every provider shares. The exported base
- * schema below and each provider-specific subtype (ConversationRelay today,
- * Media Streams next) build on this same const, so the shared fields stay
+ * schema below and each provider-specific subtype (ConversationRelay and
+ * Media Streams) build on this same const, so the shared fields stay
  * defined once.
  */
 const VoiceTwiMLOptionsBase = z.object({
@@ -294,7 +294,8 @@ const VoiceTwiMLOptionsBase = z.object({
  *
  * Each provider answers the inbound-call webhook with its own TwiML shape
  * ({@link VoiceTwiMLOptionsConversationRelaySchema} for `<ConversationRelay>`,
- * a future subtype for `<Connect><Stream>`), so `VoiceProvider.handleIncomingCall`'s
+ * {@link VoiceTwiMLOptionsMediaStreamsSchema} for `<Connect><Stream>`), so
+ * `VoiceProvider.handleIncomingCall`'s
  * `hostTwimlOptions` is typed against this base rather than a specific
  * provider's options. It carries only what every provider shares: the
  * `<Connect action>` URL, the transport URL, and `<Parameter>` children.
@@ -509,6 +510,47 @@ export type VoiceTwiMLOptions = z.infer<typeof VoiceTwiMLOptionsSchema>;
 export type VoiceTwiMLOptionsConversationRelay = z.infer<
   typeof VoiceTwiMLOptionsConversationRelaySchema
 >;
+
+/**
+ * Options for the TwiML inside `<Connect><Stream>`.
+ *
+ * Fields map to the attributes documented at
+ * https://www.twilio.com/docs/voice/twiml/stream (the `<Stream>` verb) and
+ * https://www.twilio.com/docs/voice/twiml/connect (the `<Connect>` verb it is
+ * nested in). `track` is deliberately absent: a bidirectional `<Connect>`
+ * stream only ever carries `inbound_track`, so it is not settable.
+ *
+ * Inherits `customParameters`, `actionUrl` and `websocketUrl` from the shared
+ * base. Mirrors the Python SDK's `VoiceTwiMLOptionsMediaStreams`.
+ */
+export const VoiceTwiMLOptionsMediaStreamsSchema = VoiceTwiMLOptionsBase.extend({
+  /**
+   * Friendly name for the stream (`<Stream name=...>`). Must be unique per
+   * call; it arrives back in the WebSocket `start` event.
+   */
+  name: z.string().optional(),
+  /**
+   * Absolute URL Twilio posts to when the stream starts, stops, or errors
+   * (StreamSid/StreamName/StreamEvent/StreamError/Timestamp params). Must be
+   * non-empty when set, like the other URL fields, so an empty string can't
+   * silently emit a broken attribute.
+   */
+  statusCallback: z.string().min(1, 'statusCallback must not be empty').optional(),
+  /** HTTP method for `statusCallback`. Defaults to POST on Twilio. */
+  statusCallbackMethod: z.enum(['GET', 'POST']).optional(),
+  /**
+   * HTTP method for `actionUrl`. Defaults to POST on Twilio. Lives here rather
+   * than on the shared base because no other provider's TwiML exposes it.
+   */
+  actionMethod: z.enum(['GET', 'POST']).optional(),
+})
+  // Forbid unknown keys so a typo in a field name fails loudly rather than
+  // being silently dropped from the emitted TwiML. Unlike the ConversationRelay
+  // subtype there is no `extra` escape hatch here, so `.strict()` stands alone
+  // and `.shape` stays readable.
+  .strict();
+
+export type VoiceTwiMLOptionsMediaStreams = z.infer<typeof VoiceTwiMLOptionsMediaStreamsSchema>;
 
 /** @deprecated Use {@link VoiceTwiMLOptionsConversationRelay} instead. */
 export type TwiMLOptions = VoiceTwiMLOptionsConversationRelay;
@@ -1115,15 +1157,17 @@ export interface InitiateVoiceConversationOptions {
    */
   websocketUrl?: string | undefined;
   /**
-   * Per-call overrides for the TwiML inside `<ConversationRelay>`. Merged over
+   * Per-call overrides for the outbound TwiML. Merged over
    * `VoiceChannelConfig.defaultTwimlOptions` and TAC defaults.
    *
-   * Stays typed against the ConversationRelay subtype rather than the
-   * provider-agnostic base: this is parsed at the channel boundary, and a
-   * `.strict()` base would reject every ConversationRelay field. It widens
-   * once a second outbound-capable provider exists.
+   * A union of the provider subtypes rather than the provider-agnostic base:
+   * the base type carries only the three shared fields, so TypeScript's
+   * excess-property check would reject a fresh object literal carrying any
+   * provider-specific field. Each provider still parses this against its own
+   * schema at the channel boundary, so passing the wrong subtype for the
+   * configured provider fails at runtime.
    */
-  twimlOptions?: VoiceTwiMLOptionsConversationRelay | undefined;
+  twimlOptions?: VoiceTwiMLOptionsConversationRelay | VoiceTwiMLOptionsMediaStreams | undefined;
   /**
    * Parameters for Twilio's `calls.create()` — AMD, recording, status
    * callbacks, timeout (see {@link CallOptions}). Callback URLs auto-wire when
@@ -1132,14 +1176,54 @@ export interface InitiateVoiceConversationOptions {
   callOptions?: CallOptions | undefined;
 }
 
-export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> = z
-  .object({
-    to: z.string().min(1, 'Recipient phone number is required'),
-    websocketUrl: z.url().optional(),
-    twimlOptions: VoiceTwiMLOptionsConversationRelaySchema.optional(),
-    callOptions: CallOptionsSchema.optional(),
-  })
-  // Reject removed flat fields (welcomeGreeting, actionUrl, customParameters,
-  // conversationRelayConfig) so callers upgrading from older TAC versions get
-  // a clear error instead of having their values silently dropped.
-  .strict();
+/**
+ * Raw object form of the outbound voice options, hoisted so provider subtypes
+ * can `.extend()` it. The exported schema below is annotated
+ * `z.ZodType<InitiateVoiceConversationOptions>`, which erases the object shape
+ * and with it `.extend()` — the same reason {@link VoiceTwiMLOptionsBase} exists.
+ */
+const InitiateVoiceConversationOptionsBase = z.object({
+  to: z.string().min(1, 'Recipient phone number is required'),
+  websocketUrl: z.url().optional(),
+  twimlOptions: VoiceTwiMLOptionsConversationRelaySchema.optional(),
+  callOptions: CallOptionsSchema.optional(),
+});
+
+/**
+ * Validates outbound options for `ConversationRelayProvider`.
+ *
+ * Despite the union on {@link InitiateVoiceConversationOptions.twimlOptions},
+ * this schema accepts only the ConversationRelay subtype — use
+ * {@link InitiateVoiceConversationOptionsOpenAIRealtimeSchema} for
+ * `<Connect><Stream>`.
+ */
+export const InitiateVoiceConversationOptionsSchema: z.ZodType<InitiateVoiceConversationOptions> =
+  InitiateVoiceConversationOptionsBase
+    // Reject removed flat fields (welcomeGreeting, actionUrl, customParameters,
+    // conversationRelayConfig) so callers upgrading from older TAC versions get
+    // a clear error instead of having their values silently dropped.
+    .strict();
+
+/**
+ * Outbound options for `OpenAIRealtimeProvider`, adding a per-call
+ * `sessionConfig` on top of {@link InitiateVoiceConversationOptionsSchema}.
+ * Also narrows `twimlOptions` to {@link VoiceTwiMLOptionsMediaStreamsSchema}.
+ *
+ * Mirrors the Python SDK's `InitiateVoiceConversationOptionsOpenAIRealtime`.
+ */
+export const InitiateVoiceConversationOptionsOpenAIRealtimeSchema =
+  InitiateVoiceConversationOptionsBase.extend({
+    // Overridden to the Media Streams subtype: the inherited ConversationRelay
+    // schema is `.strict()` and would reject `name` / `statusCallback` outright,
+    // so this provider's TwiML options could never survive parsing.
+    twimlOptions: VoiceTwiMLOptionsMediaStreamsSchema.optional(),
+    /**
+     * Used verbatim in place of `OpenAIRealtimeProviderConfig.defaultSessionConfig`
+     * for this call.
+     */
+    sessionConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+  }).strict();
+
+export type InitiateVoiceConversationOptionsOpenAIRealtime = z.infer<
+  typeof InitiateVoiceConversationOptionsOpenAIRealtimeSchema
+>;
