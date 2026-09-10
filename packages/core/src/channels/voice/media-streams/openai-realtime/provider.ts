@@ -798,7 +798,7 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
 
       case 'input_audio_buffer.speech_started': {
         this.logger.debug({ conversation_id: conversationId }, 'Caller speech detected (VAD)');
-        await this.handleBargeIn(conversationId, session, call);
+        this.handleBargeIn(conversationId, session, call);
         break;
       }
 
@@ -886,14 +886,55 @@ export class OpenAIRealtimeProvider extends VoiceProvider {
     transcript.push({ role, text });
   }
 
-  // Barge-in handling arrives with the barge-in task; the dispatch above is
-  // wired to it now so the audio path is complete.
+  /**
+   * The caller started talking. Cancel any response still generating, truncate
+   * the model's memory of the last reply at the point actually heard, then
+   * clear Twilio's buffered audio so playback stops immediately.
+   *
+   * If no assistant audio has been sent since the last barge-in this is a
+   * no-op: there is nothing queued at Twilio to clear, no item id to name in a
+   * truncate, and any response still generating is left to run.
+   */
   private handleBargeIn(
-    _conversationId: ConversationId,
-    _session: ConversationSession,
-    _call: CallState
-  ): Promise<void> {
-    return Promise.resolve();
+    conversationId: ConversationId,
+    session: ConversationSession,
+    call: CallState
+  ): void {
+    const bargeIn = call.bargeIn;
+
+    const lastAssistantItem = bargeIn.lastAssistantItem;
+    if (lastAssistantItem === null) {
+      this.logger.debug(
+        { conversation_id: conversationId },
+        'Barge-in: no assistant item to interrupt'
+      );
+      return;
+    }
+
+    this.logger.debug({ conversation_id: conversationId }, 'Barge-in: truncating assistant reply');
+    if (bargeIn.responseActive) {
+      // Stop the model generating more of a reply nobody will hear — it would
+      // otherwise keep burning tokens on discarded audio. Only while a
+      // response is actually in flight: `response.cancel` with nothing to
+      // cancel is itself an error event.
+      this.modelSend(conversationId, { type: 'response.cancel' });
+      bargeIn.responseActive = false;
+    }
+    this.modelSend(conversationId, {
+      type: 'conversation.item.truncate',
+      item_id: lastAssistantItem,
+      content_index: 0,
+      // Derived from bytes actually sent for this item, so for every delta
+      // that carried an `item_id` it can never overstate the duration —
+      // `conversation.item.truncate` rejects an `audio_end_ms` past the item's
+      // real content.
+      audio_end_ms: bargeIn.currentItemAudioMs,
+    });
+    this.twilioSend(conversationId, { event: 'clear', streamSid: session.metadata.streamSid });
+
+    bargeIn.mutedItemId = lastAssistantItem;
+    bargeIn.lastAssistantItem = null;
+    bargeIn.currentItemAudioMs = 0;
   }
 
   // Tool calling arrives with the tool-calling task; see above.

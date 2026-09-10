@@ -1059,6 +1059,225 @@ describe('OpenAIRealtimeProvider audio bridge', () => {
   });
 });
 
+describe('OpenAIRealtimeProvider barge-in', () => {
+  /**
+   * A connected call with a response in flight and `deltaBytes` of assistant
+   * audio already delivered to Twilio for `item_1`.
+   */
+  async function callWithAudioSent(deltaBytes: number): Promise<{
+    provider: OpenAIRealtimeProvider;
+    modelWs: FakeSocket;
+    twilioWs: FakeSocket;
+  }> {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    modelWs.emit('message', JSON.stringify({ type: 'response.created' }));
+    sendAudioDelta(modelWs, 'item_1', deltaBytes);
+    await vi.waitFor(() => expect(mediaSent(twilioWs)).toHaveLength(1));
+
+    return { provider, modelWs, twilioWs };
+  }
+
+  /** Emit the VAD event that signals the caller has started talking. */
+  function sendSpeechStarted(modelWs: FakeSocket): void {
+    modelWs.emit('message', JSON.stringify({ type: 'input_audio_buffer.speech_started' }));
+  }
+
+  /** Emit `bytes` of assistant audio for `itemId` — 8 bytes is one millisecond. */
+  function sendAudioDelta(modelWs: FakeSocket, itemId: string, bytes: number): void {
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.output_audio.delta',
+        item_id: itemId,
+        delta: Buffer.alloc(bytes).toString('base64'),
+      })
+    );
+  }
+
+  /**
+   * Only the audio frames written to Twilio — counting every message instead
+   * would fold in the `clear` a barge-in sends on the same socket.
+   */
+  function mediaSent(twilioWs: FakeSocket): Record<string, unknown>[] {
+    return twilioWs.json().filter(message => message.event === 'media');
+  }
+
+  it('truncates at the duration derived from bytes sent', async () => {
+    const { modelWs } = await callWithAudioSent(1600);
+
+    sendSpeechStarted(modelWs);
+
+    // 1600 bytes of 8kHz u-law is exactly 200ms. A wall-clock estimate would
+    // land somewhere else entirely, and anything over the item's real content
+    // is rejected outright.
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.truncate',
+        item_id: 'item_1',
+        content_index: 0,
+        audio_end_ms: 200,
+      })
+    );
+  });
+
+  it('cancels the in-flight response and clears Twilio playback', async () => {
+    const { provider, modelWs, twilioWs } = await callWithAudioSent(1600);
+
+    sendSpeechStarted(modelWs);
+
+    await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'response.cancel' }));
+    await vi.waitFor(() =>
+      expect(twilioWs.json()).toContainEqual({ event: 'clear', streamSid: 'MZ1' })
+    );
+    expect(callState(provider, 'CA1').bargeIn.responseActive).toBe(false);
+  });
+
+  it('sends no response.cancel when no response is in flight', async () => {
+    const { modelWs } = await callWithAudioSent(1600);
+    modelWs.emit('message', JSON.stringify({ type: 'response.done', response: { output: [] } }));
+
+    sendSpeechStarted(modelWs);
+
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.truncate',
+        item_id: 'item_1',
+        content_index: 0,
+        audio_end_ms: 200,
+      })
+    );
+    // A cancel with nothing to cancel is itself an error event.
+    await drain();
+    expect(modelWs.json()).not.toContainEqual({ type: 'response.cancel' });
+  });
+
+  it('does nothing when no assistant audio has been sent', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    modelWs.emit('message', JSON.stringify({ type: 'response.created' }));
+
+    sendSpeechStarted(modelWs);
+
+    // Nothing is queued at Twilio, so there is nothing to truncate or clear —
+    // and no item id to name in a truncate.
+    await drain();
+    expect(modelWs.json()).toEqual([{ type: 'session.update', session: validSessionConfig }]);
+    expect(twilioWs.sent).toEqual([]);
+  });
+
+  it('drops further audio for an item already truncated', async () => {
+    const { modelWs, twilioWs } = await callWithAudioSent(1600);
+    sendSpeechStarted(modelWs);
+    await vi.waitFor(() =>
+      expect(twilioWs.json()).toContainEqual(expect.objectContaining({ event: 'clear' }))
+    );
+
+    sendAudioDelta(modelWs, 'item_1', 160);
+
+    // Playing more of a reply the caller already talked over would undo the
+    // clear that just stopped it.
+    await drain();
+    expect(mediaSent(twilioWs)).toHaveLength(1);
+  });
+
+  it('resumes audio for a new item after a barge-in', async () => {
+    const { modelWs, twilioWs } = await callWithAudioSent(1600);
+    sendSpeechStarted(modelWs);
+    await vi.waitFor(() =>
+      expect(twilioWs.json()).toContainEqual(expect.objectContaining({ event: 'clear' }))
+    );
+
+    modelWs.emit('message', JSON.stringify({ type: 'response.created' }));
+    sendAudioDelta(modelWs, 'item_2', 800);
+
+    // Only the item the barge-in truncated is muted: muting on "a barge-in
+    // happened at all" would leave the call silent for the rest of its life.
+    await vi.waitFor(() => expect(mediaSent(twilioWs)).toHaveLength(2));
+  });
+
+  it('is a no-op on a second barge-in with nothing newly sent', async () => {
+    const { modelWs } = await callWithAudioSent(1600);
+    sendSpeechStarted(modelWs);
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual(
+        expect.objectContaining({ type: 'conversation.item.truncate' })
+      )
+    );
+
+    sendSpeechStarted(modelWs);
+
+    // The count was reset by the first barge-in, so a second truncate would
+    // land at audio_end_ms 0 and wipe the model's memory of the whole reply —
+    // including the part the caller actually heard.
+    await drain();
+    expect(modelWs.json().filter(m => m.type === 'conversation.item.truncate')).toHaveLength(1);
+  });
+
+  it('accumulates the audio duration across deltas for one item', async () => {
+    const { modelWs, twilioWs } = await callWithAudioSent(800);
+    sendAudioDelta(modelWs, 'item_1', 800);
+    await vi.waitFor(() => expect(mediaSent(twilioWs)).toHaveLength(2));
+
+    sendSpeechStarted(modelWs);
+
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.truncate',
+        item_id: 'item_1',
+        content_index: 0,
+        audio_end_ms: 200,
+      })
+    );
+  });
+
+  it('floors each delta separately rather than the running total', async () => {
+    const { modelWs, twilioWs } = await callWithAudioSent(100);
+    sendAudioDelta(modelWs, 'item_1', 100);
+    await vi.waitFor(() => expect(mediaSent(twilioWs)).toHaveLength(2));
+
+    sendSpeechStarted(modelWs);
+
+    // 100 bytes is 12.5ms, so 24 is the only value that fits flooring each
+    // delta on its own: ceil or round would give 26, and flooring the 200-byte
+    // total instead would give 25. Understating is the safe direction —
+    // `conversation.item.truncate` rejects an `audio_end_ms` past the item's
+    // real content, so a truncate at 25 or 26 would be rejected outright.
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.truncate',
+        item_id: 'item_1',
+        content_index: 0,
+        audio_end_ms: 24,
+      })
+    );
+  });
+
+  it('restarts the audio duration count on a new item', async () => {
+    const { modelWs, twilioWs } = await callWithAudioSent(1600);
+    sendAudioDelta(modelWs, 'item_2', 800);
+    await vi.waitFor(() => expect(mediaSent(twilioWs)).toHaveLength(2));
+
+    sendSpeechStarted(modelWs);
+
+    // 100ms, not the 300ms the two items sum to: item_2 has only 800 bytes of
+    // content, so a carried-over count would overrun it.
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'conversation.item.truncate',
+        item_id: 'item_2',
+        content_index: 0,
+        audio_end_ms: 100,
+      })
+    );
+  });
+});
+
 describe('OpenAIRealtimeProvider openModelSocket', () => {
   it('resolves an open socket carrying the supplied headers', async () => {
     const server = new WebSocketServer({ port: 0 });
@@ -1087,16 +1306,19 @@ describe('OpenAIRealtimeProvider openModelSocket', () => {
     }
   });
 
-  it('rejects when nothing is listening', async () => {
-    // Bound then released, so the port is known to be free.
-    const server = new WebSocketServer({ port: 0 });
+  it('rejects when the handshake is refused', async () => {
+    // A refused upgrade rather than a closed port: the server stays bound for
+    // the whole test, so there is no window in which another process can take
+    // the port and turn the expected rejection into a connection.
+    const server = new WebSocketServer({ port: 0, verifyClient: (_info, cb) => cb(false, 401) });
     await new Promise<void>(resolve => server.once('listening', resolve));
     const { port } = server.address() as AddressInfo;
-    await new Promise<void>(resolve => server.close(() => resolve()));
     const { provider } = makeBridge();
 
-    await expect(provider.openModelSocket(`ws://127.0.0.1:${port}`, {})).rejects.toThrow(
-      /ECONNREFUSED/
-    );
+    try {
+      await expect(provider.openModelSocket(`ws://127.0.0.1:${port}`, {})).rejects.toThrow(/401/);
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 });
