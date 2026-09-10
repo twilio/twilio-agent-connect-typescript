@@ -2,26 +2,13 @@ import VoiceResponse from 'twilio/lib/twiml/VoiceResponse.js';
 import type { VoiceTwiMLOptionsConversationRelay } from '../../../types/index';
 import type { ConversationRelayProviderConfigOptions } from './config';
 import { studioVoiceHandoffUrl } from '../../../util/handoff-urls';
-import { TwiMLBuilderBase, filterUnsetValues } from '../twiml';
+import { TwiMLBuilderBase, filterUnsetValues, stringifyParameterValue } from '../twiml';
 
 /** Fixed default welcome greeting applied when no layer sets one. */
 const DEFAULT_WELCOME_GREETING = 'Hello! How can I assist you today?';
 
 /** Fields excluded from the option overlays; resolved separately. */
 const SKIP_ACTION_URL = ['actionUrl'] as const;
-
-/**
- * Stringify a custom-parameter value for emission as a `<Parameter value=...>`.
- * Parameter values are scalars in practice; objects are JSON-encoded rather
- * than producing '[object Object]'.
- */
-function stringifyParameterValue(value: unknown): string {
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  // string | number | boolean | bigint | symbol — all safely stringifiable.
-  return String(value as string | number | boolean | bigint);
-}
 
 /** Per-call inputs to {@link TwiMLBuilderConversationRelay.build}. */
 export interface BuildTwiMLInputs {

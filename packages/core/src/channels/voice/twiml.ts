@@ -16,6 +16,19 @@ export function filterUnsetValues(config: Record<string, unknown>): Record<strin
 }
 
 /**
+ * Stringify a custom-parameter value for emission as a `<Parameter value=...>`.
+ * Parameter values are scalars in practice; objects are JSON-encoded rather
+ * than producing '[object Object]'.
+ */
+export function stringifyParameterValue(value: unknown): string {
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  // string | number | boolean | bigint | symbol — all safely stringifiable.
+  return String(value as string | number | boolean | bigint);
+}
+
+/**
  * Common construction and option-layering helpers shared by every provider's
  * TwiML builder.
  *

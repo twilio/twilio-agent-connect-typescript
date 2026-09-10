@@ -65,6 +65,13 @@ export {
 } from './channels/voice/conversation-relay';
 export type { ConversationRelayProviderConfigOptions } from './channels/voice/conversation-relay';
 
+// Media Streams — the `<Connect><Stream>` TwiML shared by Media Streams providers
+export { generateStreamTwiml, TwiMLBuilderMediaStreams } from './channels/voice/media-streams';
+export type {
+  BuildStreamTwiMLInputs,
+  MediaStreamsTwiMLBuilderConfig,
+} from './channels/voice/media-streams';
+
 // Log redaction utilities
 export {
   maskPhone,

@@ -15,3 +15,6 @@ export type {
   StreamTask,
   VoiceChannelConfig,
 } from './conversation-relay';
+
+export { generateStreamTwiml, TwiMLBuilderMediaStreams } from './media-streams';
+export type { BuildStreamTwiMLInputs, MediaStreamsTwiMLBuilderConfig } from './media-streams';
