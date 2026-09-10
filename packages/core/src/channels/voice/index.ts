@@ -16,5 +16,13 @@ export type {
   VoiceChannelConfig,
 } from './conversation-relay';
 
-export { generateStreamTwiml, TwiMLBuilderMediaStreams } from './media-streams';
-export type { BuildStreamTwiMLInputs, MediaStreamsTwiMLBuilderConfig } from './media-streams';
+export {
+  generateStreamTwiml,
+  TwiMLBuilderMediaStreams,
+  OpenAIRealtimeProviderConfig,
+} from './media-streams';
+export type {
+  BuildStreamTwiMLInputs,
+  MediaStreamsTwiMLBuilderConfig,
+  OpenAIRealtimeProviderConfigOptions,
+} from './media-streams';
