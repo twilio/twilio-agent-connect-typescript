@@ -28,6 +28,7 @@ function makeChannelStub() {
   // provider captures `getLoggerInternal()` once in its constructor, and Task 5
   // asserts on `logger.info` calls.
   const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const handleErrorInternal = vi.fn();
   const channel = {
     tac: { config: { phoneNumber: '+15550009999', callEventUrl: () => null } },
     getInboundCallTwimlHandler: () => undefined,
@@ -47,8 +48,9 @@ function makeChannelStub() {
     getConversationSession: (id: string) => sessions.get(id),
     getActiveConversations: () => sessions,
     getLoggerInternal: () => logger,
+    handleErrorInternal,
   };
-  return Object.assign(channel, { createCall, logger });
+  return Object.assign(channel, { createCall, logger, handleErrorInternal });
 }
 
 function makeProvider(overrides: Record<string, unknown> = {}) {
@@ -419,5 +421,19 @@ describe('GPTLiveProvider WebSocket bridge', () => {
 
     twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
     await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+  });
+
+  it('reports a Twilio socket error to the host', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
+    const error = new Error('Twilio socket blew up');
+
+    twilioWs.emit('error', error);
+
+    // Nothing rethrows here, so routing it to the host is the only way it
+    // reaches the application at all.
+    expect(channel.handleErrorInternal).toHaveBeenCalledWith(error, { conversationId: 'CA1' });
   });
 });

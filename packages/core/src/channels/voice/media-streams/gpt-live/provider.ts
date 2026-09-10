@@ -320,10 +320,10 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     });
 
     ws.on('error', (error: Error) => {
-      this.logger.error(
-        { err: error, conversation_id: conversationId },
-        'Media stream socket error'
-      );
+      // Routed to the host, unlike the outbound-call failure above: that one is
+      // rethrown, so its caller already sees it. A socket error has no caller
+      // to rethrow to, so logging alone would hide it from the host entirely.
+      this.channel.handleErrorInternal(error, { conversationId });
     });
   }
 
