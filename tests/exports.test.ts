@@ -41,6 +41,11 @@ describe('package exports', () => {
   });
 
   it('exports the Media Streams provider surface', () => {
+    expect(tac.MediaStreamsProviderConfig).toBeDefined();
+    expect(tac.MediaStreamsOpenAIProvider).toBeDefined();
+    expect(tac.MediaStreamsOpenAIProviderConfig).toBeDefined();
+    expect(tac.MediaStreamsOpenAICallState).toBeDefined();
+    expect(tac.OPENAI_USER_AGENT).toMatch(/^twilio-agent-connect-typescript\/\d+\.\d+\.\d+/);
     expect(tac.OpenAIRealtimeProvider).toBeDefined();
     expect(tac.OpenAIRealtimeProviderConfig).toBeDefined();
     expect(tac.TwiMLBuilderMediaStreams).toBeDefined();

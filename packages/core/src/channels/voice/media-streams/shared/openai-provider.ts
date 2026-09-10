@@ -48,7 +48,7 @@ export function describeIssues(
  * `registerCall`, `connectModel`, {@link dispatchModelEvent},
  * `handleFunctionCall`, and `cleanupCall`.
  *
- * Generic over `TCallState` (bound to {@link MediaStreamsOpenAICallState}) so
+ * Generic over `TCallState` (bound to `MediaStreamsOpenAICallState`) so
  * {@link calls} keeps each subclass's own call-state shape instead of widening
  * to the shared base everywhere it's read.
  */
@@ -75,7 +75,8 @@ export abstract class MediaStreamsOpenAIProvider<
    * Session config overrides awaiting the call they belong to.
    *
    * Inbound entries are keyed by call SID (known when the TwiML webhook is
-   * answered); outbound entries by {@link SESSION_CONFIG_TOKEN_PARAM}'s token.
+   * answered); a subclass keys its outbound entries by whatever token it round
+   * trips through the stream's custom parameters.
    */
   protected readonly pendingSessionConfigs: Map<string, Record<string, unknown>>;
 
@@ -240,7 +241,8 @@ export abstract class MediaStreamsOpenAIProvider<
   // =========================================================================
 
   /**
-   * Handle one OpenAI Realtime event.
+   * Parse one frame off the model socket and hand it to
+   * {@link dispatchModelEvent}.
    *
    * A failure here is logged and skipped rather than ending the call: one
    * malformed delta must not hang up on the caller.
@@ -357,5 +359,18 @@ export abstract class MediaStreamsOpenAIProvider<
     throw new Error(
       `${this.constructor.name} produces audio via the model; it has no text sendResponse.`
     );
+  }
+
+  /**
+   * Drop this provider's Media Streams transport state on channel shutdown.
+   *
+   * Note: WebSocket connections are managed by the server and closed there.
+   * This method only cleans up internal provider state — including session
+   * config overrides stashed for calls that were placed but never connected.
+   */
+  public override shutdown(): void {
+    super.shutdown();
+    this.calls.clear();
+    this.pendingSessionConfigs.clear();
   }
 }

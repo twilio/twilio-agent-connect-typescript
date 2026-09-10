@@ -10,6 +10,7 @@ import type {
   ConversationId,
   ConversationSession,
   ProfileId,
+  TwiMLRequest,
   VoiceChannel,
 } from '@twilio/tac-core';
 import { TACTool } from '@twilio/tac-tools';
@@ -133,7 +134,10 @@ function makeChannel(): {
   return { channel, sessions };
 }
 
-function makeProbe(options?: { tools?: TACTool<never, unknown>[] }): {
+function makeProbe(options?: {
+  tools?: TACTool<never, unknown>[];
+  onInboundCallSessionConfig?: (req: TwiMLRequest) => Promise<Record<string, unknown> | null>;
+}): {
   provider: ProbeProvider;
   channel: VoiceChannel;
   sessions: Map<string, ConversationSession>;
@@ -142,6 +146,9 @@ function makeProbe(options?: { tools?: TACTool<never, unknown>[] }): {
   const config = new MediaStreamsOpenAIProviderConfig({
     openaiApiKey: 'sk-test',
     ...(options?.tools ? { tools: options.tools } : {}),
+    ...(options?.onInboundCallSessionConfig
+      ? { onInboundCallSessionConfig: options.onInboundCallSessionConfig }
+      : {}),
   });
   return { provider: new ProbeProvider(channel, tacConfig, config), channel, sessions };
 }
@@ -187,6 +194,18 @@ describe('MediaStreamsOpenAIProvider', () => {
     await expect(provider.runToolCall('CA1' as ConversationId, 'nope', '{}')).resolves.toEqual({
       error: "Unknown tool 'nope'",
     });
+  });
+
+  it('clears the state it allocated, so a subclass needs no shutdown of its own', async () => {
+    const { provider } = makeProbe({
+      onInboundCallSessionConfig: () => Promise.resolve({ instructions: 'per-call' }),
+    });
+    await provider.handleIncomingCall({ callSid: 'CA1' } as TwiMLRequest);
+    expect(provider.pendingSessionConfigCount()).toBe(1);
+
+    provider.shutdown();
+
+    expect(provider.pendingSessionConfigCount()).toBe(0);
   });
 
   it('names the concrete subclass when refusing to send text', async () => {

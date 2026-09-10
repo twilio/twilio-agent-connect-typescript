@@ -822,17 +822,4 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
     }
     await this.channel.endConversationInternal(conversationId);
   }
-
-  /**
-   * Drop this provider's Media Streams transport state on channel shutdown.
-   *
-   * Note: WebSocket connections are managed by the server and closed there.
-   * This method only cleans up internal provider state — including session
-   * config overrides stashed for calls that were placed but never connected.
-   */
-  public override shutdown(): void {
-    super.shutdown();
-    this.calls.clear();
-    this.pendingSessionConfigs.clear();
-  }
 }

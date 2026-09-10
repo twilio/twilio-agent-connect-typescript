@@ -143,9 +143,10 @@ function makeProvider(
  * A provider configured from `options`, with the API key filled in — the audio
  * bridge tests vary the provider config rather than the channel stub.
  */
-function makeBridge(
-  options: Omit<OpenAIRealtimeProviderConfigOptions, 'openaiApiKey'> = {}
-): { provider: OpenAIRealtimeProvider; stub: StubChannel } {
+function makeBridge(options: Omit<OpenAIRealtimeProviderConfigOptions, 'openaiApiKey'> = {}): {
+  provider: OpenAIRealtimeProvider;
+  stub: StubChannel;
+} {
   return makeProvider(
     undefined,
     new OpenAIRealtimeProviderConfig({ openaiApiKey: 'sk-test', ...options })
@@ -581,6 +582,19 @@ describe('OpenAIRealtimeProvider session config resolution', () => {
       { type: 'session.update', session: validSessionConfig },
       { type: 'response.create', response: { instructions: 'Greet the caller.' } },
     ]);
+  });
+
+  it('identifies the SDK to OpenAI alongside the bearer token', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+
+    await awaitSessionUpdate(modelWs);
+    const headers = vi.mocked(provider.openModelSocket).mock.calls[0]?.[1];
+    expect(headers).toEqual({
+      Authorization: 'Bearer sk-test',
+      'User-Agent': expect.stringMatching(/^twilio-agent-connect-typescript\/\d+\.\d+\.\d+/),
+    });
   });
 
   it('sends no welcome response when none is configured', async () => {
@@ -1359,9 +1373,9 @@ describe('OpenAIRealtimeProvider tool calling', () => {
 
   /** The `function_call_output` item the provider sent back, if any. */
   function functionCallOutput(modelWs: FakeSocket): Record<string, unknown> | undefined {
-    const event = modelWs
-      .json()
-      .find(sent => sent.type === 'conversation.item.create') as Record<string, unknown> | undefined;
+    const event = modelWs.json().find(sent => sent.type === 'conversation.item.create') as
+      | Record<string, unknown>
+      | undefined;
     return event?.item as Record<string, unknown> | undefined;
   }
 
