@@ -560,11 +560,21 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         );
       }
       if (requested) {
-        const acknowledged = await waitWithTimeout(call.closed, CLOSE_TIMEOUT_MS);
-        if (!acknowledged) {
+        try {
+          const acknowledged = await waitWithTimeout(call.closed, CLOSE_TIMEOUT_MS);
+          if (!acknowledged) {
+            this.logger.debug(
+              { conversation_id: conversationId },
+              'Timed out waiting for session.closed'
+            );
+          }
+        } catch (err) {
+          // Nothing rejects `call.closed` today, but an escaping throw here
+          // would strand the call in both maps: every later teardown would
+          // return early on the guard, so the session would never end.
           this.logger.debug(
-            { conversation_id: conversationId },
-            'Timed out waiting for session.closed'
+            { err, conversation_id: conversationId },
+            'Error waiting for session.closed'
           );
         }
       }

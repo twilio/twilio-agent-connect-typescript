@@ -809,6 +809,10 @@ describe('GPTLiveProvider teardown', () => {
 
     twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
     await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
+    // The socket outliving its own close request is the whole point: without
+    // the wait it would already be gone by now, and this test would pass on an
+    // implementation that never handshakes at all.
+    expect(modelWs.closed).toBe(false);
 
     modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
     await vi.waitFor(() => expect(modelWs.closed).toBe(true));
@@ -824,8 +828,15 @@ describe('GPTLiveProvider teardown', () => {
       await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
 
       twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(modelWs.json()).toContainEqual({ type: 'session.close' });
 
+      // Straddling the deadline, so the test pins the timeout rather than just
+      // observing that the socket eventually closes.
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(modelWs.closed).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
       expect(modelWs.closed).toBe(true);
     } finally {
       vi.useRealTimers();
@@ -833,20 +844,24 @@ describe('GPTLiveProvider teardown', () => {
   });
 
   it('sends session.close only once when stop and close both fire', async () => {
-    const { provider } = makeProvider();
+    const { provider, channel } = makeProvider();
     const modelWs = new FakeSocket();
     const twilioWs = startCall(provider, modelWs);
     await vi.waitFor(() => expect(modelWs.sent.length).toBeGreaterThan(0));
 
     twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
     await vi.waitFor(() => expect(modelWs.json()).toContainEqual({ type: 'session.close' }));
-    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
-    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
 
+    // Fired mid-handshake, while the call is still tracked so the second
+    // teardown can only be stopped by the re-entrancy guard. After the
+    // handshake it would hit the untracked-call check instead and prove nothing.
     twilioWs.emit('close');
+
+    modelWs.emit('message', JSON.stringify({ type: 'session.closed' }));
     await vi.waitFor(() => expect(modelWs.closed).toBe(true));
 
     const closes = modelWs.json().filter(m => m.type === 'session.close');
     expect(closes).toHaveLength(1);
+    expect(channel.getActiveConversations().has('CA1')).toBe(false);
   });
 });
