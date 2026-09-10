@@ -45,12 +45,12 @@ describe('package exports', () => {
     expect(tac.MediaStreamsOpenAIProvider).toBeDefined();
     expect(tac.MediaStreamsOpenAIProviderConfig).toBeDefined();
     expect(tac.MediaStreamsOpenAICallState).toBeDefined();
-    expect(tac.OPENAI_USER_AGENT).toMatch(/^twilio-agent-connect-typescript\/\d+\.\d+\.\d+/);
+    expect(tac.OPENAI_USER_AGENT).toMatch(/^twilio-agent-connect\/TypeScript \d+\.\d+\.\d+/);
     expect(tac.OpenAIRealtimeProvider).toBeDefined();
     expect(tac.OpenAIRealtimeProviderConfig).toBeDefined();
     expect(tac.TwiMLBuilderMediaStreams).toBeDefined();
     expect(tac.generateStreamTwiml).toBeDefined();
-    expect(tac.TWILIO_MEDIA_STREAM_AUDIO_FORMAT).toEqual({ type: 'audio/pcmu' });
+    expect(tac.TWILIO_AUDIO_FORMAT_FOR_REALTIME).toEqual({ type: 'audio/pcmu' });
   });
 });
 

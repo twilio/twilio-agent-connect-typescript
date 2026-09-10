@@ -26,7 +26,7 @@ export {
   OPENAI_USER_AGENT,
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
-  TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
+  TWILIO_AUDIO_FORMAT_FOR_REALTIME,
 } from './media-streams';
 export type {
   BuildStreamTwiMLInputs,

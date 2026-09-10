@@ -19,9 +19,12 @@ import type { MediaStreamsOpenAICallState } from './state';
 
 /**
  * Identifies this SDK to OpenAI on every WebSocket connection, per OpenAI's
- * requested User-Agent pattern: [Company/Library name]/[Version].
+ * requested User-Agent pattern: [Company/Library name]/[Language] [Version].
+ *
+ * Deliberately unlike the Twilio-facing User-Agent in `clients/base.ts`, which
+ * follows Twilio's own convention instead.
  */
-export const OPENAI_USER_AGENT = `twilio-agent-connect-typescript/${packageJson.version}`;
+export const OPENAI_USER_AGENT = `twilio-agent-connect/TypeScript ${packageJson.version}`;
 
 /**
  * Render Zod validation issues as a compact `path: message` list, so a thrown

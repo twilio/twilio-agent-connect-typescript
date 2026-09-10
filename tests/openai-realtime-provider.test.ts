@@ -593,7 +593,7 @@ describe('OpenAIRealtimeProvider session config resolution', () => {
     const headers = vi.mocked(provider.openModelSocket).mock.calls[0]?.[1];
     expect(headers).toEqual({
       Authorization: 'Bearer sk-test',
-      'User-Agent': expect.stringMatching(/^twilio-agent-connect-typescript\/\d+\.\d+\.\d+/),
+      'User-Agent': expect.stringMatching(/^twilio-agent-connect\/TypeScript \d+\.\d+\.\d+/),
     });
   });
 

@@ -46,7 +46,7 @@ import {
   TACServer,
   VoiceChannel,
   OpenAIRealtimeProviderConfig,
-  TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
+  TWILIO_AUDIO_FORMAT_FOR_REALTIME,
   defineTool,
 } from 'twilio-agent-connect';
 import type { TwiMLRequest } from 'twilio-agent-connect';
@@ -87,11 +87,11 @@ const DEFAULT_SESSION_CONFIG: Record<string, unknown> = {
     'lists; your words will be spoken aloud.',
   audio: {
     input: {
-      format: TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
+      format: TWILIO_AUDIO_FORMAT_FOR_REALTIME,
       turn_detection: { type: 'semantic_vad', eagerness: 'high' },
       transcription: { model: 'gpt-live-transcribe' },
     },
-    output: { format: TWILIO_MEDIA_STREAM_AUDIO_FORMAT, voice: 'marin' },
+    output: { format: TWILIO_AUDIO_FORMAT_FOR_REALTIME, voice: 'marin' },
   },
   // Declares the tool to the model. Registering it on `tools` below is what
   // makes it *executable* — both are required, and neither implies the other.

@@ -35,14 +35,12 @@ const SESSION_CONFIG_TOKEN_PARAM = '_tac_session_config_token';
 /**
  * The audio format both directions of a call must use.
  *
- * Twilio Media Streams always sends and expects 8kHz G.711 u-law — per
- * https://www.twilio.com/docs/voice/media-streams/websocket-messages this is
- * not a default or a provider choice, it is the only format a bidirectional
- * `<Stream>` supports. There is no `rate` field: OpenAI's
- * `session.audio.*.format` schema rejects it as unknown, since g711 is
- * inherently fixed-rate.
+ * Twilio Media Streams always sends and expects 8kHz G.711 u-law — see
+ * https://www.twilio.com/docs/voice/media-streams/websocket-messages. Not
+ * configurable. No `rate` key: Realtime's `session.audio.*.format` schema
+ * rejects it as unknown, since g711 is inherently fixed-rate.
  */
-export const TWILIO_MEDIA_STREAM_AUDIO_FORMAT = { type: 'audio/pcmu' } as const;
+export const TWILIO_AUDIO_FORMAT_FOR_REALTIME = { type: 'audio/pcmu' } as const;
 
 /**
  * G.711 u-law at 8kHz is 1 byte per sample, 8000 samples/sec — a fixed,
@@ -52,7 +50,7 @@ export const TWILIO_MEDIA_STREAM_AUDIO_FORMAT = { type: 'audio/pcmu' } as const;
 const PCMU_BYTES_PER_MS = 8;
 
 /**
- * Whether `value` is exactly {@link TWILIO_MEDIA_STREAM_AUDIO_FORMAT}.
+ * Whether `value` is exactly {@link TWILIO_AUDIO_FORMAT_FOR_REALTIME}.
  *
  * Compared field by field rather than by serializing both sides, so key order
  * in a caller's session config can't decide the answer.
@@ -61,7 +59,7 @@ function isTwilioMediaStreamAudioFormat(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
-  const expected: Record<string, unknown> = TWILIO_MEDIA_STREAM_AUDIO_FORMAT;
+  const expected: Record<string, unknown> = TWILIO_AUDIO_FORMAT_FOR_REALTIME;
   const actual = value as Record<string, unknown>;
   const keys = Object.keys(actual);
   return (
@@ -500,9 +498,10 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
       if (!isTwilioMediaStreamAudioFormat(format)) {
         throw new Error(
           `sessionConfig for call ${conversationId} has audio.${direction}.format=` +
-            `${JSON.stringify(format)} — Twilio Media Streams always sends and expects ` +
-            `${JSON.stringify(TWILIO_MEDIA_STREAM_AUDIO_FORMAT)}, and that isn't configurable. ` +
-            `Set audio.${direction}.format to TWILIO_MEDIA_STREAM_AUDIO_FORMAT.`
+            `${JSON.stringify(format)}, expected ` +
+            `${JSON.stringify(TWILIO_AUDIO_FORMAT_FOR_REALTIME)}. Twilio Media Streams is ` +
+            `always 8kHz G.711 u-law; set audio.${direction}.format to ` +
+            `TWILIO_AUDIO_FORMAT_FOR_REALTIME.`
         );
       }
     }

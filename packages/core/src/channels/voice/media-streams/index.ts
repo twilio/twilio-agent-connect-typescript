@@ -19,6 +19,6 @@ export type { MediaStreamsOpenAIProviderConfigOptions } from './shared';
 export {
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
-  TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
+  TWILIO_AUDIO_FORMAT_FOR_REALTIME,
 } from './openai-realtime';
 export type { OpenAIRealtimeProviderConfigOptions } from './openai-realtime';
