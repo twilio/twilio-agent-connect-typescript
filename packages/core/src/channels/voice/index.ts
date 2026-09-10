@@ -20,6 +20,8 @@ export {
   generateStreamTwiml,
   TwiMLBuilderMediaStreams,
   MediaStreamsProviderConfig,
+  MediaStreamsOpenAIProviderConfig,
+  MediaStreamsOpenAICallState,
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
   TWILIO_MEDIA_STREAM_AUDIO_FORMAT,
@@ -28,5 +30,6 @@ export type {
   BuildStreamTwiMLInputs,
   MediaStreamsTwiMLBuilderConfig,
   MediaStreamsProviderConfigOptions,
+  MediaStreamsOpenAIProviderConfigOptions,
   OpenAIRealtimeProviderConfigOptions,
 } from './media-streams';

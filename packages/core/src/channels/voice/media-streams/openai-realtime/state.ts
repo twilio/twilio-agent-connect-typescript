@@ -1,4 +1,4 @@
-import type { WebSocket } from 'ws';
+import { MediaStreamsOpenAICallState } from '../shared/state';
 
 /**
  * Per-call barge-in bookkeeping.
@@ -31,23 +31,11 @@ export class BargeInState {
 
 /**
  * Per-call bookkeeping the OpenAI Realtime provider needs beyond
- * `ConversationSession`.
- *
- * Both legs of one call's audio bridge — the Twilio-facing socket and the
- * OpenAI Realtime socket — live here together, rather than in two parallel maps
- * keyed by conversation id that could drift out of sync.
- *
- * `streamSid` and `transcript` live on `ConversationSession.metadata` instead,
- * not here — this map is deleted before `onConversationEnded` fires, so
- * anything a handler needs to read after the call ends must survive on the
- * session, not in here.
+ * `ConversationSession` and the sockets its base class holds.
  *
  * @internal
  */
-export class CallState {
-  twilioWs: WebSocket | null = null;
-  modelWs: WebSocket | null = null;
-
+export class CallState extends MediaStreamsOpenAICallState {
   /**
    * Resolves `true` once this call's OpenAI Realtime socket is open and its
    * session config has been sent, or `false` if that handshake failed. `null`

@@ -4,6 +4,13 @@ export type { BuildStreamTwiMLInputs, MediaStreamsTwiMLBuilderConfig } from './t
 export { MediaStreamsProviderConfig } from './config';
 export type { MediaStreamsProviderConfigOptions } from './config';
 
+// `MediaStreamsOpenAICallState` is exported despite being `@internal`: a
+// provider living outside this package reaches it only through
+// `@twilio/tac-core`, and its own call state must extend it. `@internal` keeps
+// it off the docs site.
+export { MediaStreamsOpenAIProviderConfig, MediaStreamsOpenAICallState } from './shared';
+export type { MediaStreamsOpenAIProviderConfigOptions } from './shared';
+
 export {
   OpenAIRealtimeProvider,
   OpenAIRealtimeProviderConfig,
