@@ -1,4 +1,7 @@
+import { EventEmitter } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import { describe, it, expect, vi } from 'vitest';
+import { WebSocketServer, type WebSocket } from 'ws';
 // Imported from the package root on purpose: this also proves the barrel export
 // chain re-exports the provider.
 import { OpenAIRealtimeProvider, OpenAIRealtimeProviderConfig } from '@twilio/tac-core';
@@ -6,6 +9,7 @@ import type {
   ConversationId,
   ConversationSession,
   InboundCallTwimlHandler,
+  OpenAIRealtimeProviderConfigOptions,
   ProfileId,
   VoiceChannel,
   VoiceTwiMLOptions,
@@ -13,6 +17,7 @@ import type {
 import { TACTool } from '@twilio/tac-tools';
 import { TACConfig } from '../packages/core/src/lib/config';
 import type { Logger } from '../packages/core/src/lib/logger';
+import type { CallState } from '../packages/core/src/channels/voice/media-streams/openai-realtime/state';
 
 const noopLogger = {
   debug: () => {},
@@ -117,6 +122,140 @@ function makeProvider(
 ): { provider: OpenAIRealtimeProvider; stub: StubChannel } {
   const stub = makeChannel(channelOptions);
   return { provider: new OpenAIRealtimeProvider(stub.channel, providerTacConfig, config), stub };
+}
+
+/**
+ * A provider configured from `options`, with the API key filled in — the audio
+ * bridge tests vary the provider config rather than the channel stub.
+ */
+function makeBridge(
+  options: Omit<OpenAIRealtimeProviderConfigOptions, 'openaiApiKey'> = {}
+): { provider: OpenAIRealtimeProvider; stub: StubChannel } {
+  return makeProvider(
+    undefined,
+    new OpenAIRealtimeProviderConfig({ openaiApiKey: 'sk-test', ...options })
+  );
+}
+
+/** The only audio format a bidirectional Twilio `<Stream>` supports. */
+const validSessionConfig = {
+  model: 'gpt-realtime',
+  audio: {
+    input: { format: { type: 'audio/pcmu' } },
+    output: { format: { type: 'audio/pcmu' } },
+  },
+};
+
+/**
+ * Stands in for either leg of the bridge: the Twilio-facing socket or the
+ * OpenAI Realtime one. `close()` emits `close` synchronously, as `ws` does once
+ * the peer has gone away.
+ */
+class FakeSocket extends EventEmitter {
+  public sent: string[] = [];
+  public closed = false;
+
+  public send(data: string): void {
+    this.sent.push(data);
+  }
+
+  public close(): void {
+    this.closed = true;
+    this.emit('close');
+  }
+
+  /** Everything written to this socket, parsed. */
+  public json(): Record<string, unknown>[] {
+    return this.sent.map(s => JSON.parse(s) as Record<string, unknown>);
+  }
+}
+
+/**
+ * Drive a provider through Twilio's `start` event with `modelWs` standing in
+ * for the OpenAI socket, and hand back the Twilio-facing socket.
+ */
+function startCall(
+  provider: OpenAIRealtimeProvider,
+  modelWs: FakeSocket,
+  options?: { customParameters?: Record<string, string>; callSid?: string }
+): FakeSocket {
+  // The one seam keeping these tests off the network.
+  vi.spyOn(provider, 'openModelSocket').mockResolvedValue(modelWs as unknown as WebSocket);
+  const twilioWs = new FakeSocket();
+  provider.handleWebSocket(twilioWs as unknown as WebSocket);
+  twilioWs.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        event: 'start',
+        start: {
+          streamSid: 'MZ1',
+          callSid: options?.callSid ?? 'CA1',
+          customParameters: options?.customParameters ?? {},
+        },
+      })
+    )
+  );
+  return twilioWs;
+}
+
+/**
+ * Like {@link startCall}, but the model handshake stays pending until this
+ * test settles it — so `media` frames can be emitted while the OpenAI socket
+ * is still connecting, which is what Twilio really does.
+ */
+function startCallWithPendingHandshake(provider: OpenAIRealtimeProvider): {
+  twilioWs: FakeSocket;
+  openModelSocket: (modelWs: FakeSocket) => void;
+  failModelSocket: (error: Error) => void;
+} {
+  let openModelSocket!: (modelWs: FakeSocket) => void;
+  let failModelSocket!: (error: Error) => void;
+  const handshake = new Promise<WebSocket>((resolve, reject) => {
+    openModelSocket = modelWs => {
+      resolve(modelWs as unknown as WebSocket);
+    };
+    failModelSocket = reject;
+  });
+  vi.spyOn(provider, 'openModelSocket').mockReturnValue(handshake);
+
+  const twilioWs = new FakeSocket();
+  provider.handleWebSocket(twilioWs as unknown as WebSocket);
+  twilioWs.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        event: 'start',
+        start: { streamSid: 'MZ1', callSid: 'CA1', customParameters: {} },
+      })
+    )
+  );
+  return { twilioWs, openModelSocket, failModelSocket };
+}
+
+/** Emit one Twilio `media` frame carrying `payload`. */
+function sendMedia(twilioWs: FakeSocket, payload: string): void {
+  twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'media', media: { payload } })));
+}
+
+/**
+ * The provider's private per-call state — barge-in bookkeeping has no public
+ * accessor, and the point of these assertions is what the dispatcher recorded.
+ */
+function callState(provider: OpenAIRealtimeProvider, conversationId: string): CallState {
+  const call = (provider as unknown as { calls: Map<string, CallState> }).calls.get(conversationId);
+  expect(call).toBeDefined();
+  return call as CallState;
+}
+
+/** Let every already-queued microtask and immediate run to completion. */
+function drain(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+/** Wait until the session config has reached the model socket. */
+async function awaitSessionUpdate(modelWs: FakeSocket): Promise<void> {
+  await vi.waitFor(() => expect(modelWs.json()[0]?.type).toBe('session.update'));
 }
 
 describe('OpenAIRealtimeProvider inbound', () => {
@@ -358,5 +497,606 @@ describe('OpenAIRealtimeProvider accessors', () => {
     // Copied, not aliased: a caller must not be able to mutate the session's
     // live transcript through the returned array.
     expect(result).not.toBe(session.metadata.transcript);
+  });
+});
+
+describe('OpenAIRealtimeProvider session config resolution', () => {
+  it('rejects a call with no session config anywhere', async () => {
+    const { provider } = makeBridge();
+    await expect(provider.connectModel('CA1' as ConversationId)).rejects.toThrow(
+      /No sessionConfig available for call CA1/
+    );
+  });
+
+  it('requires a model field on the session config', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: { audio: {} } });
+    await expect(provider.connectModel('CA1' as ConversationId)).rejects.toThrow(
+      /must include a 'model' field/
+    );
+  });
+
+  it('rejects an input audio format Twilio cannot send', async () => {
+    const { provider } = makeBridge({
+      defaultSessionConfig: {
+        model: 'gpt-realtime',
+        audio: {
+          input: { format: { type: 'audio/pcm' } },
+          output: { format: { type: 'audio/pcmu' } },
+        },
+      },
+    });
+    // Names the offending direction and the value that was actually set, so a
+    // developer doesn't have to guess which half of the config is wrong.
+    await expect(provider.connectModel('CA1' as ConversationId)).rejects.toThrow(
+      /audio\.input\.format=\{"type":"audio\/pcm"\}/
+    );
+    await expect(provider.connectModel('CA1' as ConversationId)).rejects.toThrow(/audio\/pcmu/);
+  });
+
+  it('rejects an output audio format Twilio cannot play', async () => {
+    const { provider } = makeBridge({
+      defaultSessionConfig: {
+        model: 'gpt-realtime',
+        audio: { input: { format: { type: 'audio/pcmu' } }, output: {} },
+      },
+    });
+    // Pins the second loop iteration: a valid input must not mask a bad output.
+    await expect(provider.connectModel('CA1' as ConversationId)).rejects.toThrow(
+      /audio\.output\.format=undefined/
+    );
+  });
+
+  it('sends the session config, then a welcome response when configured', async () => {
+    const { provider } = makeBridge({
+      defaultSessionConfig: validSessionConfig,
+      welcomeGreetingResponse: { instructions: 'Greet the caller.' },
+    });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+
+    await vi.waitFor(() => expect(modelWs.json()).toHaveLength(2));
+    expect(modelWs.json()).toEqual([
+      { type: 'session.update', session: validSessionConfig },
+      { type: 'response.create', response: { instructions: 'Greet the caller.' } },
+    ]);
+  });
+
+  it('sends no welcome response when none is configured', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+
+    await awaitSessionUpdate(modelWs);
+    expect(modelWs.json().map(m => m.type)).toEqual(['session.update']);
+  });
+
+  it('prefers the session config stashed for this inbound call', async () => {
+    const perCall = { ...validSessionConfig, instructions: 'per-call' };
+    const { provider } = makeBridge({
+      defaultSessionConfig: validSessionConfig,
+      onInboundCallSessionConfig: () => Promise.resolve(perCall),
+    });
+    await provider.handleIncomingCall({ callSid: 'CA1', extra: {} });
+
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+
+    await awaitSessionUpdate(modelWs);
+    expect(modelWs.json()[0]?.session).toEqual(perCall);
+    // Popped, not left behind for the next call on this provider.
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
+
+  it('re-keys an outbound session config from its token to the call SID', async () => {
+    const perCall = { ...validSessionConfig, instructions: 'outbound-only' };
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    await provider.initiateOutboundConversation({ to: '+15559998888', sessionConfig: perCall });
+    const twiml = (stub.callsCreate.mock.calls[0]?.[0] as Record<string, string>).twiml ?? '';
+    const token = /<Parameter name="_tac_session_config_token" value="([^"]+)"/.exec(twiml)?.[1];
+    expect(token).toBeDefined();
+
+    const modelWs = new FakeSocket();
+    // Twilio replays the <Parameter> back as a customParameter on `start`.
+    startCall(provider, modelWs, {
+      customParameters: { _tac_session_config_token: token as string },
+    });
+
+    await awaitSessionUpdate(modelWs);
+    expect(modelWs.json()[0]?.session).toEqual(perCall);
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
+});
+
+describe('OpenAIRealtimeProvider audio bridge', () => {
+  it('tracks the call on the session when the stream starts', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    const session = stub.sessions.get('CA1');
+    expect(session?.callSid).toBe('CA1');
+    expect(session?.metadata.streamSid).toBe('MZ1');
+    expect(session?.metadata.transcript).toEqual([]);
+    expect(provider.getWebSocket('CA1' as ConversationId)).toBe(twilioWs);
+  });
+
+  it('forwards caller audio to the model as input_audio_buffer.append', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    twilioWs.emit(
+      'message',
+      Buffer.from(JSON.stringify({ event: 'media', media: { payload: 'BASE64AUDIO' } }))
+    );
+
+    await vi.waitFor(() =>
+      expect(modelWs.json()).toContainEqual({
+        type: 'input_audio_buffer.append',
+        audio: 'BASE64AUDIO',
+      })
+    );
+  });
+
+  it('queues caller audio that arrives while the model is still connecting', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const { twilioWs, openModelSocket } = startCallWithPendingHandshake(provider);
+
+    // Twilio never waits for the OpenAI handshake: a caller who says "Hello?"
+    // the instant the call connects is already streaming audio by now.
+    sendMedia(twilioWs, 'FRAME_1');
+    sendMedia(twilioWs, 'FRAME_2');
+    sendMedia(twilioWs, 'FRAME_3');
+    expect(modelWs.sent).toEqual([]);
+
+    openModelSocket(modelWs);
+
+    // None of the three were dropped, and they arrive in the order they were
+    // spoken — behind the session config, which the handshake sends first.
+    await vi.waitFor(() => expect(modelWs.json()).toHaveLength(4));
+    expect(modelWs.json()).toEqual([
+      { type: 'session.update', session: validSessionConfig },
+      { type: 'input_audio_buffer.append', audio: 'FRAME_1' },
+      { type: 'input_audio_buffer.append', audio: 'FRAME_2' },
+      { type: 'input_audio_buffer.append', audio: 'FRAME_3' },
+    ]);
+  });
+
+  it('drops queued caller audio quietly when the model handshake fails', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const unhandled: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      const { twilioWs, failModelSocket } = startCallWithPendingHandshake(provider);
+      sendMedia(twilioWs, 'FRAME_1');
+      sendMedia(twilioWs, 'FRAME_2');
+
+      failModelSocket(new Error('OpenAI refused the handshake'));
+
+      // The `start` path owns this failure and ends the call.
+      await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+      await vi.waitFor(() => expect(stub.ended).toEqual(['CA1']));
+      // An unhandledRejection is reported a macrotask later, so give it a turn
+      // before asserting there wasn't one.
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(modelWs.sent).toEqual([]);
+      expect(unhandled).toEqual([]);
+      // The queued frames must not each re-report the one failure the `start`
+      // path already handled.
+      expect(logError).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'Unhandled error in Media Stream message handler'
+      );
+    } finally {
+      logError.mockRestore();
+      process.off('unhandledRejection', onUnhandledRejection);
+    }
+  });
+
+  it('forwards model audio back to Twilio tagged with the streamSid', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const delta = Buffer.alloc(160).toString('base64');
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'response.output_audio.delta', item_id: 'item_1', delta })
+    );
+
+    await vi.waitFor(() =>
+      expect(twilioWs.json()).toContainEqual({
+        event: 'media',
+        streamSid: 'MZ1',
+        media: { payload: delta },
+      })
+    );
+  });
+
+  it('keeps the call alive when one model event is malformed', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const delta = Buffer.alloc(160).toString('base64');
+
+    modelWs.emit('message', 'not json at all');
+    modelWs.emit(
+      'message',
+      JSON.stringify({ type: 'response.output_audio.delta', item_id: 'item_1', delta })
+    );
+
+    await vi.waitFor(() => expect(twilioWs.json()).toHaveLength(1));
+    expect(twilioWs.closed).toBe(false);
+    expect(modelWs.closed).toBe(false);
+  });
+
+  it('accumulates both sides of the conversation on the transcript', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'I need to check my order',
+      })
+    );
+    modelWs.emit(
+      'message',
+      JSON.stringify({
+        type: 'response.done',
+        response: {
+          output: [
+            { role: 'assistant', content: [{ transcript: 'Sure, what is the order number?' }] },
+            // Not an assistant turn: a tool call carries no spoken transcript.
+            { role: 'tool', content: [{ transcript: 'ignored' }] },
+          ],
+        },
+      })
+    );
+
+    await vi.waitFor(() =>
+      expect(provider.getTranscript('CA1' as ConversationId)).toEqual([
+        { role: 'user', text: 'I need to check my order' },
+        { role: 'assistant', text: 'Sure, what is the order number?' },
+      ])
+    );
+  });
+
+  it('tears down the Twilio socket when the model socket closes first', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const logInfo = vi.spyOn(noopLogger, 'info');
+
+    try {
+      // The caller must not be left connected to silence.
+      modelWs.close();
+
+      await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+      // Cleanup is idempotent: the Twilio close it triggers must not end the
+      // conversation a second time.
+      await vi.waitFor(() => expect(stub.ended).toEqual(['CA1']));
+      expect(provider.getWebSocket('CA1' as ConversationId)).toBeNull();
+      // The one case where the model really did go away on its own.
+      expect(logInfo).toHaveBeenCalledWith(expect.anything(), 'Model connection ended');
+    } finally {
+      logInfo.mockRestore();
+    }
+  });
+
+  it('tears down the Twilio socket when the model connection fails', async () => {
+    // No defaultSessionConfig, so connectModel throws before opening anything.
+    const { provider, stub } = makeBridge();
+    const twilioWs = new FakeSocket();
+    provider.handleWebSocket(twilioWs as unknown as WebSocket);
+    twilioWs.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          event: 'start',
+          start: { streamSid: 'MZ1', callSid: 'CA1', customParameters: {} },
+        })
+      )
+    );
+
+    await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+    await vi.waitFor(() => expect(stub.ended).toEqual(['CA1']));
+  });
+
+  it('closes the model socket when Twilio sends stop', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const logInfo = vi.spyOn(noopLogger, 'info');
+
+    try {
+      twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+
+      await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+      await vi.waitFor(() => expect(stub.ended).toEqual(['CA1']));
+      // An event handler has no endpoint to return from, so the caller's leg
+      // only drops if `stop` closes it explicitly.
+      await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+      // The model socket closed because cleanup closed it, not because the
+      // model went away — reporting that on an ordinary hangup is misleading.
+      expect(logInfo).not.toHaveBeenCalledWith(expect.anything(), 'Model connection ended');
+    } finally {
+      logInfo.mockRestore();
+    }
+  });
+
+  it('cleans up when the Twilio socket closes without a stop event', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    twilioWs.close();
+
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+    await vi.waitFor(() => expect(stub.ended).toEqual(['CA1']));
+    expect(provider.getWebSocket('CA1' as ConversationId)).toBeNull();
+  });
+
+  it('drops caller audio once the call has been cleaned up', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    twilioWs.emit('message', Buffer.from(JSON.stringify({ event: 'stop' })));
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+    const sentBefore = modelWs.sent.length;
+
+    twilioWs.emit(
+      'message',
+      Buffer.from(JSON.stringify({ event: 'media', media: { payload: 'BASE64AUDIO' } }))
+    );
+
+    // A drain, not a waitFor: waitFor passes on its first attempt, so it would
+    // also pass against an implementation that sent the frame a tick later.
+    await drain();
+    expect(modelWs.sent).toHaveLength(sentBefore);
+  });
+
+  it('closes the model socket when the call ended during the handshake', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const { twilioWs, openModelSocket } = startCallWithPendingHandshake(provider);
+    const modelWs = new FakeSocket();
+
+    // The caller hangs up while OpenAI is still completing its handshake.
+    twilioWs.close();
+    await vi.waitFor(() => expect(provider.getWebSocket('CA1' as ConversationId)).toBeNull());
+
+    openModelSocket(modelWs);
+
+    // Nothing tracks this socket now, so it must not be left open.
+    await vi.waitFor(() => expect(modelWs.closed).toBe(true));
+    expect(modelWs.sent).toEqual([]);
+  });
+
+  it('tears down the Twilio socket when the model socket errors', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    // An error, not a close: `ws` reports a broken socket either way.
+    modelWs.emit('error', new Error('model socket blew up'));
+
+    await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
+    await vi.waitFor(() => expect(stub.ended).toEqual(['CA1']));
+    expect(provider.getWebSocket('CA1' as ConversationId)).toBeNull();
+  });
+
+  it('reports a Twilio socket error to the host', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    const twilioWs = startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const error = new Error('Twilio socket blew up');
+
+    twilioWs.emit('error', error);
+
+    // Nothing rethrows here, so routing it to the host is the only way it
+    // reaches the application at all.
+    expect(stub.errors).toEqual([error]);
+  });
+
+  it('handles one model event to completion before starting the next', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstInFlight = new Promise<void>(resolve => {
+      releaseFirst = resolve;
+    });
+    // Stands in for the awaited work barge-in and tool calling will do: today
+    // every dispatch path is synchronous, so nothing else would interleave.
+    const dispatch = vi
+      .spyOn(
+        provider as unknown as {
+          dispatchModelEvent: (
+            conversationId: ConversationId,
+            session: ConversationSession,
+            event: Record<string, unknown>
+          ) => Promise<void>;
+        },
+        'dispatchModelEvent'
+      )
+      .mockImplementation(async (_conversationId, _session, event) => {
+        const type = event.type as string;
+        order.push(`start:${type}`);
+        if (type === 'slow') {
+          await firstInFlight;
+        }
+        order.push(`end:${type}`);
+      });
+
+    try {
+      modelWs.emit('message', JSON.stringify({ type: 'slow' }));
+      modelWs.emit('message', JSON.stringify({ type: 'fast' }));
+      await drain();
+
+      // The second event must not begin while the first is still awaiting.
+      expect(order).toEqual(['start:slow']);
+
+      releaseFirst();
+
+      await vi.waitFor(() =>
+        expect(order).toEqual(['start:slow', 'end:slow', 'start:fast', 'end:fast'])
+      );
+    } finally {
+      dispatch.mockRestore();
+    }
+  });
+
+  it('marks a response active on response.created', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    expect(callState(provider, 'CA1').bargeIn.responseActive).toBe(false);
+
+    modelWs.emit('message', JSON.stringify({ type: 'response.created' }));
+
+    // Barge-in reads this to decide whether a `response.cancel` has anything
+    // to cancel.
+    await vi.waitFor(() => expect(callState(provider, 'CA1').bargeIn.responseActive).toBe(true));
+  });
+
+  it('logs a response.cancel that raced response.done at debug', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const logDebug = vi.spyOn(noopLogger, 'debug');
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      modelWs.emit(
+        'message',
+        JSON.stringify({ type: 'error', error: { code: 'response_cancel_not_active' } })
+      );
+
+      await vi.waitFor(() =>
+        expect(logDebug).toHaveBeenCalledWith(
+          expect.objectContaining({ error: { code: 'response_cancel_not_active' } }),
+          'response.cancel raced response.done'
+        )
+      );
+      // A benign race must not be reported as a fault.
+      expect(logError).not.toHaveBeenCalled();
+    } finally {
+      logDebug.mockRestore();
+      logError.mockRestore();
+    }
+  });
+
+  it('logs any other model error event at error', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      modelWs.emit(
+        'message',
+        JSON.stringify({ type: 'error', error: { code: 'invalid_request_error' } })
+      );
+
+      await vi.waitFor(() =>
+        expect(logError).toHaveBeenCalledWith(
+          expect.objectContaining({ error: { code: 'invalid_request_error' } }),
+          'OpenAI Realtime error event'
+        )
+      );
+      // One bad event is not a hangup.
+      expect(provider.getWebSocket('CA1' as ConversationId)).not.toBeNull();
+    } finally {
+      logError.mockRestore();
+    }
+  });
+
+  it('clears tracked calls and pending session configs on shutdown', async () => {
+    const { provider } = makeBridge({
+      defaultSessionConfig: validSessionConfig,
+      onInboundCallSessionConfig: () => Promise.resolve({ instructions: 'never connects' }),
+    });
+    // A call Twilio never connects — its stashed override has nothing left to
+    // drain it.
+    await provider.handleIncomingCall({ callSid: 'CA-unanswered', extra: {} });
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs);
+    await awaitSessionUpdate(modelWs);
+    expect(provider.getWebSocket('CA1' as ConversationId)).not.toBeNull();
+    expect(provider.pendingSessionConfigCount()).toBe(1);
+
+    provider.shutdown();
+
+    expect(provider.getWebSocket('CA1' as ConversationId)).toBeNull();
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
+});
+
+describe('OpenAIRealtimeProvider openModelSocket', () => {
+  it('resolves an open socket carrying the supplied headers', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    await new Promise<void>(resolve => server.once('listening', resolve));
+    let receivedAuth: string | undefined;
+    server.on('connection', (_socket, request) => {
+      receivedAuth = request.headers.authorization;
+    });
+    const { port } = server.address() as AddressInfo;
+    const { provider } = makeBridge();
+
+    const socket = await provider.openModelSocket(`ws://127.0.0.1:${port}`, {
+      Authorization: 'Bearer sk-test',
+    });
+
+    try {
+      expect(socket.readyState).toBe(socket.OPEN);
+      expect(receivedAuth).toBe('Bearer sk-test');
+      // Node throws on a listener-less 'error' emission and `ws` emits one for
+      // any frame its receiver rejects, so a socket handed back bare could take
+      // the process down before its caller wires anything up.
+      expect(socket.listenerCount('error')).toBeGreaterThan(0);
+    } finally {
+      socket.close();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('rejects when nothing is listening', async () => {
+    // Bound then released, so the port is known to be free.
+    const server = new WebSocketServer({ port: 0 });
+    await new Promise<void>(resolve => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    const { provider } = makeBridge();
+
+    await expect(provider.openModelSocket(`ws://127.0.0.1:${port}`, {})).rejects.toThrow(
+      /ECONNREFUSED/
+    );
   });
 });
