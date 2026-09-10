@@ -1228,12 +1228,25 @@ export type InitiateVoiceConversationOptionsOpenAIRealtime = z.infer<
   typeof InitiateVoiceConversationOptionsOpenAIRealtimeSchema
 >;
 
-/** Outbound options for `GPTLiveProvider`, adding a per-call `sessionConfig`. */
+/**
+ * Outbound options for `GPTLiveProvider`, adding a per-call `sessionConfig` on
+ * top of {@link InitiateVoiceConversationOptionsSchema}. Also narrows
+ * `twimlOptions` to {@link VoiceTwiMLOptionsMediaStreamsSchema}.
+ *
+ * Mirrors the Python SDK's `InitiateVoiceConversationOptionsGPTLive`.
+ */
 export const InitiateVoiceConversationOptionsGPTLiveSchema =
   InitiateVoiceConversationOptionsBase.extend({
-    /** Used verbatim in place of `GPTLiveProviderConfig.defaultSessionConfig` for this call. */
-    sessionConfig: z.record(z.string(), z.unknown()).optional(),
-  });
+    // Overridden to the Media Streams subtype: the inherited ConversationRelay
+    // schema is `.strict()` and would reject `name` / `statusCallback` outright,
+    // so this provider's TwiML options could never survive parsing.
+    twimlOptions: VoiceTwiMLOptionsMediaStreamsSchema.optional(),
+    /**
+     * Used verbatim in place of `GPTLiveProviderConfig.defaultSessionConfig`
+     * for this call.
+     */
+    sessionConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+  }).strict();
 
 export type InitiateVoiceConversationOptionsGPTLive = z.infer<
   typeof InitiateVoiceConversationOptionsGPTLiveSchema
