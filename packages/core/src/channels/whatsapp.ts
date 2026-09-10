@@ -55,7 +55,7 @@ export class WhatsAppChannel extends MessagingChannel {
    * (COMMUNICATION_CREATED → reconcile) or after `initiateOutboundConversation`,
    * both of which populate the session.
    */
-  public async sendResponse(
+  protected async doSendResponse(
     conversationId: ConversationId,
     message: string,
     metadata?: Record<string, unknown>

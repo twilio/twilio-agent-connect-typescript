@@ -34,6 +34,7 @@ import type { InitiateVoiceConversationResult } from '../types/conversation';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress, redactTwimlParameters } from '../util/log-redaction';
 import { studioVoiceHandoffUrl } from '../util/handoff-urls';
 
@@ -608,6 +609,12 @@ export class VoiceChannel extends BaseChannel {
                     }
                   }
 
+                  trackEvent('Websocket Connected', {
+                    account_sid: this.config.accountSid,
+                    channel: 'voice',
+                    conversation_id: conversationId,
+                  });
+
                   // Success! Clear retry count and failed flag
                   initializationFailed = false;
                   this.initializationRetries.delete(callSid);
@@ -785,6 +792,13 @@ export class VoiceChannel extends BaseChannel {
         durationUntilInterruptMs,
       });
     }
+
+    trackEvent('Voice Interrupt', {
+      account_sid: this.config.accountSid,
+      channel: 'voice',
+      conversation_id: conversationId,
+      duration_until_interrupt_ms: durationUntilInterruptMs,
+    });
   }
 
   /**
@@ -800,6 +814,12 @@ export class VoiceChannel extends BaseChannel {
     if (this.voiceCallbacks.onWebSocketDisconnected) {
       this.voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
+
+    trackEvent('Websocket Disconnected', {
+      account_sid: this.config.accountSid,
+      channel: 'voice',
+      conversation_id: conversationId,
+    });
 
     if (!this.tac.isOrchestratorEnabled()) {
       await this.endConversation(conversationId);
@@ -828,6 +848,13 @@ export class VoiceChannel extends BaseChannel {
       };
 
       ws.send(JSON.stringify(response));
+
+      trackEvent('Response Sent', {
+        account_sid: this.config.accountSid,
+        channel: 'voice',
+        conversation_id: conversationId,
+        response_type: 'full',
+      });
 
       // If a handoff is pending, send the WS "end" message now that the
       // LLM's final response has been delivered to the caller.
@@ -927,6 +954,15 @@ export class VoiceChannel extends BaseChannel {
       if (activeTask && this.streamTasks.get(conversationId) === activeTask) {
         this.completeStreamTask(conversationId);
       }
+    }
+
+    if (hasSentTokens) {
+      trackEvent('Response Sent', {
+        account_sid: this.config.accountSid,
+        channel: 'voice',
+        conversation_id: conversationId,
+        response_type: 'streaming',
+      });
     }
 
     return fullResponse;

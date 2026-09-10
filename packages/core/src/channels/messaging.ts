@@ -13,6 +13,7 @@ import axios from 'axios';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import { ConversationClient } from '../clients/conversation';
 import type { TAC } from '../lib/tac';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress } from '../util/log-redaction';
 
 /**
@@ -111,6 +112,26 @@ export abstract class MessagingChannel extends BaseChannel {
    * per-conversation channelId) to build the address.
    */
   protected abstract getAgentAddress(conversationId: ConversationId): ConversationAddress;
+
+  protected abstract doSendResponse(
+    conversationId: ConversationId,
+    message: string,
+    metadata?: Record<string, unknown>
+  ): Promise<void>;
+
+  public async sendResponse(
+    conversationId: ConversationId,
+    message: string,
+    metadata?: Record<string, unknown>
+  ): Promise<void> {
+    await this.doSendResponse(conversationId, message, metadata);
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      response_type: 'full',
+    });
+  }
 
   /**
    * Check if a message is from the bot itself (2-tier).
@@ -411,6 +432,12 @@ export abstract class MessagingChannel extends BaseChannel {
         userMemory,
       });
     }
+
+    trackEvent('Message Received', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+    });
   }
 
   /**
