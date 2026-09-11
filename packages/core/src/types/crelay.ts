@@ -175,12 +175,29 @@ export const InterruptMessageSchema = z.object({
 export type InterruptMessage = z.infer<typeof InterruptMessageSchema>;
 
 /**
+ * WebSocket DTMF message (caller pressed a key).
+ *
+ * Only sent when `dtmfDetection` is enabled on `<ConversationRelay>`, and one
+ * message per keypress — digits are never batched.
+ *
+ * @see https://www.twilio.com/docs/voice/conversationrelay/websocket-messages#dtmf-message
+ */
+export const DtmfMessageSchema = z.object({
+  type: z.literal('dtmf'),
+  /** The key pressed: `0`-`9`, `*`, `#`, or `A`-`D`. */
+  digit: z.string(),
+});
+
+export type DtmfMessage = z.infer<typeof DtmfMessageSchema>;
+
+/**
  * Union of all WebSocket message types
  */
 export const WebSocketMessageSchema = z.union([
   SetupMessageSchema,
   PromptMessageSchema,
   InterruptMessageSchema,
+  DtmfMessageSchema,
 ]);
 
 export type WebSocketMessage = z.infer<typeof WebSocketMessageSchema>;
@@ -542,6 +559,7 @@ export interface VoiceChannelEvents {
   setup: SetupMessage;
   prompt: PromptMessage;
   interrupt: InterruptMessage;
+  dtmf: DtmfMessage;
   error: Error;
 }
 
