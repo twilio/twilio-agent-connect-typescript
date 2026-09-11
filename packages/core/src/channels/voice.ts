@@ -883,7 +883,9 @@ export class VoiceChannel extends BaseChannel {
   ): Promise<void> {
     const { digit } = message;
 
-    this.logger.debug({ conversation_id: conversationId, call_sid: callSid, digit }, 'DTMF digit');
+    // Never log the digit itself — callers type account numbers and PINs on the
+    // keypad, and nothing downstream scrubs it.
+    this.logger.debug({ conversation_id: conversationId, call_sid: callSid }, 'DTMF keypress');
 
     if (!this.voiceCallbacks.onDtmf) {
       return;
