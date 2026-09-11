@@ -9,6 +9,7 @@ import {
   WebSocketMessageSchema,
   PromptMessage,
   InterruptMessage,
+  DtmfMessage,
   TextTokenMessage,
   CustomParameters,
   ConversationRelayConfig,
@@ -93,6 +94,24 @@ export type AmdHandler = (event: AmdEvent) => Promise<void> | void;
 /** Handler for Twilio `recordingStatusCallback` webhooks. */
 export type RecordingHandler = (event: RecordingEvent) => Promise<void> | void;
 
+/** One ConversationRelay keypress, as delivered to a {@link DtmfHandler}. */
+export interface DtmfEvent {
+  /**
+   * Undefined only when the keypress beat conversation setup: `dtmf` before
+   * ConversationRelay's `setup`, or an orchestrated-mode lookup that failed.
+   */
+  conversationId: ConversationId | undefined;
+  /** Undefined only before ConversationRelay's `setup` message. */
+  callSid: string | undefined;
+  /** The key pressed: `0`-`9`, `*`, `#`, or `A`-`D`. */
+  digit: string;
+  /** Present whenever `conversationId` is. */
+  session?: ConversationSession;
+}
+
+/** Handler for ConversationRelay `dtmf` messages (caller keypresses). */
+export type DtmfHandler = (event: DtmfEvent) => Promise<void> | void;
+
 /**
  * Stringify a custom-parameter value for emission as a `<Parameter value=...>`.
  * Parameter values are scalars in practice; objects are JSON-encoded rather
@@ -128,6 +147,8 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
     utteranceUntilInterrupt: string | undefined;
     durationUntilInterruptMs: number | undefined;
   }) => void;
+  /** Caller keypress. See {@link VoiceChannel.onDtmf}. */
+  onDtmf?: DtmfHandler;
   /**
    * Fired once the session and WebSocket registration exist — in orchestrated
    * mode possibly before the first prompt, since the lookup starts at setup.
@@ -271,6 +292,33 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
+   * Register a handler for DTMF keypresses, called once per key in order.
+   *
+   * Requires `dtmfDetection: true` on the ConversationRelay config — without it
+   * Twilio sends nothing and this never fires. Digits aren't buffered, so
+   * accumulating a multi-digit entry is the handler's job.
+   *
+   * A keypress initializes the conversation just as a prompt does, since a
+   * caller can type without ever speaking; if that fails the digit still
+   * arrives, with `conversationId` and `session` undefined. Keypresses don't
+   * cancel in-flight streaming on their own — that's a separate `interrupt`
+   * message, sent when `interruptible` includes `dtmf`.
+   *
+   * @example
+   * ```typescript
+   * const digits = new Map<string, string>();
+   *
+   * voiceChannel.onDtmf(({ conversationId, digit }) => {
+   *   if (!conversationId) return;
+   *   digits.set(conversationId, (digits.get(conversationId) ?? '') + digit);
+   * });
+   * ```
+   */
+  public onDtmf(callback: DtmfHandler): void {
+    this.voiceCallbacks.onDtmf = callback;
+  }
+
+  /**
    * Resolve the public WebSocket URL from `TACConfig.voicePublicDomain` +
    * `TACConfig.voiceWebsocketPath`. Throws if `voicePublicDomain` isn't set.
    */
@@ -325,6 +373,9 @@ export class VoiceChannel extends BaseChannel {
         break;
       case 'interrupt':
         this.voiceCallbacks.onInterrupt = callback;
+        break;
+      case 'dtmf':
+        this.voiceCallbacks.onDtmf = callback;
         break;
       case 'webSocketConnected':
         this.voiceCallbacks.onWebSocketConnected = callback;
@@ -505,8 +556,91 @@ export class VoiceChannel extends BaseChannel {
     let fromNumber: string | null = null;
     let initializationFailed = false;
     // Background conversation lookup started on `setup`; cleared once claimed,
-    // by the first prompt or by the close handler.
+    // by the first message that needs a conversation or by the close handler.
     let initPromise: Promise<ConversationId> | null = null;
+
+    /**
+     * Resolve this connection's conversation, creating it on first use.
+     *
+     * Shared by `prompt` and `dtmf` because either can be the first message
+     * that needs a conversation — a caller can press a digit before speaking,
+     * and until the session and WebSocket are registered a handler has no way
+     * to respond. Returns null when `setup` hasn't arrived yet (no callSid);
+     * rejects when initialization fails, after recording the attempt so a
+     * later message can retry up to MAX_INITIALIZATION_RETRIES.
+     */
+    const ensureConversation = async (): Promise<ConversationId | null> => {
+      if (conversationId) {
+        return conversationId;
+      }
+      const sid = callSid;
+      if (!sid) {
+        return null;
+      }
+
+      // Check retry limit before attempting initialization
+      const retryCount = this.initializationRetries.get(sid) ?? 0;
+      if (retryCount >= this.MAX_INITIALIZATION_RETRIES) {
+        throw new Error(
+          `Cannot process message - conversation initialization failed after ${retryCount} attempts for callSid ${sid}`
+        );
+      }
+
+      try {
+        if (initializationFailed) {
+          this.logger.info(
+            { call_sid: sid, retry_count: retryCount },
+            'Retrying conversation initialization after previous failure'
+          );
+        }
+
+        if (!this.tac.isOrchestratorEnabled()) {
+          // Voice-only mode: use callSid as conversationId directly
+          conversationId = sid as ConversationId;
+          this.webSocketConnections.set(conversationId, ws);
+          this.callSidToConversationId.set(sid, conversationId);
+          const session = this.startConversation(conversationId);
+          // Relay-only: conversationId === callSid.
+          session.callSid = sid;
+
+          if (fromNumber) {
+            session.authorInfo = { address: fromNumber };
+          }
+
+          if (this.voiceCallbacks.onWebSocketConnected) {
+            this.voiceCallbacks.onWebSocketConnected({ conversationId });
+          }
+        } else {
+          // Await the lookup from `setup` — usually already done.
+          // Stays visible to the close handler while awaited, so a
+          // hangup mid-lookup still cleans up; cleared after so a
+          // retry starts fresh and `close` uses conversationId.
+          initPromise ??= this.initializeOrchestratedConversation(sid, fromNumber, ws);
+          try {
+            conversationId = await initPromise;
+          } finally {
+            initPromise = null;
+          }
+        }
+
+        // Success! Clear retry count and failed flag
+        initializationFailed = false;
+        this.initializationRetries.delete(sid);
+        this.logger.info(
+          { conversation_id: conversationId, call_sid: sid },
+          'Conversation initialization succeeded'
+        );
+        return conversationId;
+      } catch (err) {
+        initializationFailed = true;
+        this.initializationRetries.set(sid, retryCount + 1);
+        this.logger.error(
+          { err, call_sid: sid, retry_count: retryCount + 1 },
+          'Conversation initialization failed'
+        );
+        throw err;
+      }
+    };
 
     ws.on('message', (data: Buffer) => {
       (async (): Promise<void> => {
@@ -558,73 +692,7 @@ export class VoiceChannel extends BaseChannel {
               break;
 
             case 'prompt':
-              if (!conversationId && callSid) {
-                // Check retry limit before attempting initialization
-                const retryCount = this.initializationRetries.get(callSid) ?? 0;
-                if (retryCount >= this.MAX_INITIALIZATION_RETRIES) {
-                  throw new Error(
-                    `Cannot process prompt - conversation initialization failed after ${retryCount} attempts for callSid ${callSid}`
-                  );
-                }
-
-                try {
-                  if (initializationFailed) {
-                    this.logger.info(
-                      { call_sid: callSid, retry_count: retryCount },
-                      'Retrying conversation initialization after previous failure'
-                    );
-                  }
-
-                  if (!this.tac.isOrchestratorEnabled()) {
-                    // Voice-only mode: use callSid as conversationId directly
-                    conversationId = callSid as ConversationId;
-                    this.webSocketConnections.set(conversationId, ws);
-                    this.callSidToConversationId.set(callSid, conversationId);
-                    const session = this.startConversation(conversationId);
-                    // Relay-only: conversationId === callSid.
-                    session.callSid = callSid;
-
-                    if (fromNumber) {
-                      session.authorInfo = { address: fromNumber };
-                    }
-
-                    if (this.voiceCallbacks.onWebSocketConnected) {
-                      this.voiceCallbacks.onWebSocketConnected({ conversationId });
-                    }
-                  } else {
-                    // Await the lookup from `setup` — usually already done.
-                    // Stays visible to the close handler while awaited, so a
-                    // hangup mid-lookup still cleans up; cleared after so a
-                    // retry starts fresh and `close` uses conversationId.
-                    initPromise ??= this.initializeOrchestratedConversation(
-                      callSid,
-                      fromNumber,
-                      ws
-                    );
-                    try {
-                      conversationId = await initPromise;
-                    } finally {
-                      initPromise = null;
-                    }
-                  }
-
-                  // Success! Clear retry count and failed flag
-                  initializationFailed = false;
-                  this.initializationRetries.delete(callSid);
-                  this.logger.info(
-                    { conversation_id: conversationId, call_sid: callSid },
-                    'Conversation initialization succeeded'
-                  );
-                } catch (err) {
-                  initializationFailed = true;
-                  this.initializationRetries.set(callSid, retryCount + 1);
-                  this.logger.error(
-                    { err, call_sid: callSid, retry_count: retryCount + 1 },
-                    'Conversation initialization failed'
-                  );
-                  throw err;
-                }
-              }
+              await ensureConversation();
 
               if (conversationId) {
                 const previousPrompt = this.promptQueues.get(conversationId) ?? Promise.resolve();
@@ -646,6 +714,24 @@ export class VoiceChannel extends BaseChannel {
               if (conversationId) {
                 this.handleInterruptMessage(conversationId, message);
               }
+              break;
+
+            case 'dtmf':
+              // A keypress can be the caller's first input, so initialize the
+              // conversation the same way a prompt does — without it the handler
+              // has no session and no WebSocket to respond on. Unlike a prompt, a
+              // failure here is logged rather than thrown: the digit is still
+              // worth delivering, just without a conversation.
+              try {
+                await ensureConversation();
+              } catch (err) {
+                this.logger.warn(
+                  { err, call_sid: callSid },
+                  'Conversation initialization failed on DTMF keypress, delivering digit without a conversation'
+                );
+              }
+
+              await this.handleDtmfMessage(conversationId, callSid, message);
               break;
 
             default:
@@ -785,6 +871,32 @@ export class VoiceChannel extends BaseChannel {
         durationUntilInterruptMs,
       });
     }
+  }
+
+  /**
+   * Handle WebSocket DTMF message (caller keypress)
+   */
+  private async handleDtmfMessage(
+    conversationId: ConversationId | null,
+    callSid: string | null,
+    message: DtmfMessage
+  ): Promise<void> {
+    const { digit } = message;
+
+    this.logger.debug({ conversation_id: conversationId, call_sid: callSid, digit }, 'DTMF digit');
+
+    if (!this.voiceCallbacks.onDtmf) {
+      return;
+    }
+
+    const session = conversationId ? this.getConversationSession(conversationId) : undefined;
+
+    await this.voiceCallbacks.onDtmf({
+      conversationId: conversationId ?? undefined,
+      callSid: callSid ?? undefined,
+      digit,
+      ...(session !== undefined && { session }),
+    });
   }
 
   /**
