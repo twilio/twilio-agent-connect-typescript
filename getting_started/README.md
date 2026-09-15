@@ -104,6 +104,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - **[RCS Example](examples/rcs/)** - RCS (Rich Communication Services) channel using the OpenAI Agents SDK
 - **[Outbound Example](examples/outbound/)** - Agent-initiated outbound conversations via SMS, RCS, WhatsApp, or Voice
 - **[Voice Call Events Example](examples/voice-call-events/)** - Answering machine detection, recording, and call disposition on outbound calls — hang up on voicemail, track which calls went unreached
+- **[Voice DTMF Example](examples/voice-dtmf/)** - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context
 
 ## Next Steps
 
