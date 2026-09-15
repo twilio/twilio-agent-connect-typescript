@@ -12,6 +12,7 @@ import {
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
 import { Logger } from '../lib/logger';
+import { trackEvent } from '../lib/analytics';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
 
@@ -177,6 +178,13 @@ export abstract class BaseChannel {
       this.callbacks.onConversationStarted({ session });
     }
 
+    trackEvent('Conversation Started', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      has_profile_id: !!profileId,
+    });
+
     return session;
   }
 
@@ -202,6 +210,13 @@ export abstract class BaseChannel {
           );
         }
       }
+
+      trackEvent('Conversation Ended', {
+        account_sid: this.config.accountSid,
+        channel: this.channelType,
+        conversation_id: conversationId,
+        duration_ms: Date.now() - session.startedAt.getTime(),
+      });
 
       this.activeConversations.delete(conversationId);
       this.logger.debug(

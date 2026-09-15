@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 import { MessagingChannel, MessagingChannelConfig } from './messaging';
 import type { TAC } from '../lib/tac';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress } from '../util/log-redaction';
 
 /**
@@ -180,6 +181,13 @@ export class ChatChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      response_type: 'full',
+    });
   }
 
   /**

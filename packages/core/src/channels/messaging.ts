@@ -13,6 +13,7 @@ import axios from 'axios';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import { ConversationClient } from '../clients/conversation';
 import type { TAC } from '../lib/tac';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress } from '../util/log-redaction';
 
 /**
@@ -411,6 +412,12 @@ export abstract class MessagingChannel extends BaseChannel {
         userMemory,
       });
     }
+
+    trackEvent('Message Received', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+    });
   }
 
   /**

@@ -8,6 +8,7 @@ import {
   InitiateConversationResult,
 } from '../types/index';
 import { MessagingChannel } from './messaging';
+import { trackEvent } from '../lib/analytics';
 import { maskAddress } from '../util/log-redaction';
 
 /**
@@ -138,6 +139,13 @@ export class WhatsAppChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      response_type: 'full',
+    });
   }
 
   /**

@@ -22,6 +22,9 @@ export { TACConfig } from './lib/config';
 export { createLogger } from './lib/logger';
 export type { Logger } from './lib/logger';
 
+// Analytics
+export { trackEvent, shutdownAnalytics } from './lib/analytics';
+
 // API clients
 export { BaseClient } from './clients/base';
 export { MemoryClient } from './clients/memory';
