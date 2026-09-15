@@ -17,7 +17,7 @@ afterEach(() => {
  */
 export async function createTestTAC(
   configOrData: TACConfig | TACConfigData,
-  memoryStoreIdFromConfig: string = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg'
+  memoryStoreIdFromConfig: string | null = 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg'
 ): Promise<TAC> {
   const config = configOrData instanceof TACConfig ? configOrData : new TACConfig(configOrData);
 
@@ -26,7 +26,7 @@ export async function createTestTAC(
     id: config.conversationConfigurationId,
     description: 'test config',
     conversationGroupingType: 'GROUP_BY_PARTICIPANT_ADDRESSES' as const,
-    memoryStoreId: memoryStoreIdFromConfig,
+    memoryStoreId: memoryStoreIdFromConfig ?? undefined,
   });
 
   const spy = vi.spyOn(ConversationClient.prototype, 'getConfiguration').mockImplementation(mockGetConfiguration);
