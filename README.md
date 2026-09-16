@@ -178,9 +178,11 @@ For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com
 
 ## Telemetry
 
-The SDK collects anonymous usage analytics (e.g. conversation lifecycle events, channel type) to help improve the product. No PII, message content, or phone numbers are ever collected.
+The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel, a conversation ID, the SDK name and version, and timing such as conversation duration.
 
-To disable telemetry, set the following environment variable:
+Message content, transcripts, phone numbers, and other end-user identifiers are never collected.
+
+Telemetry is on by default. To disable it, set the following environment variable:
 
 ```bash
 TAC_ANALYTICS_DISABLED=true
