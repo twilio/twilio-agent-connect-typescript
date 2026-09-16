@@ -47,6 +47,24 @@ describe('analytics', () => {
     });
   });
 
+  it('omits properties the caller does not supply', () => {
+    trackEvent('Websocket Connected', {
+      account_sid: 'AC123',
+      channel: 'voice',
+    });
+
+    expect(mockTrack).toHaveBeenCalledWith({
+      anonymousId: 'AC123',
+      event: 'Websocket Connected',
+      properties: {
+        account_sid: 'AC123',
+        channel: 'voice',
+        sdk_version: expect.any(String),
+        sdk_package: 'twilio-agent-connect-typescript',
+      },
+    });
+  });
+
   it('uses account_sid as anonymousId', () => {
     trackEvent('Conversation Started', {
       account_sid: 'AC456',

@@ -552,6 +552,15 @@ export class VoiceChannel extends BaseChannel {
    * Handle WebSocket connection from ConversationRelay
    */
   public handleWebSocketConnection(ws: WebSocket): void {
+    // Socket-open half of the Websocket Connected/Disconnected pair. No
+    // conversation or call identifiers exist yet — `setup` carries the callSid
+    // and the conversation is resolved later, on the first message that needs
+    // one.
+    trackEvent('Websocket Connected', {
+      account_sid: this.config.accountSid,
+      channel: 'voice',
+    });
+
     let conversationId: ConversationId | null = null;
     let callSid: string | null = null;
     let fromNumber: string | null = null;
@@ -632,7 +641,7 @@ export class VoiceChannel extends BaseChannel {
           'Conversation initialization succeeded'
         );
 
-        trackEvent('Websocket Connected', {
+        trackEvent('Conversation Initialized', {
           account_sid: this.config.accountSid,
           channel: 'voice',
           conversation_id: conversationId,
