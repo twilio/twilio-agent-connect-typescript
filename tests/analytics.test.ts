@@ -28,7 +28,7 @@ describe('analytics', () => {
   });
 
   it('tracks an event with correct shape', () => {
-    trackEvent('Conversation Initialized', {
+    trackEvent('Websocket Connected', {
       account_sid: 'AC123',
       channel: 'voice',
       conversation_id: 'conv-1',
@@ -36,7 +36,7 @@ describe('analytics', () => {
 
     expect(mockTrack).toHaveBeenCalledWith({
       anonymousId: 'AC123',
-      event: 'Conversation Initialized',
+      event: 'Websocket Connected',
       properties: {
         account_sid: 'AC123',
         channel: 'voice',
@@ -63,7 +63,7 @@ describe('analytics', () => {
     process.env.TAC_ANALYTICS_DISABLED = 'true';
     _resetAnalytics();
 
-    trackEvent('Conversation Initialized', {
+    trackEvent('Websocket Connected', {
       account_sid: 'AC123',
       channel: 'voice',
       conversation_id: 'conv-1',
@@ -73,7 +73,7 @@ describe('analytics', () => {
   });
 
   it('shutdownAnalytics calls closeAndFlush', async () => {
-    trackEvent('Conversation Initialized', {
+    trackEvent('Websocket Connected', {
       account_sid: 'AC123',
       channel: 'voice',
       conversation_id: 'conv-1',
@@ -95,7 +95,7 @@ describe('analytics', () => {
     });
 
     expect(() =>
-      trackEvent('Conversation Initialized', {
+      trackEvent('Websocket Connected', {
         account_sid: 'AC123',
         channel: 'voice',
         conversation_id: 'conv-1',
