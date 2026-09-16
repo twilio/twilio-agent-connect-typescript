@@ -632,7 +632,7 @@ export class VoiceChannel extends BaseChannel {
           'Conversation initialization succeeded'
         );
 
-        trackEvent('Websocket Connected', {
+        trackEvent('Conversation Initialized', {
           account_sid: this.config.accountSid,
           channel: 'voice',
           conversation_id: conversationId,
