@@ -325,10 +325,7 @@ export abstract class MediaStreamsOpenAIProvider<
     name: string,
     argumentsJson: unknown
   ): Promise<unknown> {
-    this.logger.debug(
-      { conversation_id: conversationId, tool_name: name, tool_arguments: argumentsJson },
-      'Tool call'
-    );
+    this.logger.debug({ conversation_id: conversationId, tool_name: name }, 'Tool call');
 
     const tool = this.toolsByName.get(name);
     if (tool === undefined) {
@@ -340,10 +337,7 @@ export abstract class MediaStreamsOpenAIProvider<
         typeof argumentsJson === 'string' && argumentsJson ? argumentsJson : '{}'
       );
       const output: unknown = await tool.implementation(parsedArguments);
-      this.logger.debug(
-        { conversation_id: conversationId, tool_name: name, tool_result: output },
-        'Tool result'
-      );
+      this.logger.debug({ conversation_id: conversationId, tool_name: name }, 'Tool result');
       return output;
     } catch (err) {
       // Only the generic message goes back: the model may read tool output
