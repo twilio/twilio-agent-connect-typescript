@@ -5,6 +5,8 @@ export type {
   CallStatusHandler,
   AmdHandler,
   RecordingHandler,
+  DtmfEvent,
+  DtmfHandler,
 } from './channel';
 
 export { VoiceProvider, VoiceProviderConfig } from './provider';

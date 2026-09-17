@@ -189,6 +189,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com
 - **[GPT-Live over Media Streams](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/gpt-live/)** - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI GPT-Live API
 - **[Outbound Conversations](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/outbound/)** - Agent-initiated conversations example
 - **[Voice Call Events](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-call-events/)** - Answering machine detection, recording, and call disposition on outbound calls
+- **[Voice DTMF](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-dtmf/)** - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context
 - More examples coming soon
 
 **AWS and Microsoft connectors:**

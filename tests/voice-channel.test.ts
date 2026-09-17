@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestTAC } from './helpers/tac';
 import { VoiceChannel, TAC, TACConfig, ConversationSession } from '@twilio/tac-core';
-import { InterruptMessageSchema } from '@twilio/tac-core';
+import {
+  InterruptMessageSchema,
+  DtmfMessageSchema,
+  WebSocketMessageSchema,
+  DtmfEvent,
+} from '@twilio/tac-core';
 
 describe('VoiceChannel', () => {
   const getTestConfig = () => ({
@@ -1454,6 +1459,260 @@ describe('VoiceChannel', () => {
 
       expect(result.utteranceUntilInterrupt).toBeUndefined();
       expect(result.durationUntilInterruptMs).toBeUndefined();
+    });
+  });
+
+  describe('DtmfMessage schema', () => {
+    it('should parse a digit', () => {
+      expect(DtmfMessageSchema.parse({ type: 'dtmf', digit: '1' }).digit).toBe('1');
+    });
+
+    it('should parse non-numeric keys', () => {
+      for (const digit of ['*', '#', 'A', 'D']) {
+        expect(DtmfMessageSchema.parse({ type: 'dtmf', digit }).digit).toBe(digit);
+      }
+    });
+
+    it('should require digit', () => {
+      expect(() => DtmfMessageSchema.parse({ type: 'dtmf' })).toThrow();
+    });
+
+    it('should be part of the inbound WebSocket message union', () => {
+      const result = WebSocketMessageSchema.parse({ type: 'dtmf', digit: '#' });
+
+      expect(result).toEqual({ type: 'dtmf', digit: '#' });
+    });
+  });
+
+  describe('DTMF events', () => {
+    const createMockWebSocket = () => {
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      return {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          if (!handlers[event]) handlers[event] = [];
+          handlers[event].push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1, // WebSocket.OPEN
+        _handlers: handlers,
+        _emit(event: string, ...args: any[]) {
+          for (const h of handlers[event] || []) {
+            h(...args);
+          }
+        },
+      };
+    };
+
+    const setupMessage = JSON.stringify({
+      type: 'setup',
+      sessionId: 'sess_dtmf',
+      callSid: 'CA_dtmf_test',
+      from: '+15551234567',
+      to: '+15559876543',
+      direction: 'inbound',
+      callType: 'PSTN',
+      callStatus: 'ringing',
+      accountSid: 'ACtest123',
+    });
+
+    const promptMessage = JSON.stringify({
+      type: 'prompt',
+      voicePrompt: 'Hello',
+      lang: 'en-US',
+      last: true,
+    });
+
+    const dtmfMessage = (digit: string) => JSON.stringify({ type: 'dtmf', digit });
+
+    const mockOrchestratorLookup = (tac: TAC) => {
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHdtmf_test123', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          type: 'CUSTOMER',
+          profileId: 'mem_profile_dtmf',
+          addresses: [{ channel: 'VOICE', address: '+15551234567' }],
+        },
+      ] as any);
+    };
+
+    it('delivers keypresses after the conversation is established', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      mockOrchestratorLookup(tac);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const events: DtmfEvent[] = [];
+      voiceChannel.onDtmf(data => events.push(data));
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      mockWs._emit('message', Buffer.from(dtmfMessage('5')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].digit).toBe('5');
+      expect(events[0].conversationId).toBe('CHdtmf_test123');
+      expect(events[0].callSid).toBe('CA_dtmf_test');
+      expect(events[0].session?.conversationId).toBe('CHdtmf_test123');
+    });
+
+    it('delivers each digit separately, in order', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      mockOrchestratorLookup(tac);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const digits: string[] = [];
+      voiceChannel.onDtmf(data => digits.push(data.digit));
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Emitted back-to-back with no gap: fast keypresses must not reorder.
+      for (const digit of ['4', '1', '#']) {
+        mockWs._emit('message', Buffer.from(dtmfMessage(digit)));
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(digits).toEqual(['4', '1', '#']);
+    });
+
+    it('initializes the conversation when a keypress arrives before any speech', async () => {
+      // A caller answering "press 1 for sales" never speaks, so the digit has to
+      // establish the session — otherwise the handler has nothing to respond on.
+      const tac = await createTestTAC(getTestConfig());
+      mockOrchestratorLookup(tac);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const events: DtmfEvent[] = [];
+      voiceChannel.onDtmf(data => events.push(data));
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(dtmfMessage('1')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].conversationId).toBe('CHdtmf_test123');
+      expect(voiceChannel.isConversationActive('CHdtmf_test123' as any)).toBe(true);
+      expect(voiceChannel.getWebsocket('CHdtmf_test123' as any)).toBe(mockWs);
+    });
+
+    it('initializes the conversation on a keypress in voice-only mode', async () => {
+      const { conversationConfigurationId: _omit, ...voiceOnlyConfig } = getTestConfig();
+      const tac = await createTestTAC(voiceOnlyConfig);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const events: DtmfEvent[] = [];
+      voiceChannel.onDtmf(data => events.push(data));
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(dtmfMessage('2')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Voice-only mode uses the CallSid as the conversation id.
+      expect(events).toHaveLength(1);
+      expect(events[0].conversationId).toBe('CA_dtmf_test');
+      expect(events[0].session?.callSid).toBe('CA_dtmf_test');
+    });
+
+    it('still delivers the digit when conversation initialization fails', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockRejectedValue(
+        new Error('orchestrator down')
+      );
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const events: DtmfEvent[] = [];
+      voiceChannel.onDtmf(data => events.push(data));
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(dtmfMessage('7')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].digit).toBe('7');
+      expect(events[0].conversationId).toBeUndefined();
+      expect(events[0].session).toBeUndefined();
+      expect(events[0].callSid).toBe('CA_dtmf_test');
+    });
+
+    it('delivers the digit with no conversation when the keypress beats setup', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      mockOrchestratorLookup(tac);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const events: DtmfEvent[] = [];
+      // Registration via the generic event API, equivalent to onDtmf().
+      voiceChannel.on('dtmf', (data: DtmfEvent) => events.push(data));
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(dtmfMessage('9')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(events).toHaveLength(1);
+      expect(events[0].digit).toBe('9');
+      expect(events[0].conversationId).toBeUndefined();
+      expect(events[0].callSid).toBeUndefined();
+    });
+
+    it('does not cancel an in-flight stream task', async () => {
+      // Twilio sends a separate `interrupt` for that when `interruptible`
+      // includes dtmf, so a keypress alone must leave streaming alone.
+      const tac = await createTestTAC(getTestConfig());
+      mockOrchestratorLookup(tac);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(promptMessage));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      const { controller } = voiceChannel.startStreamTask('CHdtmf_test123' as any);
+
+      mockWs._emit('message', Buffer.from(dtmfMessage('0')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(controller.signal.aborted).toBe(false);
+      expect((voiceChannel as any).provider.streamTasks.has('CHdtmf_test123')).toBe(true);
+    });
+
+    it('is a no-op when no handler is registered', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      mockOrchestratorLookup(tac);
+      const voiceChannel = new VoiceChannel(tac);
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = createMockWebSocket();
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      mockWs._emit('message', Buffer.from(setupMessage));
+      mockWs._emit('message', Buffer.from(dtmfMessage('3')));
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Initialization still happened; the digit was simply not surfaced.
+      expect(voiceChannel.isConversationActive('CHdtmf_test123' as any)).toBe(true);
     });
   });
 

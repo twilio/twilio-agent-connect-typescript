@@ -52,6 +52,8 @@ export type {
   CallStatusHandler,
   AmdHandler,
   RecordingHandler,
+  DtmfEvent,
+  DtmfHandler,
   StreamTask,
 } from './channels/voice';
 

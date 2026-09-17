@@ -63,6 +63,24 @@ export type AmdHandler = (event: AmdEvent) => Promise<void> | void;
 /** Handler for Twilio `recordingStatusCallback` webhooks. */
 export type RecordingHandler = (event: RecordingEvent) => Promise<void> | void;
 
+/** One ConversationRelay keypress, as delivered to a {@link DtmfHandler}. */
+export interface DtmfEvent {
+  /**
+   * Undefined only when the keypress beat conversation setup: `dtmf` before
+   * ConversationRelay's `setup`, or an orchestrated-mode lookup that failed.
+   */
+  conversationId: ConversationId | undefined;
+  /** Undefined only before ConversationRelay's `setup` message. */
+  callSid: string | undefined;
+  /** The key pressed: `0`-`9`, `*`, `#`, or `A`-`D`. */
+  digit: string;
+  /** Present whenever `conversationId` is. */
+  session?: ConversationSession;
+}
+
+/** Handler for ConversationRelay `dtmf` messages (caller keypresses). */
+export type DtmfHandler = (event: DtmfEvent) => Promise<void> | void;
+
 /**
  * Voice channel event callbacks extending base callbacks
  */
@@ -85,6 +103,8 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
     utteranceUntilInterrupt: string | undefined;
     durationUntilInterruptMs: number | undefined;
   }) => void;
+  /** Caller keypress. See {@link VoiceChannel.onDtmf}. */
+  onDtmf?: DtmfHandler;
   /**
    * Fired once the session and WebSocket registration exist — in orchestrated
    * mode possibly before the first prompt, since the lookup starts at setup.
@@ -249,6 +269,33 @@ export class VoiceChannel extends BaseChannel {
    */
   public onRecording(callback: RecordingHandler): void {
     this.onRecordingHandler = callback;
+  }
+
+  /**
+   * Register a handler for DTMF keypresses, called once per key in order.
+   *
+   * Requires `dtmfDetection: true` on the ConversationRelay config — without it
+   * Twilio sends nothing and this never fires. Digits aren't buffered, so
+   * accumulating a multi-digit entry is the handler's job.
+   *
+   * A keypress initializes the conversation just as a prompt does, since a
+   * caller can type without ever speaking; if that fails the digit still
+   * arrives, with `conversationId` and `session` undefined. Keypresses don't
+   * cancel in-flight streaming on their own — that's a separate `interrupt`
+   * message, sent when `interruptible` includes `dtmf`.
+   *
+   * @example
+   * ```typescript
+   * const digits = new Map<string, string>();
+   *
+   * voiceChannel.onDtmf(({ conversationId, digit }) => {
+   *   if (!conversationId) return;
+   *   digits.set(conversationId, (digits.get(conversationId) ?? '') + digit);
+   * });
+   * ```
+   */
+  public onDtmf(callback: DtmfHandler): void {
+    this.voiceCallbacks.onDtmf = callback;
   }
 
   // =========================================================================
@@ -420,6 +467,9 @@ export class VoiceChannel extends BaseChannel {
         break;
       case 'interrupt':
         this.voiceCallbacks.onInterrupt = callback;
+        break;
+      case 'dtmf':
+        this.voiceCallbacks.onDtmf = callback;
         break;
       case 'webSocketConnected':
         this.voiceCallbacks.onWebSocketConnected = callback;
