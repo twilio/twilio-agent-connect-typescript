@@ -17,6 +17,9 @@ export * from './conversation';
 // ConversationRelay types (Twilio Voice API)
 export * from './crelay';
 
+// Media Streams types (Twilio Voice API)
+export * from './stream';
+
 // Handoff types
 export * from './handoff';
 
@@ -29,6 +32,8 @@ export {
   type OpenAITool,
   AnthropicToolSchema,
   type AnthropicTool,
+  OpenAIRealtimeToolSchema,
+  type OpenAIRealtimeTool,
   type ToolContext,
   ToolExecutionResultSchema,
   type ToolExecutionResult,
