@@ -363,6 +363,11 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
     const message = StreamStartMessageSchema.parse(start ?? {});
     const conversationId = message.callSid as ConversationId;
 
+    // This call's Media Stream connected, so an inbound override stashed when
+    // the TwiML was answered is about to be consumed — stop its expiry timer.
+    // A no-op for outbound calls, which arm no such timer.
+    this.cancelInboundConfigExpiry(conversationId);
+
     // An outbound override was stashed under a token before the call was
     // placed, because its SID wasn't known yet. Twilio hands the token back
     // here, which is the first point the two can be joined up.

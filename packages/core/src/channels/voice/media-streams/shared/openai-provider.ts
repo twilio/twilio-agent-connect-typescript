@@ -27,6 +27,18 @@ import type { MediaStreamsOpenAICallState } from './state';
 export const OPENAI_USER_AGENT = `twilio-agent-connect/TypeScript ${packageJson.version}`;
 
 /**
+ * How long an inbound session-config override may sit unclaimed before it is
+ * purged.
+ *
+ * Twilio can answer the TwiML webhook — which stashes the override under the
+ * call SID — and then never open the Media Stream, when a call fails or is
+ * abandoned after the webhook responds. Without this the stash would sit in
+ * {@link MediaStreamsOpenAIProvider.pendingSessionConfigs} until process
+ * shutdown. Mirrors the outbound token expiry in the GPT-Live provider.
+ */
+const INBOUND_SESSION_CONFIG_TTL_MS = 120_000;
+
+/**
  * Render Zod validation issues as a compact `path: message` list, so a thrown
  * `TypeError` names the fields that actually failed rather than dumping the
  * raw error.
@@ -83,6 +95,15 @@ export abstract class MediaStreamsOpenAIProvider<
    */
   protected readonly pendingSessionConfigs: Map<string, Record<string, unknown>>;
 
+  /**
+   * Expiry timers for the inbound {@link pendingSessionConfigs} entries, keyed
+   * by the same call SID. Each fires once to purge a stash whose Media Stream
+   * never connected; a normal connect cancels it in the subclass's
+   * `registerCall`. Outbound entries are keyed by token instead and are not
+   * tracked here.
+   */
+  private readonly pendingInboundExpiries: Map<string, ReturnType<typeof setTimeout>>;
+
   constructor(
     channel: VoiceChannel,
     tacConfig: TACConfig,
@@ -96,6 +117,7 @@ export abstract class MediaStreamsOpenAIProvider<
     this.calls = new Map();
     this.twimlBuilder = new TwiMLBuilderMediaStreams(tacConfig, config, this.logger);
     this.pendingSessionConfigs = new Map();
+    this.pendingInboundExpiries = new Map();
   }
 
   /** The Twilio-facing WebSocket for a conversation, if one is tracked. */
@@ -163,6 +185,41 @@ export abstract class MediaStreamsOpenAIProvider<
    */
   public pendingSessionConfigCount(): number {
     return this.pendingSessionConfigs.size;
+  }
+
+  /**
+   * Start the clock on an inbound stash, so a call whose Media Stream never
+   * connects cannot strand its override in {@link pendingSessionConfigs} until
+   * shutdown.
+   *
+   * Unref'd: a two-minute timer must not be what keeps the process alive after
+   * the call it belongs to is long over. Re-arming replaces any prior timer for
+   * the same call SID, so a duplicate inbound webhook can't orphan one.
+   */
+  private armInboundConfigExpiry(callSid: string): void {
+    this.cancelInboundConfigExpiry(callSid);
+    const timer = setTimeout(() => {
+      this.pendingInboundExpiries.delete(callSid);
+      this.pendingSessionConfigs.delete(callSid);
+    }, INBOUND_SESSION_CONFIG_TTL_MS);
+    timer.unref();
+    this.pendingInboundExpiries.set(callSid, timer);
+  }
+
+  /**
+   * Stop the clock on an inbound stash, once the call it belongs to has
+   * connected and is about to consume the entry. A no-op for outbound calls,
+   * which key their stash by token and never arm one — the subclass calls this
+   * with the call SID for every `start`, inbound or not.
+   *
+   * @internal
+   */
+  protected cancelInboundConfigExpiry(callSid: string): void {
+    const timer = this.pendingInboundExpiries.get(callSid);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.pendingInboundExpiries.delete(callSid);
+    }
   }
 
   /**
@@ -236,6 +293,7 @@ export abstract class MediaStreamsOpenAIProvider<
       const sessionConfig = await this.config.onInboundCallSessionConfig(twimlRequest);
       if (sessionConfig !== null) {
         this.pendingSessionConfigs.set(twimlRequest.callSid, sessionConfig);
+        this.armInboundConfigExpiry(twimlRequest.callSid);
       }
     }
 
@@ -398,6 +456,10 @@ export abstract class MediaStreamsOpenAIProvider<
    */
   public override shutdown(): void {
     super.shutdown();
+    for (const timer of this.pendingInboundExpiries.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingInboundExpiries.clear();
     this.calls.clear();
     this.pendingSessionConfigs.clear();
   }

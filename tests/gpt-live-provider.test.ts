@@ -347,6 +347,54 @@ describe('GPTLiveProvider outbound', () => {
   });
 });
 
+describe('GPTLiveProvider inbound', () => {
+  it('purges an inbound stash whose Media Stream never connects, once its TTL elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const { provider } = makeProvider({
+        onInboundCallSessionConfig: async () => ({ ...validSessionConfig, instructions: 'inbound' }),
+      });
+      // Twilio answered the webhook — the override is stashed — but never opened
+      // the Media Stream, so nothing will ever drain it on the connect path.
+      await provider.handleIncomingCall({ callSid: 'CA1', extra: {} } as never);
+      expect(provider.peekPendingSessionConfig('CA1')).toBeDefined();
+
+      vi.advanceTimersByTime(120_000);
+      expect(provider.peekPendingSessionConfig('CA1')).toBeUndefined();
+      expect(provider.pendingSessionConfigCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the inbound expiry once the stream connects and consumes the stash', async () => {
+    vi.useFakeTimers();
+    try {
+      const { provider } = makeProvider({
+        onInboundCallSessionConfig: async () => ({ ...validSessionConfig, instructions: 'inbound' }),
+      });
+      await provider.handleIncomingCall({ callSid: 'CA1', extra: {} } as never);
+      expect(provider.peekPendingSessionConfig('CA1')).toBeDefined();
+
+      const modelWs = new FakeSocket();
+      startCall(provider, modelWs); // connects call sid CA1
+      await vi.advanceTimersByTimeAsync(0);
+
+      // The connect path drained the stash into session.start and cancelled its
+      // expiry timer.
+      const start = modelWs.json().find(m => m.type === 'session.start');
+      expect((start!.session as Record<string, string>).instructions).toBe('inbound');
+      expect(provider.pendingSessionConfigCount()).toBe(0);
+
+      // The cancelled timer never fires later to churn state that is already gone.
+      vi.advanceTimersByTime(120_000);
+      expect(provider.pendingSessionConfigCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('GPTLiveProvider WebSocket bridge', () => {
   it('opens the GPT-Live socket with auth headers and sends session.start', async () => {
     const { provider } = makeProvider();

@@ -330,6 +330,28 @@ describe('OpenAIRealtimeProvider inbound', () => {
     expect(provider.peekPendingSessionConfig('CA123')).toEqual(sessionConfig);
   });
 
+  it('purges an inbound stash whose Media Stream never connects, once its TTL elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const config = new OpenAIRealtimeProviderConfig({
+        openaiApiKey: 'sk-test',
+        onInboundCallSessionConfig: () => Promise.resolve({ instructions: 'never connects' }),
+      });
+      const { provider } = makeProvider(undefined, config);
+
+      // Twilio answered the webhook — the override is stashed — but never opened
+      // the Media Stream, so nothing will ever drain it on the connect path.
+      await provider.handleIncomingCall({ callSid: 'CA123', extra: {} });
+      expect(provider.peekPendingSessionConfig('CA123')).toBeDefined();
+
+      vi.advanceTimersByTime(120_000);
+      expect(provider.peekPendingSessionConfig('CA123')).toBeUndefined();
+      expect(provider.pendingSessionConfigCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('stashes nothing when the inbound hook returns null', async () => {
     // A spy, not a bare arrow: asserting only the count would pass identically
     // if the hook were never invoked at all.
