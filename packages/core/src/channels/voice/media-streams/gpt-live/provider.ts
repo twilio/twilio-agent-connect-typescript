@@ -431,12 +431,25 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     call.twilioWs = ws;
     this.calls.set(conversationId, call);
 
-    // No profile id: this provider's session lifecycle is independent of
-    // Conversation Orchestrator, like ConversationRelay's relay-only mode.
-    const session = this.channel.startConversationInternal(conversationId);
-    session.callSid = message.callSid;
-    session.metadata.streamSid = message.streamSid;
-    session.metadata.transcript = [];
+    try {
+      // No profile id: this provider's session lifecycle is independent of
+      // Conversation Orchestrator, like ConversationRelay's relay-only mode.
+      const session = this.channel.startConversationInternal(conversationId);
+      session.callSid = message.callSid;
+      session.metadata.streamSid = message.streamSid;
+      session.metadata.transcript = [];
+    } catch (err) {
+      // startConversationInternal inserts the session before invoking the
+      // host's onConversationStarted callback unguarded. A throw from that
+      // callback unwinds registerCall before handleWebSocket has learned the
+      // conversation id, so its catch path can't reach this call to tear it
+      // down. Roll back what this method registered: the transport entry, the
+      // pending config just re-keyed under this id, and the started session.
+      this.calls.delete(conversationId);
+      this.pendingSessionConfigs.delete(conversationId);
+      void this.channel.endConversationInternal(conversationId).catch(() => undefined);
+      throw err;
+    }
 
     this.logger.debug(
       { conversation_id: conversationId, media_format: message.mediaFormat },

@@ -378,6 +378,49 @@ describe('GPTLiveProvider WebSocket bridge', () => {
     expect((start!.session as Record<string, string>).model).toBe('gpt-live-1');
   });
 
+  it('rolls back the call, pending config, and session when the start callback throws', async () => {
+    const { provider, channel } = makeProvider();
+    const sessions = channel.getActiveConversations() as Map<string, unknown>;
+    // Model startConversation inserting the session and then throwing from an
+    // onConversationStarted callback: the session is already tracked when the
+    // throw unwinds registerCall, and handleWebSocket never learns the id, so
+    // registerCall itself must roll everything back.
+    channel.startConversationInternal = (id: string) => {
+      sessions.set(id, { callSid: null, metadata: {} });
+      throw new Error('onConversationStarted failed');
+    };
+
+    const internals = provider as unknown as {
+      calls: Map<string, unknown>;
+      pendingSessionConfigs: Map<string, unknown>;
+    };
+    // A token-stashed outbound override, re-keyed onto the conversation id in
+    // registerCall just before the throw — rollback must drop it too.
+    internals.pendingSessionConfigs.set('tok1', { ...validSessionConfig });
+
+    const twilioWs = new FakeSocket();
+    provider.handleWebSocket(twilioWs as never);
+    twilioWs.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          event: 'start',
+          start: {
+            streamSid: 'MZ1',
+            callSid: 'CA1',
+            customParameters: { [SESSION_CONFIG_TOKEN_PARAM_LITERAL]: 'tok1' },
+          },
+        })
+      )
+    );
+
+    await vi.waitFor(() => expect(sessions.has('CA1')).toBe(false));
+    expect(internals.calls.has('CA1')).toBe(false);
+    expect(internals.pendingSessionConfigs.has('CA1')).toBe(false);
+    expect(internals.pendingSessionConfigs.has('tok1')).toBe(false);
+    expect(twilioWs.closed).toBe(true);
+  });
+
   it('rejects a session config whose audio.format is not the Twilio wire format', async () => {
     const { provider } = makeProvider({
       defaultSessionConfig: { model: 'gpt-live-1', audio: { format: { type: 'audio/pcm' } } },

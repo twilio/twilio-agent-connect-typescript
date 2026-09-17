@@ -375,12 +375,25 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
       }
     }
 
-    // No profile id: this provider's session lifecycle is independent of
-    // Conversation Orchestrator, like ConversationRelay's relay-only mode.
-    const session = this.channel.startConversationInternal(conversationId);
-    session.callSid = message.callSid;
-    session.metadata.streamSid = message.streamSid;
-    session.metadata.transcript = [];
+    try {
+      // No profile id: this provider's session lifecycle is independent of
+      // Conversation Orchestrator, like ConversationRelay's relay-only mode.
+      const session = this.channel.startConversationInternal(conversationId);
+      session.callSid = message.callSid;
+      session.metadata.streamSid = message.streamSid;
+      session.metadata.transcript = [];
+    } catch (err) {
+      // startConversationInternal inserts the session before invoking the
+      // host's onConversationStarted callback unguarded. A throw from that
+      // callback unwinds registerCall before handleWebSocket has learned the
+      // conversation id, so its catch path can't reach it. Roll back the
+      // pending config just re-keyed under this id and the started session.
+      // The `calls` entry is tracked below, after this point, so there is
+      // nothing to remove there yet.
+      this.pendingSessionConfigs.delete(conversationId);
+      void this.channel.endConversationInternal(conversationId).catch(() => undefined);
+      throw err;
+    }
 
     // Tracked last, once nothing else here can throw: startConversationInternal
     // invokes the host's onConversationStarted callback unguarded, and a throw

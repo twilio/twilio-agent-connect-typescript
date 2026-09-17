@@ -657,6 +657,52 @@ describe('OpenAIRealtimeProvider audio bridge', () => {
     expect(provider.getWebSocket('CA1' as ConversationId)).toBe(twilioWs);
   });
 
+  it('rolls back the pending config and session when the start callback throws', async () => {
+    const { provider, stub } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    // Model startConversation inserting the session and then throwing from an
+    // onConversationStarted callback: the session is already tracked when the
+    // throw unwinds registerCall, and handleWebSocket never learns the id, so
+    // registerCall itself must roll everything back.
+    (
+      stub.channel as unknown as {
+        startConversationInternal: (id: ConversationId) => ConversationSession;
+      }
+    ).startConversationInternal = (id: ConversationId) => {
+      const session = { conversationId: id, callSid: id, metadata: {} } as ConversationSession;
+      stub.sessions.set(id, session);
+      throw new Error('onConversationStarted failed');
+    };
+
+    const internals = provider as unknown as { pendingSessionConfigs: Map<string, unknown> };
+    // A token-stashed outbound override, re-keyed onto the conversation id in
+    // registerCall just before the throw — rollback must drop it too.
+    internals.pendingSessionConfigs.set('tok1', { ...validSessionConfig });
+
+    vi.spyOn(provider, 'openModelSocket').mockResolvedValue(new FakeSocket() as unknown as WebSocket);
+    const twilioWs = new FakeSocket();
+    provider.handleWebSocket(twilioWs as unknown as WebSocket);
+    twilioWs.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          event: 'start',
+          start: {
+            streamSid: 'MZ1',
+            callSid: 'CA1',
+            customParameters: { _tac_session_config_token: 'tok1' },
+          },
+        })
+      )
+    );
+
+    await vi.waitFor(() => expect(stub.sessions.has('CA1')).toBe(false));
+    expect(stub.ended).toContain('CA1');
+    expect(provider.getWebSocket('CA1' as ConversationId)).toBeNull();
+    expect(internals.pendingSessionConfigs.has('CA1')).toBe(false);
+    expect(internals.pendingSessionConfigs.has('tok1')).toBe(false);
+    expect(twilioWs.closed).toBe(true);
+  });
+
   it('forwards caller audio to the model as input_audio_buffer.append', async () => {
     const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
     const modelWs = new FakeSocket();
