@@ -5,22 +5,60 @@ This guide will walk you through setting up and running your first TAC applicati
 ## Prerequisites
 
 1. **Node.js 22.13.0+** installed
-2. **Twilio account** with a phone number
+2. **Twilio account** with a phone number that has both **Voice** and **Messaging** capabilities enabled. Messaging requires [A2P 10DLC registration](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc) for US long-code numbers before the number can send SMS.
 3. **API key** for the SDK you're using (e.g., OpenAI API key)
 4. **ngrok** or similar tunneling tool for local development
 
 ## Step 1: Set Up Twilio Services
 
-You need to create Twilio Conversation and Memory services before using TAC.
+You need to create a Twilio Conversation Configuration and Memory Store before using TAC.
 
-Follow the [TAC Quickstart](https://www.twilio.com/docs/conversations/agent-connect/quickstart) for step-by-step instructions on creating these services via the [Twilio Console](https://1console.twilio.com/).
+**Option 1: Use the Setup Wizard**
 
-**Required Services:**
+Run the interactive wizard to automatically create services:
 
-- **Conversation Configuration**: For managing conversations
-- **Memory Service** (optional): For storing and retrieving user context (e.g., persistent profiles, observations, summaries, and richer communication history)
+```bash
+npm run setup
+# Open http://localhost:8080 and follow the wizard
+```
 
-## Step 2: Run the Example
+The wizard will:
+
+- Create a Twilio Conversation Configuration and Memory Store
+- Create a test Profile so you can verify the setup works
+- Generate the `.env` values you need
+
+See [`twilio-setup/`](twilio-setup/) for details.
+
+**Option 2: Manual Setup**
+
+Create services manually through the [Twilio Console](https://1console.twilio.com/). For a complete walkthrough — including which credentials to gather, how to configure SMS and Voice webhooks, and step-by-step Console navigation — see the [TAC Quickstart](https://www.twilio.com/docs/conversations/agent-connect/quickstart).
+
+## Step 2: Choose an Example
+
+TAC includes examples for different integration approaches. Each one is a self-contained npm project under `examples/`.
+
+### Partner SDK Examples
+
+- **[`openai/`](examples/openai/)** — OpenAI Chat Completions across Voice and SMS with conversation memory and user context. **Start here.**
+- **[`openai-streaming/`](examples/openai-streaming/)** — Stream LLM responses token-by-token for faster time-to-first-audio on voice
+
+### Channel Examples
+
+- **[`whatsapp/`](examples/whatsapp/)** — WhatsApp channel with automatic memory retrieval
+- **[`rcs/`](examples/rcs/)** — RCS (Rich Communication Services) channel using the OpenAI Agents SDK
+- **[`chat/`](examples/chat/)** — Web-based chat using the Twilio Conversations JS SDK and `ChatChannel`
+- **[`relay-only/`](examples/relay-only/)** — ConversationRelay-only mode: get started with voice using just ConversationRelay, no Conversation Orchestrator
+
+### Feature Examples
+
+- **[`outbound/`](examples/outbound/)** — Agent-initiated outbound conversations via SMS, RCS, WhatsApp, or Voice
+- **[`handoff/`](examples/handoff/)** — Hand the conversation off to a human agent via a Twilio Studio Flow
+- **[`voice-call-events/`](examples/voice-call-events/)** — Answering machine detection, recording, and call disposition on outbound calls — hang up on voicemail, track which calls went unreached
+- **[`voice-dtmf/`](examples/voice-dtmf/)** — Keypad input over ConversationRelay: collect an account number digit by digit and hand it to the agent as context
+- **[`voice-twiml-customization/`](examples/voice-twiml-customization/)** — Customize ConversationRelay TwiML attributes per call
+
+## Step 3: Run an Example
 
 ### Install Dependencies
 
@@ -32,8 +70,6 @@ npm run build
 ```
 
 ### Configure Environment Variables
-
-Create your `.env` file:
 
 ```bash
 cd getting_started/examples
@@ -54,9 +90,9 @@ ngrok http 8000
 
 Update `TWILIO_VOICE_PUBLIC_DOMAIN` in your `.env` file with your ngrok domain (e.g., `abc123.ngrok.app`, without the `https://` prefix). If you start the server first and then change the URL, you'll need to restart the server for it to pick up the new value.
 
-### Install Example Dependencies and Run the Server
+### Run the Server
 
-From the `getting_started/examples/openai` directory:
+Each example installs its own dependencies:
 
 ```bash
 cd getting_started/examples/openai
@@ -74,37 +110,32 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 - `TWILIO_ACCOUNT_SID`: Twilio account SID
 - `TWILIO_AUTH_TOKEN`: Twilio auth token
-- `TWILIO_API_KEY`: Twilio API key
-- `TWILIO_API_SECRET`: Twilio API secret
+- `TWILIO_API_KEY`: Twilio API key SID (starts with `SK`)
+- `TWILIO_API_SECRET`: Twilio API key secret
 - `TWILIO_PHONE_NUMBER`: Your Twilio phone number
-- `TWILIO_CONVERSATION_CONFIGURATION_ID`: Conversation configuration ID
-- `OPENAI_API_KEY`: Your OpenAI API key (for OpenAI example)
 
-### Optional (Server)
+### Required for Orchestrator Mode (omit for ConversationRelay-only)
+
+- `TWILIO_CONVERSATION_CONFIGURATION_ID`: Conversation Configuration ID. Omit it to run in ConversationRelay-only mode, as the [`relay-only/`](examples/relay-only/) example does.
+
+### Optional (Voice Channel)
 
 - `TWILIO_VOICE_PUBLIC_DOMAIN`: Public host for voice routes (required for voice, e.g., `abc123.ngrok.app`). May include a port and/or base path (e.g., `example.ngrok.app:8080` or `example.com/server1`). Schemes like `https://` and trailing slashes are stripped automatically.
-- `TWILIO_WHATSAPP_NUMBER`: Your Twilio WhatsApp number (required for WhatsApp channel, e.g., `whatsapp:+1234567890`)
 
-### Optional (Handoff)
+### Optional (OpenAI Examples)
 
-- `TWILIO_STUDIO_HANDOFF_FLOW_SID`: Studio Flow SID used by `createStudioHandoffTool` to route conversations to a human agent (e.g., via Flex)
+- `OPENAI_API_KEY`: Your OpenAI API key (only needed to run the OpenAI examples)
+
+### Optional (Channel-Specific)
+
+- `TWILIO_WHATSAPP_NUMBER`: WhatsApp-enabled phone number in format `whatsapp:+1234567890` (required for [`whatsapp/`](examples/whatsapp/))
+- `TWILIO_RCS_SENDER_ID`: RCS Sender ID, e.g., `rcs:your_sender_id` (required for [`rcs/`](examples/rcs/) and RCS outbound)
+- `TWILIO_CONVERSATIONS_SERVICE_SID`: Conversations Service SID, starts with `IS` (required for [`chat/`](examples/chat/))
+- `TWILIO_STUDIO_HANDOFF_FLOW_SID`: Studio Flow SID used by `createStudioHandoffTool` to route conversations to a human agent, e.g., via Flex (required for [`handoff/`](examples/handoff/))
 
 ### Optional (Region)
 
 - `TWILIO_REGION`: Twilio region subdomain for API routing
-
-### Optional (RCS Channel)
-
-- `TWILIO_RCS_SENDER_ID`: RCS Sender ID (required for the `rcs/` example and RCS outbound, e.g., `rcs:your_sender_id`)
-
-## Other Examples
-
-- **[WhatsApp Example](examples/whatsapp/)** - WhatsApp channel with memory integration
-- **[Chat Example](examples/chat/)** - Web-based chat using the Twilio Conversations JS SDK and ChatChannel
-- **[RCS Example](examples/rcs/)** - RCS (Rich Communication Services) channel using the OpenAI Agents SDK
-- **[Outbound Example](examples/outbound/)** - Agent-initiated outbound conversations via SMS, RCS, WhatsApp, or Voice
-- **[Voice Call Events Example](examples/voice-call-events/)** - Answering machine detection, recording, and call disposition on outbound calls — hang up on voicemail, track which calls went unreached
-- **[Voice DTMF Example](examples/voice-dtmf/)** - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context
 
 ## Next Steps
 

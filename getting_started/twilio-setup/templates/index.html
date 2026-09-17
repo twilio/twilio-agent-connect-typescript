@@ -1,0 +1,2269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAC Quickstart Setup</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #3b82f6;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <div class="w-full">
+        <!-- Header -->
+        <div class="bg-slate-900 px-6 py-2">
+            <h1 class="text-sm font-semibold text-white">TAC Quickstart Setup</h1>
+        </div>
+
+        <!-- Main Content - Two Column Layout -->
+        <div class="bg-white border-t border-slate-200">
+            <div class="flex items-stretch">
+                <!-- Left Column - Form -->
+                <div class="flex-1 p-6 border-r border-slate-200 min-w-0">
+                    <form id="setupForm" class="max-w-4xl">
+                        <!-- Twilio Credentials -->
+                        <div class="mb-3">
+                            <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                <span class="w-1 h-3 bg-blue-500 rounded"></span>
+                                Twilio Credentials
+                            </h3>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="api_key">API Key SID</label>
+                                    <input type="text" id="api_key" name="api_key" placeholder="SKxxxxxxxx..." required
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="api_secret">API Secret</label>
+                                    <div class="relative">
+                                        <input type="password" id="api_secret" name="api_secret" placeholder="Your API secret" required
+                                            class="w-full px-2.5 py-1.5 pr-9 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <button type="button" onclick="togglePasswordVisibility('api_secret')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                            <svg id="api_secret_eye" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 mt-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="account_sid">Account SID</label>
+                                    <input type="text" id="account_sid" name="account_sid" placeholder="ACxxxxxxxx..." required
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="auth_token">Auth Token</label>
+                                    <div class="relative">
+                                        <input type="password" id="auth_token" name="auth_token" placeholder="Your auth token" required
+                                            class="w-full px-2.5 py-1.5 pr-9 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <button type="button" onclick="togglePasswordVisibility('auth_token')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                            <svg id="auth_token_eye" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <label class="block text-xs font-medium text-slate-700 mb-1" for="twilio_phone">Twilio Phone Number</label>
+                                <input type="tel" id="twilio_phone" name="twilio_phone" placeholder="+18001234567" required
+                                    pattern="^\+[1-9]\d{6,14}$"
+                                    class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+
+                        <!-- Memory Store -->
+                        <div id="memoryStoreSection" class="mb-3 pt-3 border-t border-slate-100 opacity-50 pointer-events-none">
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2">
+                                    <span class="w-1 h-3 bg-blue-500 rounded"></span>
+                                    Memory Store
+                                </h3>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="loadMemoryStores()" id="refreshMemoryStoresBtn"
+                                        class="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                        </svg>
+                                        Refresh
+                                    </button>
+                                    <button type="button" onclick="showCreateMemoryStoreModal()" id="createNewMemoryStoreBtn"
+                                        class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium px-2 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed">
+                                        + Create New
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1" for="memory_store_select">Select Memory Store</label>
+                                <select id="memory_store_select" name="memory_store_select" required
+                                    class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <option value="">-- Select a memory store or create new --</option>
+                                </select>
+                                <p class="text-xs text-slate-500 mt-1">Click Refresh to load your existing memory stores</p>
+                            </div>
+                        </div>
+
+                        <!-- Conversation Orchestrator -->
+                        <div id="conversationConfigSection" class="mb-3 pt-3 border-t border-slate-100 opacity-50 pointer-events-none">
+                            <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                <span class="w-1 h-3 bg-blue-500 rounded"></span>
+                                Conversation Orchestrator
+                            </h3>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="configuration_display_name">
+                                        Display Name
+                                    </label>
+                                    <input type="text" id="configuration_display_name" name="configuration_display_name" placeholder="my-conversation-config" maxlength="32" required
+                                        pattern="^[A-Za-z0-9._~-]+$" title="URL-safe characters only: letters, numbers, dot, underscore, tilde, hyphen (max 32 chars)"
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <p class="mt-0.5 text-xs text-slate-500">URL-safe: letters, numbers, . _ ~ - (no spaces)</p>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="configuration_description">
+                                        Description
+                                    </label>
+                                    <input type="text" id="configuration_description" name="configuration_description" placeholder="Conversation configuration description" maxlength="128" required
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                    <p class="mt-0.5 text-xs text-slate-500">Max 128 characters</p>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <label class="block text-xs font-medium text-slate-700 mb-1" for="ngrok_domain">
+                                    ngrok Domain
+                                </label>
+                                <input type="text" id="ngrok_domain" name="ngrok_domain" placeholder="your-app.ngrok.app" required
+                                    class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <p class="text-xs text-slate-500 mt-1">Domain without https://</p>
+                            </div>
+                        </div>
+
+                        <!-- Optional Configuration -->
+                        <div class="mb-3 pt-3 border-t border-slate-100">
+                            <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                <span class="w-1 h-3 bg-slate-300 rounded"></span>
+                                Optional Configuration
+                            </h3>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-700 mb-1" for="openai_api_key">
+                                    OpenAI API Key <span class="text-slate-400 font-normal">(for examples)</span>
+                                </label>
+                                <input type="text" id="openai_api_key" name="openai_api_key" placeholder="sk-..."
+                                    class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                        </div>
+
+                        <!-- Profile Information (for testing) -->
+                        <div class="mb-3 pt-3 border-t border-slate-100">
+                            <h3 class="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                <span class="w-1 h-3 bg-slate-300 rounded"></span>
+                                Profile Information <span class="text-slate-400 font-normal normal-case">(for testing)</span>
+                            </h3>
+                            <div class="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="email">Email</label>
+                                    <input type="email" id="email" name="email" placeholder="you@example.com" required
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="phone">Phone Number</label>
+                                    <input type="tel" id="phone" name="phone" placeholder="+1234567890" required
+                                        pattern="^\+[1-9]\d{6,14}$"
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-700 mb-1" for="first_name">
+                                        First Name <span class="text-slate-400 font-normal">(optional)</span>
+                                    </label>
+                                    <input type="text" id="first_name" name="first_name" placeholder="John"
+                                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Setup Progress -->
+                        <div class="mb-3 pt-3 border-t border-slate-100">
+                            <h3 class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">Setup Progress</h3>
+
+                            <div class="flex items-start justify-between gap-2">
+                                <!-- Step 1: Memory Store -->
+                                <div id="step-memory" class="flex-1">
+                                    <div class="flex items-center">
+                                        <div id="step-memory-icon" class="w-7 h-7 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-xs font-semibold flex-shrink-0 relative">
+                                            1
+                                        </div>
+                                        <div class="h-0.5 flex-1 bg-slate-200 ml-2"></div>
+                                    </div>
+                                    <div class="mt-1.5">
+                                        <div class="text-xs font-medium text-slate-800">Memory Store</div>
+                                        <div id="step-memory-status" class="text-xs text-slate-500 mt-0.5">Waiting...</div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: Profile -->
+                                <div id="step-profile" class="flex-1">
+                                    <div class="flex items-center">
+                                        <div class="h-0.5 flex-1 bg-slate-200 mr-2"></div>
+                                        <div id="step-profile-icon" class="w-7 h-7 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-xs font-semibold flex-shrink-0 relative">
+                                            2
+                                        </div>
+                                        <div class="h-0.5 flex-1 bg-slate-200 ml-2"></div>
+                                    </div>
+                                    <div class="mt-1.5 text-center">
+                                        <div class="text-xs font-medium text-slate-800">Profile</div>
+                                        <div id="step-profile-status" class="text-xs text-slate-500 mt-0.5">Waiting...</div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 3: Conversation Orchestrator -->
+                                <div id="step-configuration" class="flex-1">
+                                    <div class="flex items-center">
+                                        <div class="h-0.5 flex-1 bg-slate-200 mr-2"></div>
+                                        <div id="step-configuration-icon" class="w-7 h-7 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center text-xs font-semibold flex-shrink-0 relative">
+                                            3
+                                        </div>
+                                    </div>
+                                    <div class="mt-1.5 text-right">
+                                        <div class="text-xs font-medium text-slate-800">Orchestrator</div>
+                                        <div id="step-configuration-status" class="text-xs text-slate-500 mt-0.5">Waiting...</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Error Log Section -->
+                            <div id="errorLogSection" class="hidden mt-4 bg-red-50 border border-red-200 rounded-lg p-3 overflow-hidden">
+                                <div class="flex items-start justify-between gap-2 mb-2">
+                                    <h4 class="text-xs font-semibold text-red-800 uppercase tracking-wide">Error Details</h4>
+                                    <button onclick="document.getElementById('errorLogSection').classList.add('hidden')"
+                                        class="text-xs text-red-600 hover:text-red-800 flex-shrink-0"
+                                        aria-label="Close error details">
+                                        ✕
+                                    </button>
+                                </div>
+                                <div id="errorLogContent" class="text-xs text-red-800 space-y-2 max-h-60 overflow-auto break-words"></div>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="submitBtn" disabled
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            Set Up Services
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Right Column - Existing Resources -->
+                <div class="flex-1 min-w-[24rem] bg-slate-50 flex flex-col self-stretch">
+                    <!-- Memory Stores (33% height, scrollable) -->
+                    <div id="memoryStoresPanelSection" class="flex-1 flex flex-col min-h-0 p-6 pb-3 basis-0 opacity-50 pointer-events-none">
+                        <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                            <h3 class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Existing Memory Stores</h3>
+                            <button onclick="loadMemoryStoresPanel()" id="refreshMemoryStoresPanelBtn"
+                                class="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                        <div id="memoryStoresError" class="hidden text-xs text-red-600 mb-2 flex-shrink-0"></div>
+                        <div id="memoryStoresList" class="space-y-2 overflow-y-auto flex-1 min-h-0">
+                            <div class="text-xs text-slate-400 text-center py-4">Click Refresh to load memory stores</div>
+                        </div>
+                    </div>
+
+                    <!-- Existing Orchestrators (33% height, scrollable) -->
+                    <div id="orchestratorsPanelSection" class="flex-1 flex flex-col min-h-0 border-t border-slate-200 p-6 py-3 basis-0 opacity-50 pointer-events-none">
+                        <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                            <h3 class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Existing Orchestrators</h3>
+                            <button onclick="loadConversationConfigurations()" id="refreshConfigsBtn"
+                                class="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                        </div>
+                        <div id="configsError" class="hidden text-xs text-red-600 mb-2 flex-shrink-0"></div>
+                        <div id="configsList" class="space-y-2 overflow-y-auto flex-1 min-h-0">
+                            <div class="text-xs text-slate-400 text-center py-4">Click Refresh to load configurations</div>
+                        </div>
+                    </div>
+
+                    <!-- Environment Variables (33% height, scrollable) -->
+                    <div class="flex-1 flex flex-col min-h-0 border-t border-slate-200 p-6 pt-3 basis-0">
+                        <div class="flex items-start justify-between mb-3 flex-shrink-0">
+                            <div>
+                                <h3 id="envTitle" class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                                    <span id="envIcon" class="hidden w-4 h-4 bg-green-100 rounded-full items-center justify-center text-xs text-green-600">✓</span>
+                                    <span id="envTitleText">Environment Variables</span>
+                                </h3>
+                                <p class="text-xs text-slate-500 mt-1">Copy to <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs">getting_started/examples/.env</code></p>
+                            </div>
+                            <button id="copyBtn" onclick="copyEnvContent()" disabled
+                                class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-400 text-white text-xs font-medium rounded-md transition-colors disabled:cursor-not-allowed flex-shrink-0">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                </svg>
+                                <span id="copyBtnText">Copy</span>
+                            </button>
+                        </div>
+                        <div class="bg-slate-900 rounded-lg overflow-hidden flex-1 min-h-0 relative">
+                            <pre id="envContent" class="p-3 text-xs text-slate-300 overflow-auto font-mono w-full h-full absolute inset-0"></pre>
+                            <div id="envPlaceholder" class="absolute inset-0 flex items-center justify-center text-slate-400 text-xs pointer-events-none">Complete setup to generate environment variables</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Memory Store Modal -->
+    <div id="createMemoryStoreModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="flex items-center justify-between p-4 border-b border-slate-200">
+                <h3 class="text-sm font-semibold text-slate-800">Create New Memory Store</h3>
+                <button onclick="hideCreateMemoryStoreModal()" class="text-slate-400 hover:text-slate-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <form id="createMemoryStoreForm" class="p-4">
+                <div class="mb-3">
+                    <label class="block text-xs font-medium text-slate-700 mb-1" for="modal_memory_display_name">Display Name</label>
+                    <input type="text" id="modal_memory_display_name" name="modal_memory_display_name" placeholder="my memory store" maxlength="32" required
+                        pattern="^[a-zA-Z0-9\-_ ]+$" title="Letters, numbers, spaces, hyphens, and underscores only, max 32 characters"
+                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <p class="text-xs text-slate-500 mt-1">Letters, numbers, spaces, hyphens, underscores only</p>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs font-medium text-slate-700 mb-1" for="modal_memory_description">Description</label>
+                    <input type="text" id="modal_memory_description" name="modal_memory_description" placeholder="Memory store description" maxlength="128" required
+                        class="w-full px-2.5 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <p class="text-xs text-slate-500 mt-1">Max 128 characters</p>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="hideCreateMemoryStoreModal()"
+                        class="px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-md">
+                        Cancel
+                    </button>
+                    <button type="submit" id="modalCreateBtn"
+                        class="px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed">
+                        Create
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="hidden fixed bottom-6 right-6 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50 max-w-md">
+        <span id="toastMessage" class="text-sm flex-1"></span>
+        <button id="toastActionBtn" class="text-xs font-medium text-blue-400 hover:text-blue-300 px-2 py-1 hover:bg-slate-700 rounded">
+            Undo
+        </button>
+        <button onclick="hideToast()" class="text-slate-400 hover:text-white ml-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        const form = document.getElementById('setupForm');
+        const submitBtn = document.getElementById('submitBtn');
+
+        let memoryStoreId = null;
+        let memoryStoreName = null;
+        let profileId = null;
+        let conversationConfigurationId = null;
+
+        // Toast notification system
+        let toastTimeout = null;
+
+        function showToast(message, showUndo = false, undoCallback = null) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastActionBtn = document.getElementById('toastActionBtn');
+
+            toastMessage.textContent = message;
+
+            if (showUndo && undoCallback) {
+                toastActionBtn.classList.remove('hidden');
+                toastActionBtn.onclick = () => {
+                    hideToast();
+                    undoCallback();
+                };
+            } else {
+                toastActionBtn.classList.add('hidden');
+            }
+
+            toast.classList.remove('hidden');
+
+            // Auto-hide after 5 seconds
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(hideToast, 5000);
+        }
+
+        function hideToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.add('hidden');
+            if (toastTimeout) {
+                clearTimeout(toastTimeout);
+                toastTimeout = null;
+            }
+        }
+
+        // Password visibility toggle
+        function togglePasswordVisibility(fieldId) {
+            const field = document.getElementById(fieldId);
+            const eye = document.getElementById(`${fieldId}_eye`);
+
+            if (field.type === 'password') {
+                field.type = 'text';
+                // Change to eye-slash icon (closed eye)
+                eye.innerHTML = `
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                `;
+            } else {
+                field.type = 'password';
+                // Change back to open eye icon
+                eye.innerHTML = `
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                `;
+            }
+        }
+
+        // Progressive form enablement
+        function checkAuthFields() {
+            const apiKey = document.getElementById('api_key').value.trim();
+            const apiSecret = document.getElementById('api_secret').value.trim();
+            const memoryStoreSection = document.getElementById('memoryStoreSection');
+            const memoryStoresPanelSection = document.getElementById('memoryStoresPanelSection');
+            const orchestratorsPanelSection = document.getElementById('orchestratorsPanelSection');
+
+            if (apiKey && apiSecret) {
+                memoryStoreSection.classList.remove('opacity-50', 'pointer-events-none');
+                memoryStoresPanelSection.classList.remove('opacity-50', 'pointer-events-none');
+                orchestratorsPanelSection.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+                memoryStoreSection.classList.add('opacity-50', 'pointer-events-none');
+                memoryStoresPanelSection.classList.add('opacity-50', 'pointer-events-none');
+                orchestratorsPanelSection.classList.add('opacity-50', 'pointer-events-none');
+            }
+        }
+
+        function checkMemoryStoreSelected() {
+            const selectedStore = document.getElementById('memory_store_select').value;
+            const conversationConfigSection = document.getElementById('conversationConfigSection');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (selectedStore) {
+                conversationConfigSection.classList.remove('opacity-50', 'pointer-events-none');
+                submitBtn.disabled = false;
+                memoryStoreId = selectedStore;
+                // Save to localStorage
+                try {
+                    localStorage.setItem('tac_quickstart_memory_store_id', selectedStore);
+                } catch (e) {
+                    console.log('Could not save memory store ID to localStorage');
+                }
+            } else {
+                conversationConfigSection.classList.add('opacity-50', 'pointer-events-none');
+                submitBtn.disabled = true;
+                memoryStoreId = null;
+                // Remove from localStorage
+                try {
+                    localStorage.removeItem('tac_quickstart_memory_store_id');
+                } catch (e) {
+                    console.log('Could not remove memory store ID from localStorage');
+                }
+            }
+        }
+
+        // Add event listeners for auth fields
+        ['api_key', 'api_secret'].forEach(fieldId => {
+            document.getElementById(fieldId).addEventListener('input', checkAuthFields);
+        });
+
+        // Add event listener for memory store selection
+        document.getElementById('memory_store_select').addEventListener('change', checkMemoryStoreSelected);
+
+        // Memory Store Modal Functions
+        function showCreateMemoryStoreModal() {
+            document.getElementById('createMemoryStoreModal').classList.remove('hidden');
+        }
+
+        function hideCreateMemoryStoreModal() {
+            document.getElementById('createMemoryStoreModal').classList.add('hidden');
+            document.getElementById('createMemoryStoreForm').reset();
+        }
+
+        // Load Memory Stores
+        async function loadMemoryStores() {
+            const apiKey = document.getElementById('api_key').value.trim();
+            const apiSecret = document.getElementById('api_secret').value.trim();
+            const memoryStoreSelect = document.getElementById('memory_store_select');
+            const refreshBtn = document.getElementById('refreshMemoryStoresBtn');
+
+            if (!apiKey || !apiSecret) {
+                alert('Please enter API Key and API Secret first');
+                return;
+            }
+
+            // Show loading state
+            refreshBtn.disabled = true;
+            const originalBtnContent = refreshBtn.innerHTML;
+            refreshBtn.innerHTML = '<div class="spinner"></div>';
+
+            try {
+                const response = await fetch('/api/list-memory-stores', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        api_secret: apiSecret
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Clear existing options except the first one
+                    memoryStoreSelect.innerHTML = '<option value="">-- Select a memory store --</option>';
+
+                    // Filter to only ACTIVE stores for dropdown
+                    const activeStores = result.stores.filter(store => store.status === 'ACTIVE');
+
+                    // Add only ACTIVE stores to dropdown
+                    activeStores.forEach(store => {
+                        const option = document.createElement('option');
+                        option.value = store.id;
+                        option.textContent = store.displayName;
+                        option.dataset.displayName = store.displayName;
+                        memoryStoreSelect.appendChild(option);
+                    });
+
+                    if (activeStores.length === 0) {
+                        memoryStoreSelect.innerHTML = '<option value="">-- No active memory stores found. Click \'Create New\' to get started --</option>';
+                    } else {
+                        // Try to restore previously selected memory store from localStorage
+                        try {
+                            const savedStoreId = localStorage.getItem('tac_quickstart_memory_store_id');
+                            if (savedStoreId) {
+                                // Check if the saved store is still in the list
+                                const storeExists = activeStores.some(store => store.id === savedStoreId);
+                                if (storeExists) {
+                                    memoryStoreSelect.value = savedStoreId;
+                                    checkMemoryStoreSelected();
+                                }
+                            }
+                        } catch (e) {
+                            console.log('Could not restore saved memory store selection');
+                        }
+                    }
+                } else {
+                    console.error('Failed to load memory stores:', result.message);
+                    memoryStoreSelect.innerHTML = '<option value="">-- Failed to load stores. Please try again --</option>';
+                }
+            } catch (error) {
+                console.error('Error loading memory stores:', error);
+                memoryStoreSelect.innerHTML = '<option value="">-- Network error. Please try again --</option>';
+            } finally {
+                refreshBtn.disabled = false;
+                refreshBtn.innerHTML = originalBtnContent;
+            }
+        }
+
+        // Create Memory Store from Modal
+        document.getElementById('createMemoryStoreForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const apiKey = document.getElementById('api_key').value.trim();
+            const apiSecret = document.getElementById('api_secret').value.trim();
+            const displayName = document.getElementById('modal_memory_display_name').value.trim();
+            const description = document.getElementById('modal_memory_description').value.trim();
+            const modalCreateBtn = document.getElementById('modalCreateBtn');
+
+            if (!apiKey || !apiSecret) {
+                alert('Please enter API Key and API Secret first');
+                return;
+            }
+
+            // Show loading state
+            modalCreateBtn.disabled = true;
+            modalCreateBtn.textContent = 'Creating...';
+
+            const credentials = {
+                api_key: apiKey,
+                api_secret: apiSecret,
+                memory_display_name: displayName,
+                memory_description: description
+            };
+
+            const success = await createMemoryStore(credentials);
+
+            if (success) {
+                // Close modal
+                hideCreateMemoryStoreModal();
+
+                // Refresh the memory stores dropdown and panel
+                await loadMemoryStores();
+                await loadMemoryStoresPanel();
+
+                // Auto-select the newly created store
+                const memoryStoreSelect = document.getElementById('memory_store_select');
+                if (memoryStoreId) {
+                    memoryStoreSelect.value = memoryStoreId;
+                    checkMemoryStoreSelected();
+                }
+            }
+
+            modalCreateBtn.disabled = false;
+            modalCreateBtn.textContent = 'Create';
+        });
+
+        // Redact sensitive fields from objects before logging
+        function redactSensitiveFields(obj) {
+            if (!obj || typeof obj !== 'object') return obj;
+
+            const sensitiveKeys = ['api_secret', 'auth_token', 'api_key', 'openai_api_key'];
+            const redacted = { ...obj };
+
+            for (const key of sensitiveKeys) {
+                if (key in redacted) {
+                    redacted[key] = '[REDACTED]';
+                }
+            }
+
+            return redacted;
+        }
+
+        function logError(operation, result, requestPayload = null) {
+            // Redact sensitive fields before logging
+            const redactedPayload = requestPayload ? redactSensitiveFields(requestPayload) : null;
+
+            // Log to console
+            console.group(`❌ Error: ${operation}`);
+            if (result.endpoint) console.log('Endpoint:', result.endpoint);
+            if (redactedPayload) console.log('Request Payload:', redactedPayload);
+            if (result.payload) console.log('API Payload:', result.payload);
+            if (result.status_code) console.log('Status Code:', result.status_code);
+            if (result.response) {
+                console.log('Response:', result.response);
+                try {
+                    console.log('Response (parsed):', JSON.parse(result.response));
+                } catch (e) {}
+            }
+            console.log('Full Result:', result);
+            console.groupEnd();
+
+            // Show in UI error log
+            showErrorLog(operation, result);
+        }
+
+        function showErrorLog(operation, result) {
+            const errorLogSection = document.getElementById('errorLogSection');
+            const errorLogContent = document.getElementById('errorLogContent');
+
+            // Build error log HTML with proper overflow handling
+            let errorHtml = `<div class="border-b border-red-200 pb-2 mb-2 last:border-b-0 last:mb-0 last:pb-0 overflow-hidden">
+                <div class="font-semibold text-red-900 break-words">${escapeHtml(operation)}</div>`;
+
+            // Show error message
+            if (result.message) {
+                errorHtml += `<div class="mt-1 break-words overflow-wrap-anywhere">${escapeHtml(result.message)}</div>`;
+            }
+
+            if (result.endpoint) {
+                errorHtml += `<div class="mt-2 overflow-hidden">
+                    <span class="font-medium">Endpoint:</span>
+                    <code class="text-xs bg-red-100 px-1 py-0.5 rounded break-all block mt-1 overflow-x-auto">${escapeHtml(result.endpoint)}</code>
+                </div>`;
+            }
+
+            if (result.payload) {
+                errorHtml += `<div class="mt-2 overflow-hidden">
+                    <span class="font-medium">Payload:</span>
+                    <pre class="mt-1 bg-red-100 p-2 rounded text-xs overflow-x-auto max-h-32" style="word-break: break-word; overflow-wrap: break-word;">${escapeHtml(JSON.stringify(result.payload, null, 2))}</pre>
+                </div>`;
+            }
+
+            if (result.response) {
+                let responseDisplay = result.response;
+                try {
+                    responseDisplay = JSON.stringify(JSON.parse(result.response), null, 2);
+                } catch (e) {}
+                errorHtml += `<div class="mt-2 overflow-hidden">
+                    <span class="font-medium">Response:</span>
+                    <pre class="mt-1 bg-red-100 p-2 rounded text-xs overflow-x-auto max-h-32" style="word-break: break-word; overflow-wrap: break-word;">${escapeHtml(responseDisplay)}</pre>
+                </div>`;
+            }
+
+            if (result.status_code) {
+                errorHtml += `<div class="mt-2">
+                    <span class="font-medium">Status Code:</span> ${escapeHtml(result.status_code)}
+                </div>`;
+            }
+
+            errorHtml += `</div>`;
+
+            // Append to error log (keep previous errors)
+            errorLogContent.innerHTML += errorHtml;
+            errorLogSection.classList.remove('hidden');
+        }
+
+        function formatErrorForUI(result) {
+            // Just return "Failed" - full details are shown in error log section
+            return 'Failed';
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            try {
+                const date = new Date(dateString);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+
+                if (diffMins < 1) return 'Just now';
+                if (diffMins < 60) return `${diffMins}m ago`;
+                if (diffHours < 24) return `${diffHours}h ago`;
+                if (diffDays < 7) return `${diffDays}d ago`;
+
+                // For older dates, show formatted date
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            } catch (e) {
+                return dateString;
+            }
+        }
+
+        function updateStep(stepId, status, message) {
+            const icon = document.getElementById(`${stepId}-icon`);
+            const statusEl = document.getElementById(`${stepId}-status`);
+            const step = document.getElementById(stepId);
+
+            // Get all connecting lines for this step
+            const lines = step.querySelectorAll('.h-0\\.5');
+
+            icon.className = 'w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 relative';
+
+            if (status === 'loading') {
+                icon.className += ' bg-blue-100 text-blue-600';
+                icon.innerHTML = '<div class="spinner"></div>';
+                statusEl.className = 'text-xs text-blue-600 mt-0.5 font-medium break-words';
+                // Update connecting lines to blue for in-progress
+                lines.forEach(line => {
+                    line.className = line.className.replace('bg-slate-200', 'bg-blue-200');
+                });
+            } else if (status === 'success') {
+                icon.className += ' bg-green-100 text-green-600';
+                icon.innerHTML = '✓';
+                statusEl.className = 'text-xs text-green-600 mt-0.5 font-medium break-words';
+                // Update connecting lines to green for completed
+                lines.forEach(line => {
+                    line.className = line.className.replace('bg-slate-200', 'bg-green-200');
+                    line.className = line.className.replace('bg-blue-200', 'bg-green-200');
+                });
+            } else if (status === 'error') {
+                icon.className += ' bg-red-100 text-red-600';
+                icon.innerHTML = '✕';
+                statusEl.className = 'text-xs text-red-600 mt-0.5 font-medium break-words max-w-full';
+                // Update connecting lines to red for error
+                lines.forEach(line => {
+                    line.className = line.className.replace('bg-slate-200', 'bg-red-200');
+                    line.className = line.className.replace('bg-blue-200', 'bg-red-200');
+                });
+            } else {
+                icon.className += ' bg-slate-100 text-slate-400';
+                statusEl.className = 'text-xs text-slate-500 mt-0.5 break-words';
+                // Reset connecting lines to default gray
+                lines.forEach(line => {
+                    line.className = line.className.replace('bg-blue-200', 'bg-slate-200');
+                    line.className = line.className.replace('bg-green-200', 'bg-slate-200');
+                    line.className = line.className.replace('bg-red-200', 'bg-slate-200');
+                });
+            }
+
+            statusEl.innerHTML = message;
+        }
+
+        async function createMemoryStore(credentials) {
+            updateStep('step-memory', 'loading', 'Creating Memory Store...');
+
+            try {
+                const response = await fetch('/api/create-memory-store', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: credentials.api_key,
+                        api_secret: credentials.api_secret,
+                        memory_display_name: credentials.memory_display_name || null,
+                        memory_description: credentials.memory_description || null
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Immediate creation (200/201 response)
+                    memoryStoreId = result.memory_store_id;
+                    memoryStoreName = result.memory_store_name;
+                    updateStep('step-memory', 'loading', 'Waiting for Memory Store to initialize...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    updateStep('step-memory', 'loading', 'Verifying Memory Store...');
+                    return await verifyMemoryStore(credentials);
+                } else if (result.status === 'accepted') {
+                    // Async creation (202 response) - poll operation status first
+                    if (typeof result.status_url !== 'string' || !result.status_url.trim()) {
+                        logError('Create Memory Store', {
+                            ...result,
+                            error: 'Missing status_url in accepted create-memory-store response'
+                        }, {
+                            memory_display_name: credentials.memory_display_name,
+                            memory_description: credentials.memory_description
+                        });
+                        updateStep('step-memory', 'error', 'Memory Store creation accepted, but no status URL returned');
+                        return false;
+                    }
+                    updateStep('step-memory', 'loading', 'Polling operation status...');
+                    return await pollOperationStatus(credentials, result.status_url);
+                } else {
+                    logError('Create Memory Store', result, {
+                        memory_display_name: credentials.memory_display_name,
+                        memory_description: credentials.memory_description
+                    });
+                    updateStep('step-memory', 'error', formatErrorForUI(result));
+                    return false;
+                }
+            } catch (error) {
+                console.error('Network error creating Memory Store:', error);
+                updateStep('step-memory', 'error', 'Network error: ' + error.message);
+                return false;
+            }
+        }
+
+        async function pollOperationStatus(credentials, statusUrl, maxAttempts = 30, delayMs = 2000) {
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await fetch('/api/poll-operation-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            status_url: statusUrl,
+                            api_key: credentials.api_key,
+                            api_secret: credentials.api_secret
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'completed') {
+                        // Extract memory_store_id from operation result
+                        const operationResult = result?.result;
+                        if (!operationResult || typeof operationResult !== 'object' || !operationResult.id) {
+                            const malformedResult = {
+                                ...result,
+                                error: 'Operation completed but response is missing result.id'
+                            };
+                            logError('Poll Operation Status', malformedResult, {
+                                status_url: statusUrl
+                            });
+                            updateStep('step-memory', 'error', 'Operation completed but did not return valid Memory Store ID');
+                            return false;
+                        }
+                        memoryStoreId = operationResult.id;
+                        memoryStoreName = operationResult.displayName || credentials.memory_display_name;
+                        updateStep('step-memory', 'loading', 'Waiting for Memory Store to initialize...');
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        updateStep('step-memory', 'loading', 'Verifying Memory Store...');
+                        return await verifyMemoryStore(credentials);
+                    } else if (result.status === 'pending') {
+                        updateStep('step-memory', 'loading', `Polling operation... (${result.operation_status})`);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    } else {
+                        logError('Poll Operation Status', result);
+                        updateStep('step-memory', 'error', formatErrorForUI(result));
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Error polling operation status:', error);
+                    updateStep('step-memory', 'error', 'Polling error: ' + error.message);
+                    return false;
+                }
+            }
+            updateStep('step-memory', 'error', 'Operation polling timed out');
+            return false;
+        }
+
+        async function verifyMemoryStore(credentials, maxAttempts = 30, delayMs = 2000, maxRetries = 3) {
+            let errorRetries = 0;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await fetch('/api/verify-memory-store', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            memory_store_id: memoryStoreId,
+                            api_key: credentials.api_key,
+                            api_secret: credentials.api_secret
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        updateStep('step-memory', 'success', 'Created');
+                        return true;
+                    } else if (result.status === 'pending') {
+                        updateStep('step-memory', 'loading', `Verifying... (${result.store_status})`);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    } else {
+                        errorRetries++;
+                        if (errorRetries < maxRetries) {
+                            logError(`Verify Memory Store (retry ${errorRetries}/${maxRetries})`, result);
+                            updateStep('step-memory', 'loading', `Retrying verification... (${errorRetries}/${maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+                        } else {
+                            logError('Verify Memory Store', result);
+                            updateStep('step-memory', 'error', formatErrorForUI(result));
+                            return false;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Verification error:', error);
+                    updateStep('step-memory', 'error', 'Verification error: ' + error.message);
+                    return false;
+                }
+            }
+            updateStep('step-memory', 'error', 'Verification timed out');
+            return false;
+        }
+
+        async function createProfile(credentials) {
+            updateStep('step-profile', 'loading', 'Creating Profile...');
+
+            try {
+                const response = await fetch('/api/create-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        memory_store_id: memoryStoreId,
+                        api_key: credentials.api_key,
+                        api_secret: credentials.api_secret,
+                        email: credentials.email,
+                        phone: credentials.phone,
+                        first_name: credentials.first_name
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    profileId = result.profile_id;
+                    updateStep('step-profile', 'loading', 'Waiting for Profile to initialize...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    updateStep('step-profile', 'loading', 'Verifying Profile...');
+                    return await verifyProfile(credentials);
+                } else {
+                    logError('Create Profile', result);
+                    updateStep('step-profile', 'error', formatErrorForUI(result));
+                    return false;
+                }
+            } catch (error) {
+                console.error('Network error creating Profile:', error);
+                updateStep('step-profile', 'error', 'Network error: ' + error.message);
+                return false;
+            }
+        }
+
+        async function verifyProfile(credentials, maxAttempts = 30, delayMs = 2000, maxRetries = 3) {
+            // Verify traits
+            let errorRetries = 0;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await fetch('/api/verify-profile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            memory_store_id: memoryStoreId,
+                            profile_id: profileId,
+                            api_key: credentials.api_key,
+                            api_secret: credentials.api_secret,
+                            email: credentials.email,
+                            phone: credentials.phone,
+                            first_name: credentials.first_name
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        updateStep('step-profile', 'loading', 'Verifying phone lookup...');
+                        break;
+                    } else if (result.status === 'pending') {
+                        updateStep('step-profile', 'loading', `Verifying traits... (attempt ${attempt})`);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    } else {
+                        errorRetries++;
+                        if (errorRetries < maxRetries) {
+                            logError(`Verify Profile (retry ${errorRetries}/${maxRetries})`, result);
+                            updateStep('step-profile', 'loading', `Retrying verification... (${errorRetries}/${maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+                        } else {
+                            logError('Verify Profile', result);
+                            updateStep('step-profile', 'error', formatErrorForUI(result));
+                            return false;
+                        }
+                    }
+
+                    if (attempt === maxAttempts) {
+                        updateStep('step-profile', 'error', 'Traits verification timed out');
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Profile verification error:', error);
+                    updateStep('step-profile', 'error', 'Verification error: ' + error.message);
+                    return false;
+                }
+            }
+
+            return await verifyProfileLookup(credentials, maxAttempts, delayMs);
+        }
+
+        async function verifyProfileLookup(credentials, maxAttempts = 30, delayMs = 2000, maxRetries = 3) {
+            let errorRetries = 0;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await fetch('/api/lookup-profile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            memory_store_id: memoryStoreId,
+                            profile_id: profileId,
+                            api_key: credentials.api_key,
+                            api_secret: credentials.api_secret,
+                            phone: credentials.phone
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        updateStep('step-profile', 'success', 'Created');
+                        return true;
+                    } else if (result.status === 'pending') {
+                        updateStep('step-profile', 'loading', `Verifying phone lookup... (attempt ${attempt})`);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    } else {
+                        errorRetries++;
+                        if (errorRetries < maxRetries) {
+                            logError(`Profile Lookup (retry ${errorRetries}/${maxRetries})`, result);
+                            updateStep('step-profile', 'loading', `Retrying lookup... (${errorRetries}/${maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+                        } else {
+                            logError('Profile Lookup', result);
+                            updateStep('step-profile', 'error', formatErrorForUI(result));
+                            return false;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Profile lookup error:', error);
+                    updateStep('step-profile', 'error', 'Lookup error: ' + error.message);
+                    return false;
+                }
+            }
+            updateStep('step-profile', 'error', 'Phone lookup verification timed out');
+            return false;
+        }
+
+        async function createConversationConfiguration(credentials, maxRetries = 3) {
+            updateStep('step-configuration', 'loading', 'Creating Conversation Configuration...');
+
+            for (let retry = 0; retry < maxRetries; retry++) {
+                try {
+                    const response = await fetch('/api/create-conversation-configuration', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            api_key: credentials.api_key,
+                            api_secret: credentials.api_secret,
+                            memory_store_id: memoryStoreId,
+                            twilio_phone: credentials.twilio_phone,
+                            ngrok_domain: credentials.ngrok_domain,
+                            configuration_display_name: document.getElementById('configuration_display_name').value.trim(),
+                            configuration_description: document.getElementById('configuration_description').value.trim()
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        conversationConfigurationId = result.conversation_configuration_id;
+                        updateStep('step-configuration', 'success', 'Created');
+                        // Refresh the configurations list
+                        loadConversationConfigurations();
+                        return true;
+                    } else if (result.status === 'accepted') {
+                        // Async creation (202 response) - poll operation status
+                        if (typeof result.status_url !== 'string' || !result.status_url.trim()) {
+                            logError('Create Conversation Configuration', {
+                                ...result,
+                                error: 'Missing status_url in accepted create-conversation-configuration response'
+                            });
+                            updateStep('step-configuration', 'error', 'Configuration creation accepted, but no status URL returned');
+                            return false;
+                        }
+                        updateStep('step-configuration', 'loading', 'Polling configuration status...');
+                        // Display name is now required - read from input field
+                        const displayName = document.getElementById('configuration_display_name').value.trim();
+                        return await pollConfigurationOperationStatus(credentials, result.status_url, displayName);
+                    } else {
+                        if (retry < maxRetries - 1) {
+                            logError(`Create Conversation Configuration (retry ${retry + 1}/${maxRetries})`, result);
+                            updateStep('step-configuration', 'loading', `Retrying... (${retry + 1}/${maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+                        } else {
+                            logError('Create Conversation Configuration', result);
+                            updateStep('step-configuration', 'error', formatErrorForUI(result));
+                            return false;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Network error creating Conversation Configuration:', error);
+                    if (retry < maxRetries - 1) {
+                        updateStep('step-configuration', 'loading', `Network error, retrying... (${retry + 1}/${maxRetries})`);
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                    } else {
+                        updateStep('step-configuration', 'error', 'Network error: ' + error.message);
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+
+        async function pollConfigurationOperationStatus(credentials, statusUrl, displayName, maxAttempts = 30, delayMs = 2000) {
+            // displayName is the caller-provided name (from the input field)
+            // and is used to match the created configuration after the operation completes
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await fetch('/api/poll-operation-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            status_url: statusUrl,
+                            api_key: credentials.api_key,
+                            api_secret: credentials.api_secret
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === 'completed') {
+                        // Conversation Orchestrator Operations API doesn't return the config ID in result
+                        // Fetch configurations list and find the one matching our displayName
+                        // Retry for eventual consistency (list endpoint may lag after async create)
+                        const maxListAttempts = 10;
+                        const listRetryDelayMs = 1000;
+
+                        for (let listAttempt = 1; listAttempt <= maxListAttempts; listAttempt++) {
+                            updateStep('step-configuration', 'loading', `Fetching configuration ID... (attempt ${listAttempt}/${maxListAttempts})`);
+
+                            const listResponse = await fetch('/api/list-conversation-configurations', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    api_key: credentials.api_key,
+                                    api_secret: credentials.api_secret
+                                })
+                            });
+
+                            const listResult = await listResponse.json();
+
+                            if (listResult.status === 'success') {
+                                // Find the configuration by displayName
+                                const matchingConfig = listResult.configurations.find(config =>
+                                    config.displayName === displayName
+                                );
+
+                                if (matchingConfig) {
+                                    conversationConfigurationId = matchingConfig.id;
+                                    updateStep('step-configuration', 'success', 'Created');
+                                    // Refresh the configurations list
+                                    loadConversationConfigurations();
+                                    return true;
+                                }
+
+                                // Not found yet - retry if we have attempts left
+                                if (listAttempt < maxListAttempts) {
+                                    updateStep('step-configuration', 'loading', 'Waiting for configuration to appear...');
+                                    await new Promise(resolve => setTimeout(resolve, listRetryDelayMs));
+                                }
+                            } else {
+                                logError('List Configurations', listResult);
+                                updateStep('step-configuration', 'error', 'Failed to fetch configuration ID');
+                                return false;
+                            }
+                        }
+
+                        // Exhausted retries without finding the configuration
+                        logError('Find Configuration', {
+                            message: `Configuration with displayName "${displayName}" not found in list after ${maxListAttempts} attempts`,
+                            displayName: displayName
+                        });
+                        updateStep('step-configuration', 'error', 'Configuration ID not found after retrying');
+                        return false;
+                    } else if (result.status === 'pending') {
+                        updateStep('step-configuration', 'loading', `Polling operation... (${result.operation_status})`);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    } else {
+                        logError('Poll Configuration Operation Status', result);
+                        updateStep('step-configuration', 'error', formatErrorForUI(result));
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Error polling configuration operation status:', error);
+                    updateStep('step-configuration', 'error', 'Polling error: ' + error.message);
+                    return false;
+                }
+            }
+            updateStep('step-configuration', 'error', 'Configuration operation polling timed out');
+            return false;
+        }
+
+        // Conversation Configurations Management
+        async function loadConversationConfigurations() {
+            const apiKey = document.getElementById('api_key').value;
+            const apiSecret = document.getElementById('api_secret').value;
+            const configsList = document.getElementById('configsList');
+            const configsError = document.getElementById('configsError');
+
+            if (!apiKey || !apiSecret) {
+                configsError.textContent = 'Please enter API Key and API Secret first';
+                configsError.classList.remove('hidden');
+                return;
+            }
+
+            configsError.classList.add('hidden');
+            configsList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading...</div>';
+
+            try {
+                const response = await fetch('/api/list-conversation-configurations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        api_secret: apiSecret
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    if (result.configurations.length === 0) {
+                        configsList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No configurations found</div>';
+                    } else {
+                        // Fetch memory store details in batches to avoid overwhelming the API
+                        const BATCH_SIZE = 5; // Process 5 requests at a time
+                        const configurationsWithMemory = [];
+
+                        for (let i = 0; i < result.configurations.length; i += BATCH_SIZE) {
+                            const batch = result.configurations.slice(i, i + BATCH_SIZE);
+                            const batchResults = await Promise.all(
+                                batch.map(async (config) => {
+                                    let memoryStore = null;
+                                    if (config.memoryStoreId && apiKey && apiSecret) {
+                                        try {
+                                            const memoryResponse = await fetch('/api/get-memory-store', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    memory_store_id: config.memoryStoreId,
+                                                    api_key: apiKey,
+                                                    api_secret: apiSecret
+                                                })
+                                            });
+                                            const memoryResult = await memoryResponse.json();
+                                            if (memoryResult.status === 'success') {
+                                                memoryStore = memoryResult.memory_store;
+                                            }
+                                        } catch (error) {
+                                            console.error(`Error fetching memory store for config ${config.id}:`, error);
+                                        }
+                                    }
+                                    return { ...config, memoryStore };
+                                })
+                            );
+                            configurationsWithMemory.push(...batchResults);
+                        }
+
+                        configsList.innerHTML = configurationsWithMemory.map((config, index) => `
+                            <div class="bg-white rounded-lg border border-slate-200" id="config-${escapeHtml(config.id)}">
+                                <div class="p-3">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                                            <button type="button" onclick="toggleConfigDetails('config-details-${index}')"
+                                                class="flex-shrink-0 w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                                                aria-label="Toggle configuration details"
+                                                aria-expanded="false"
+                                                id="config-details-${index}-button">
+                                                <svg id="config-details-${index}-icon" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                                </svg>
+                                            </button>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs text-slate-600 truncate">Conversation: <span class="font-medium text-slate-800">${escapeHtml(config.displayName)}</span></div>
+                                                ${config.memoryStore ? `
+                                                    <div class="text-xs text-slate-600 truncate mt-0.5">Memory: <span class="font-medium text-slate-800">${escapeHtml(config.memoryStore.displayName)}</span></div>
+                                                ` : ''}
+                                                ${config.createdAt ? `
+                                                    <div class="text-xs text-slate-400 mt-0.5">${formatDate(config.createdAt)}</div>
+                                                ` : ''}
+                                            </div>
+                                        </div>
+                                        <button type="button"
+                                            data-config-id="${escapeHtml(config.id)}"
+                                            data-config-display-name="${escapeHtml(config.displayName)}"
+                                            onclick="deleteConversationConfiguration(this.dataset.configId, this.dataset.configDisplayName)"
+                                            class="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded flex-shrink-0">
+                                            Delete
+                                        </button>
+                                    </div>
+
+                                    <!-- Expandable Details -->
+                                    <div id="config-details-${index}" class="hidden mt-3 pt-3 border-t border-slate-100 space-y-3">
+                                        <!-- Conversation Section -->
+                                        <div>
+                                            <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Conversation</div>
+                                            <div class="space-y-0.5">
+                                                <div class="flex items-baseline gap-2">
+                                                    <span class="text-xs text-slate-500 flex-shrink-0">Display Name:</span>
+                                                    <span class="text-xs font-medium text-slate-800 truncate">${escapeHtml(config.displayName)}</span>
+                                                </div>
+                                                <div class="flex items-baseline gap-2">
+                                                    <span class="text-xs text-slate-500 flex-shrink-0">ID:</span>
+                                                    <span class="text-xs text-slate-400 font-mono break-all">${escapeHtml(config.id)}</span>
+                                                </div>
+                                                ${config.description ? `
+                                                    <div class="flex items-baseline gap-2">
+                                                        <span class="text-xs text-slate-500 flex-shrink-0">Description:</span>
+                                                        <span class="text-xs text-slate-600 truncate" title="${escapeHtml(config.description)}">${escapeHtml(config.description)}</span>
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+                                        </div>
+
+                                        <!-- Memory Store Section -->
+                                        ${config.memoryStore ? `
+                                            <div>
+                                                <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Memory Store</div>
+                                                <div class="space-y-0.5">
+                                                    <div class="flex items-baseline gap-2">
+                                                        <span class="text-xs text-slate-500 flex-shrink-0">Display Name:</span>
+                                                        <span class="text-xs font-medium text-slate-800 truncate">${escapeHtml(config.memoryStore.displayName)}</span>
+                                                    </div>
+                                                    <div class="flex items-baseline gap-2">
+                                                        <span class="text-xs text-slate-500 flex-shrink-0">ID:</span>
+                                                        <span class="text-xs text-slate-400 font-mono break-all">${escapeHtml(config.memoryStore.id)}</span>
+                                                    </div>
+                                                    ${config.memoryStore.description ? `
+                                                        <div class="flex items-baseline gap-2">
+                                                            <span class="text-xs text-slate-500 flex-shrink-0">Description:</span>
+                                                            <span class="text-xs text-slate-600 truncate" title="${escapeHtml(config.memoryStore.description)}">${escapeHtml(config.memoryStore.description)}</span>
+                                                        </div>
+                                                    ` : ''}
+                                                    <div class="flex items-baseline gap-2 mt-1">
+                                                        <span class="text-xs text-slate-500 flex-shrink-0">Status:</span>
+                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                            config.memoryStore.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                                                            config.memoryStore.status === 'PROVISIONING' ? 'bg-blue-100 text-blue-800' :
+                                                            config.memoryStore.status === 'QUEUED' ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-red-100 text-red-800'
+                                                        }">
+                                                            ${escapeHtml(config.memoryStore.status)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ` : config.memoryStoreId && apiKey && apiSecret ? `
+                                            <div>
+                                                <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Memory Store</div>
+                                                <div class="text-xs text-slate-400">Failed to load memory store details</div>
+                                            </div>
+                                        ` : config.memoryStoreId ? `
+                                            <div>
+                                                <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Memory Store</div>
+                                                <div class="text-xs text-slate-400">Enter API credentials to view details</div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    configsError.textContent = result.message;
+                    configsError.classList.remove('hidden');
+                    configsList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Failed to load</div>';
+                }
+            } catch (error) {
+                console.error('Error loading configurations:', error);
+                configsError.textContent = 'Network error: ' + error.message;
+                configsError.classList.remove('hidden');
+                configsList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Failed to load</div>';
+            }
+        }
+
+        function toggleConfigDetails(detailsId) {
+            const details = document.getElementById(detailsId);
+            const icon = document.getElementById(`${detailsId}-icon`);
+            const button = document.getElementById(`${detailsId}-button`);
+
+            if (details.classList.contains('hidden')) {
+                details.classList.remove('hidden');
+                icon.style.transform = 'rotate(90deg)';
+                button.setAttribute('aria-expanded', 'true');
+            } else {
+                details.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+                button.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        async function pollDeletionStatus(apiKey, apiSecret, statusUrl, maxAttempts = 60, delayMs = 2000) {
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    const response = await fetch('/api/poll-operation-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            status_url: statusUrl,
+                            api_key: apiKey,
+                            api_secret: apiSecret
+                        })
+                    });
+
+                    const result = await response.json();
+                    console.log(`Polling deletion status (attempt ${attempt}/${maxAttempts}):`, result);
+
+                    if (result.status === 'completed') {
+                        console.log('Deletion completed successfully');
+                        return true; // Deletion completed successfully
+                    } else if (result.status === 'pending') {
+                        // Continue polling
+                        console.log(`Deletion pending, waiting ${delayMs}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    } else {
+                        // Error status
+                        console.error('Deletion operation failed:', result);
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Error polling deletion status:', error);
+                    return false;
+                }
+            }
+            // Timed out
+            console.error('Deletion operation polling timed out after ' + maxAttempts + ' attempts');
+            return false;
+        }
+
+        // Memory Stores Panel Management
+        async function loadMemoryStoresPanel() {
+            const apiKey = document.getElementById('api_key').value;
+            const apiSecret = document.getElementById('api_secret').value;
+            const memoryStoresList = document.getElementById('memoryStoresList');
+            const memoryStoresError = document.getElementById('memoryStoresError');
+
+            if (!apiKey || !apiSecret) {
+                memoryStoresError.textContent = 'Please enter API Key and API Secret first';
+                memoryStoresError.classList.remove('hidden');
+                return;
+            }
+
+            memoryStoresError.classList.add('hidden');
+            memoryStoresList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Loading...</div>';
+
+            try {
+                const response = await fetch('/api/list-memory-stores', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        api_secret: apiSecret
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    if (result.stores.length === 0) {
+                        memoryStoresList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No memory stores found. Click \'Create New\' to get started</div>';
+                    } else {
+                        memoryStoresList.innerHTML = result.stores.map((store, index) => `
+                            <div class="bg-white rounded-lg border border-slate-200" id="memory-store-${escapeHtml(store.id)}">
+                                <div class="p-3">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                                            <button type="button" onclick="toggleMemoryStoreDetails('memory-store-details-${index}')"
+                                                class="flex-shrink-0 w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors"
+                                                aria-label="Toggle memory store details"
+                                                aria-expanded="false"
+                                                id="memory-store-details-${index}-button">
+                                                <svg id="memory-store-details-${index}-icon" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                                </svg>
+                                            </button>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-medium text-slate-800 truncate">${escapeHtml(store.displayName)}</div>
+                                                <div class="text-xs text-slate-400 mt-0.5">
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                        store.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                                                        store.status === 'PROVISIONING' ? 'bg-blue-100 text-blue-800' :
+                                                        store.status === 'QUEUED' ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-red-100 text-red-800'
+                                                    }">
+                                                        ${escapeHtml(store.status)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button type="button"
+                                            data-store-id="${escapeHtml(store.id)}"
+                                            data-store-display-name="${escapeHtml(store.displayName)}"
+                                            onclick="deleteMemoryStore(this.dataset.storeId, this.dataset.storeDisplayName)"
+                                            class="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded flex-shrink-0">
+                                            Delete
+                                        </button>
+                                    </div>
+
+                                    <!-- Expandable Details -->
+                                    <div id="memory-store-details-${index}" class="hidden mt-3 pt-3 border-t border-slate-100 space-y-2">
+                                        <div class="flex items-baseline gap-2">
+                                            <span class="text-xs text-slate-500 flex-shrink-0">ID:</span>
+                                            <span class="text-xs text-slate-400 font-mono break-all">${escapeHtml(store.id)}</span>
+                                        </div>
+                                        ${store.description ? `
+                                            <div class="flex items-baseline gap-2">
+                                                <span class="text-xs text-slate-500 flex-shrink-0">Description:</span>
+                                                <span class="text-xs text-slate-600 break-words">${escapeHtml(store.description)}</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    memoryStoresError.textContent = result.message;
+                    memoryStoresError.classList.remove('hidden');
+                    memoryStoresList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Failed to load</div>';
+                }
+            } catch (error) {
+                console.error('Error loading memory stores:', error);
+                memoryStoresError.textContent = 'Network error: ' + error.message;
+                memoryStoresError.classList.remove('hidden');
+                memoryStoresList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">Failed to load</div>';
+            }
+        }
+
+        function toggleMemoryStoreDetails(detailsId) {
+            const details = document.getElementById(detailsId);
+            const icon = document.getElementById(`${detailsId}-icon`);
+            const button = document.getElementById(`${detailsId}-button`);
+
+            if (details.classList.contains('hidden')) {
+                details.classList.remove('hidden');
+                icon.style.transform = 'rotate(90deg)';
+                button.setAttribute('aria-expanded', 'true');
+            } else {
+                details.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+                button.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        async function deleteMemoryStore(storeId, displayName) {
+
+            const apiKey = document.getElementById('api_key').value;
+            const apiSecret = document.getElementById('api_secret').value;
+            const storeElement = document.getElementById(`memory-store-${storeId}`);
+            const memoryStoresError = document.getElementById('memoryStoresError');
+
+            if (!apiKey || !apiSecret) {
+                alert('Please enter API Key and API Secret first');
+                return;
+            }
+
+            // Show deleting state
+            const deleteButton = storeElement?.querySelector('button.text-red-500');
+            if (storeElement && deleteButton) {
+                storeElement.classList.add('opacity-50');
+                deleteButton.textContent = 'Deleting...';
+                deleteButton.disabled = true;
+            }
+
+            try {
+                const response = await fetch('/api/delete-memory-store', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        api_secret: apiSecret,
+                        memory_store_id: storeId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Show success toast
+                    showToast(`Deleted "${displayName}"`);
+
+                    // Immediate deletion (200/204) - remove from list with animation
+                    if (storeElement) {
+                        storeElement.style.transition = 'all 0.3s';
+                        storeElement.style.opacity = '0';
+                        storeElement.style.transform = 'translateX(20px)';
+                        setTimeout(() => {
+                            storeElement.remove();
+                            // Check if list is empty
+                            const memoryStoresList = document.getElementById('memoryStoresList');
+                            if (memoryStoresList.children.length === 0) {
+                                memoryStoresList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No memory stores found. Click \'Create New\' to get started</div>';
+                            }
+                        }, 300);
+                    }
+                    memoryStoresError.classList.add('hidden');
+                    // Also refresh the dropdown
+                    await loadMemoryStores();
+                } else if (result.status === 'accepted') {
+                    // Async deletion (202) - poll status_url until completed
+                    const statusUrl = result.status_url;
+                    if (typeof statusUrl !== 'string' || statusUrl.trim() === '') {
+                        console.error('Deletion was accepted, but no valid status URL was returned');
+                        if (storeElement && deleteButton) {
+                            storeElement.classList.remove('opacity-50');
+                            deleteButton.textContent = 'Delete';
+                            deleteButton.disabled = false;
+                        }
+                        return;
+                    }
+
+                    if (deleteButton) {
+                        deleteButton.textContent = 'Deleting...';
+                    }
+
+                    // Poll the operation status with progress updates
+                    let pollAttempt = 0;
+                    const updateProgress = () => {
+                        pollAttempt++;
+                        if (deleteButton) {
+                            deleteButton.textContent = `Deleting (${pollAttempt * 2}s)`;
+                        }
+                    };
+                    const progressInterval = setInterval(updateProgress, 2000);
+
+                    const pollSuccess = await pollDeletionStatus(apiKey, apiSecret, statusUrl.trim());
+                    clearInterval(progressInterval);
+
+                    if (pollSuccess) {
+                        // Show success toast
+                        showToast(`Deleted "${displayName}"`);
+
+                        // Deletion completed - remove from list
+                        if (storeElement) {
+                            storeElement.style.transition = 'all 0.3s';
+                            storeElement.style.opacity = '0';
+                            storeElement.style.transform = 'translateX(20px)';
+                            setTimeout(() => {
+                                storeElement.remove();
+                                // Check if list is empty
+                                const memoryStoresList = document.getElementById('memoryStoresList');
+                                if (memoryStoresList.children.length === 0) {
+                                    memoryStoresList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No memory stores found. Click \'Create New\' to get started</div>';
+                                }
+                            }, 300);
+                        }
+                        memoryStoresError.classList.add('hidden');
+                        // Also refresh the dropdown
+                        await loadMemoryStores();
+                    } else {
+                        // Deletion failed - show error state briefly
+                        console.error('Deletion operation failed');
+                        if (storeElement && deleteButton) {
+                            storeElement.classList.remove('opacity-50');
+                            deleteButton.textContent = 'Failed';
+                            deleteButton.classList.remove('text-red-500', 'hover:text-red-700');
+                            deleteButton.classList.add('text-slate-400');
+                            setTimeout(() => {
+                                deleteButton.textContent = 'Delete';
+                                deleteButton.classList.remove('text-slate-400');
+                                deleteButton.classList.add('text-red-500', 'hover:text-red-700');
+                                deleteButton.disabled = false;
+                            }, 2000);
+                        }
+                    }
+                } else {
+                    console.error('Failed to delete:', result.message);
+                    // Show error state briefly
+                    if (storeElement && deleteButton) {
+                        storeElement.classList.remove('opacity-50');
+                        deleteButton.textContent = 'Failed';
+                        deleteButton.classList.remove('text-red-500', 'hover:text-red-700');
+                        deleteButton.classList.add('text-slate-400');
+                        setTimeout(() => {
+                            deleteButton.textContent = 'Delete';
+                            deleteButton.classList.remove('text-slate-400');
+                            deleteButton.classList.add('text-red-500', 'hover:text-red-700');
+                            deleteButton.disabled = false;
+                        }, 2000);
+                    }
+                }
+            } catch (error) {
+                console.error('Error deleting memory store:', error);
+                // Show error state briefly
+                if (storeElement && deleteButton) {
+                    storeElement.classList.remove('opacity-50');
+                    deleteButton.textContent = 'Failed';
+                    deleteButton.classList.remove('text-red-500', 'hover:text-red-700');
+                    deleteButton.classList.add('text-slate-400');
+                    setTimeout(() => {
+                        deleteButton.textContent = 'Delete';
+                        deleteButton.classList.remove('text-slate-400');
+                        deleteButton.classList.add('text-red-500', 'hover:text-red-700');
+                        deleteButton.disabled = false;
+                    }, 2000);
+                }
+            }
+        }
+
+        async function deleteConversationConfiguration(configId, displayName) {
+
+            const apiKey = document.getElementById('api_key').value;
+            const apiSecret = document.getElementById('api_secret').value;
+            const configElement = document.getElementById(`config-${configId}`);
+            const configsError = document.getElementById('configsError');
+
+            if (!apiKey || !apiSecret) {
+                alert('Please enter API Key and API Secret first');
+                return;
+            }
+
+            // Show deleting state
+            const deleteButton = configElement?.querySelector('button.text-red-500');
+            if (configElement && deleteButton) {
+                configElement.classList.add('opacity-50');
+                deleteButton.textContent = 'Deleting...';
+                deleteButton.disabled = true;
+            }
+
+            try {
+                const response = await fetch('/api/delete-conversation-configuration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        api_secret: apiSecret,
+                        configuration_id: configId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Show success toast
+                    showToast(`Deleted "${displayName}"`);
+
+                    // Immediate deletion (200/204) - remove from list with animation
+                    if (configElement) {
+                        configElement.style.transition = 'all 0.3s';
+                        configElement.style.opacity = '0';
+                        configElement.style.transform = 'translateX(20px)';
+                        setTimeout(() => {
+                            configElement.remove();
+                            // Check if list is empty
+                            const configsList = document.getElementById('configsList');
+                            if (configsList.children.length === 0) {
+                                configsList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No configurations found</div>';
+                            }
+                        }, 300);
+                    }
+                    configsError.classList.add('hidden');
+                } else if (result.status === 'accepted') {
+                    // Async deletion (202) - poll status_url until completed
+                    const statusUrl = result.status_url;
+                    if (typeof statusUrl !== 'string' || statusUrl.trim() === '') {
+                        console.error('Deletion was accepted, but no valid status URL was returned');
+                        if (configElement && deleteButton) {
+                            configElement.classList.remove('opacity-50');
+                            deleteButton.textContent = 'Delete';
+                            deleteButton.disabled = false;
+                        }
+                        return;
+                    }
+
+                    if (deleteButton) {
+                        deleteButton.textContent = 'Deleting...';
+                    }
+
+                    // Poll the operation status with progress updates
+                    let pollAttempt = 0;
+                    const updateProgress = () => {
+                        pollAttempt++;
+                        if (deleteButton) {
+                            deleteButton.textContent = `Deleting (${pollAttempt * 2}s)`;
+                        }
+                    };
+                    const progressInterval = setInterval(updateProgress, 2000);
+
+                    const pollSuccess = await pollDeletionStatus(apiKey, apiSecret, statusUrl.trim());
+                    clearInterval(progressInterval);
+
+                    if (pollSuccess) {
+                        // Show success toast
+                        showToast(`Deleted "${displayName}"`);
+
+                        // Deletion completed - remove from list
+                        if (configElement) {
+                            configElement.style.transition = 'all 0.3s';
+                            configElement.style.opacity = '0';
+                            configElement.style.transform = 'translateX(20px)';
+                            setTimeout(() => {
+                                configElement.remove();
+                                // Check if list is empty
+                                const configsList = document.getElementById('configsList');
+                                if (configsList.children.length === 0) {
+                                    configsList.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No configurations found</div>';
+                                }
+                            }, 300);
+                        }
+                        configsError.classList.add('hidden');
+                    } else {
+                        // Deletion failed - show error state briefly
+                        console.error('Deletion operation failed');
+                        if (configElement && deleteButton) {
+                            configElement.classList.remove('opacity-50');
+                            deleteButton.textContent = 'Failed';
+                            deleteButton.classList.remove('text-red-500', 'hover:text-red-700');
+                            deleteButton.classList.add('text-slate-400');
+                            setTimeout(() => {
+                                deleteButton.textContent = 'Delete';
+                                deleteButton.classList.remove('text-slate-400');
+                                deleteButton.classList.add('text-red-500', 'hover:text-red-700');
+                                deleteButton.disabled = false;
+                            }, 2000);
+                        }
+                    }
+                } else {
+                    console.error('Failed to delete:', result.message);
+                    // Show error state briefly
+                    if (configElement && deleteButton) {
+                        configElement.classList.remove('opacity-50');
+                        deleteButton.textContent = 'Failed';
+                        deleteButton.classList.remove('text-red-500', 'hover:text-red-700');
+                        deleteButton.classList.add('text-slate-400');
+                        setTimeout(() => {
+                            deleteButton.textContent = 'Delete';
+                            deleteButton.classList.remove('text-slate-400');
+                            deleteButton.classList.add('text-red-500', 'hover:text-red-700');
+                            deleteButton.disabled = false;
+                        }, 2000);
+                    }
+                }
+            } catch (error) {
+                console.error('Error deleting configuration:', error);
+                // Show error state briefly
+                if (configElement && deleteButton) {
+                    configElement.classList.remove('opacity-50');
+                    deleteButton.textContent = 'Failed';
+                    deleteButton.classList.remove('text-red-500', 'hover:text-red-700');
+                    deleteButton.classList.add('text-slate-400');
+                    setTimeout(() => {
+                        deleteButton.textContent = 'Delete';
+                        deleteButton.classList.remove('text-slate-400');
+                        deleteButton.classList.add('text-red-500', 'hover:text-red-700');
+                        deleteButton.disabled = false;
+                    }, 2000);
+                }
+            }
+        }
+
+        function showResults(success, credentials = {}) {
+            const envContent = document.getElementById('envContent');
+            const envPlaceholder = document.getElementById('envPlaceholder');
+            const envIcon = document.getElementById('envIcon');
+            const envTitleText = document.getElementById('envTitleText');
+            const envTitle = document.getElementById('envTitle');
+            const copyBtn = document.getElementById('copyBtn');
+
+            if (success) {
+                // Update title to "Setup Complete!"
+                envTitleText.textContent = 'Setup Complete!';
+                envIcon.classList.remove('hidden');
+                envIcon.classList.add('flex');
+                envTitle.classList.remove('text-slate-700');
+                envTitle.classList.add('text-green-700');
+
+                // Enable copy button
+                copyBtn.disabled = false;
+                copyBtn.classList.remove('bg-slate-400');
+                copyBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+
+                // Update content and hide placeholder
+                envContent.textContent = generateEnvContent(credentials);
+                envPlaceholder.classList.add('hidden');
+            } else {
+                // Reset to default state
+                envTitleText.textContent = 'Environment Variables';
+                envIcon.classList.add('hidden');
+                envIcon.classList.remove('flex');
+                envTitle.classList.add('text-slate-700');
+                envTitle.classList.remove('text-green-700');
+
+                // Disable copy button
+                copyBtn.disabled = true;
+                copyBtn.classList.add('bg-slate-400');
+                copyBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+
+                // Clear content and show placeholder
+                envContent.textContent = '';
+                envPlaceholder.classList.remove('hidden');
+            }
+        }
+
+        function generateEnvContent(credentials) {
+            return `# Twilio Agent Connect - Environment Variables
+# Copy this file to .env and update with your values
+
+# Required
+TWILIO_ACCOUNT_SID=${credentials.account_sid || 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+TWILIO_AUTH_TOKEN=${credentials.auth_token || 'your_auth_token_here'}
+TWILIO_API_KEY=${credentials.api_key || 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+TWILIO_API_SECRET=${credentials.api_secret || 'your_api_secret_here'}
+TWILIO_PHONE_NUMBER=${credentials.twilio_phone || '+1xxxxxxxxxx'}
+TWILIO_CONVERSATION_CONFIGURATION_ID=${conversationConfigurationId || 'conv_configuration_xxxxxxxxxxxxxxxxxxxxxxxxxx'}
+
+# Optional - Voice Channel (ngrok domain without https://)
+TWILIO_VOICE_PUBLIC_DOMAIN=${credentials.ngrok_domain || 'your-domain.ngrok.app'}
+
+# Optional - OpenAI Example
+OPENAI_API_KEY=${credentials.openai_api_key || 'sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+`;
+        }
+
+        function copyEnvContent() {
+            const envContent = document.getElementById('envContent').textContent;
+            const copyBtn = document.getElementById('copyBtn');
+            const copyBtnText = document.getElementById('copyBtnText');
+
+            // Try modern clipboard API first, fall back to execCommand
+            const copyToClipboard = async (text) => {
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(text);
+                        return true;
+                    }
+                } catch (err) {
+                    console.log('Clipboard API failed, trying fallback');
+                }
+
+                // Fallback for older browsers or non-HTTPS
+                try {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-9999px';
+                    textArea.style.top = '-9999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    return successful;
+                } catch (err) {
+                    console.error('Fallback copy failed:', err);
+                    return false;
+                }
+            };
+
+            copyToClipboard(envContent).then(success => {
+                if (success) {
+                    copyBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                    copyBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                    copyBtnText.textContent = 'Copied!';
+
+                    setTimeout(() => {
+                        copyBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                        copyBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                        copyBtnText.textContent = 'Copy to Clipboard';
+                    }, 2000);
+                } else {
+                    copyBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                    copyBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                    copyBtnText.textContent = 'Failed';
+                    setTimeout(() => {
+                        copyBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                        copyBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                        copyBtnText.textContent = 'Copy to Clipboard';
+                    }, 2000);
+                }
+            });
+        }
+
+        // LocalStorage key
+        const STORAGE_KEY = 'tac_quickstart_form';
+
+        // Fields to save (excluding secrets: auth_token, api_secret, openai_api_key)
+        const fieldsToSave = ['account_sid', 'api_key', 'email', 'phone', 'first_name', 'twilio_phone', 'ngrok_domain', 'configuration_display_name', 'configuration_description'];
+
+        // Load saved values on page load
+        function loadSavedValues() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    fieldsToSave.forEach(field => {
+                        const input = document.getElementById(field);
+                        if (input && data[field]) {
+                            input.value = data[field];
+                        }
+                    });
+                }
+            } catch (e) {
+                console.log('Could not load saved values');
+            }
+        }
+
+        // Save values to localStorage
+        function saveValues() {
+            try {
+                const data = {};
+                fieldsToSave.forEach(field => {
+                    const input = document.getElementById(field);
+                    if (input && input.value) {
+                        data[field] = input.value;
+                    }
+                });
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            } catch (e) {
+                console.log('Could not save values');
+            }
+        }
+
+        // Auto-save on input change
+        fieldsToSave.forEach(field => {
+            const input = document.getElementById(field);
+            if (input) {
+                input.addEventListener('input', saveValues);
+            }
+        });
+
+        // Load saved values on page load
+        loadSavedValues();
+
+        // Note: Auto-load configurations removed because api_secret is intentionally
+        // not persisted to localStorage for security. User must enter api_secret
+        // and click the Refresh button to load configurations.
+
+        // Real-time validation on blur
+        document.getElementById('email').addEventListener('blur', function() {
+            if (this.value && !validateEmail(this.value)) {
+                showFieldError('email', 'Please enter a valid email address');
+            } else if (this.value) {
+                clearFieldError('email');
+            }
+        });
+
+        document.getElementById('phone').addEventListener('blur', function() {
+            if (this.value && !validateE164(this.value)) {
+                showFieldError('phone', 'Must be E.164 format (e.g., +12162622233)');
+            } else if (this.value) {
+                clearFieldError('phone');
+            }
+        });
+
+        document.getElementById('twilio_phone').addEventListener('blur', function() {
+            if (this.value && !validateE164(this.value)) {
+                showFieldError('twilio_phone', 'Must be E.164 format (e.g., +18001234567)');
+            } else if (this.value) {
+                clearFieldError('twilio_phone');
+            }
+        });
+
+        // Strip protocol from ngrok domain on blur
+        document.getElementById('ngrok_domain').addEventListener('blur', function() {
+            if (this.value) {
+                this.value = stripProtocol(this.value);
+                saveValues();
+            }
+        });
+
+        // Clear error when user starts typing again
+        ['email', 'phone', 'twilio_phone'].forEach(fieldId => {
+            document.getElementById(fieldId).addEventListener('input', function() {
+                clearFieldError(fieldId);
+            });
+        });
+
+        // Validation functions
+        function validateE164(phone) {
+            return /^\+[1-9]\d{6,14}$/.test(phone);
+        }
+
+        function validateEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        // Strip protocol (http://, https://, ws://, wss://) from URL to get just the domain
+        function stripProtocol(url) {
+            if (!url) return url;
+            return url.replace(/^(https?|wss?):\/\//, '').replace(/\/$/, '');
+        }
+
+        function showFieldError(fieldId, message) {
+            const field = document.getElementById(fieldId);
+            field.classList.add('border-red-500', 'focus:ring-red-500');
+            field.classList.remove('border-slate-300', 'focus:ring-blue-500');
+
+            const existingError = field.parentElement.querySelector('.error-msg');
+            if (existingError) existingError.remove();
+
+            const errorEl = document.createElement('p');
+            errorEl.className = 'error-msg text-xs text-red-500 mt-1';
+            errorEl.textContent = message;
+            field.parentElement.appendChild(errorEl);
+        }
+
+        function clearFieldError(fieldId) {
+            const field = document.getElementById(fieldId);
+            field.classList.remove('border-red-500', 'focus:ring-red-500');
+            field.classList.add('border-slate-300', 'focus:ring-blue-500');
+
+            const existingError = field.parentElement.querySelector('.error-msg');
+            if (existingError) existingError.remove();
+        }
+
+        function validateForm() {
+            let isValid = true;
+
+            const email = document.getElementById('email').value;
+            if (!validateEmail(email)) {
+                showFieldError('email', 'Please enter a valid email address');
+                isValid = false;
+            } else {
+                clearFieldError('email');
+            }
+
+            const phone = document.getElementById('phone').value;
+            if (!validateE164(phone)) {
+                showFieldError('phone', 'Must be E.164 format (e.g., +12162622233)');
+                isValid = false;
+            } else {
+                clearFieldError('phone');
+            }
+
+            const twilioPhone = document.getElementById('twilio_phone').value;
+            if (!validateE164(twilioPhone)) {
+                showFieldError('twilio_phone', 'Must be E.164 format (e.g., +18001234567)');
+                isValid = false;
+            } else {
+                clearFieldError('twilio_phone');
+            }
+
+            return isValid;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!validateForm()) {
+                return;
+            }
+
+            // Check if memory store is selected
+            if (!memoryStoreId) {
+                alert('Please select or create a memory store first');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Setting up...';
+
+            // Reset env content to default state
+            showResults(false);
+
+            // Clear error log
+            document.getElementById('errorLogSection').classList.add('hidden');
+            document.getElementById('errorLogContent').innerHTML = '';
+
+            // Reset steps - memory store already selected, so mark as success
+            updateStep('step-memory', 'success', 'Selected');
+            updateStep('step-profile', 'pending', 'Waiting...');
+            updateStep('step-configuration', 'pending', 'Waiting...');
+
+            // Strip protocol from ngrok domain before collecting credentials
+            const ngrokInput = document.getElementById('ngrok_domain');
+            ngrokInput.value = stripProtocol(ngrokInput.value);
+
+            const credentials = {
+                account_sid: document.getElementById('account_sid').value,
+                auth_token: document.getElementById('auth_token').value,
+                api_key: document.getElementById('api_key').value,
+                api_secret: document.getElementById('api_secret').value,
+                email: document.getElementById('email').value,
+                phone: document.getElementById('phone').value,
+                first_name: document.getElementById('first_name').value || null,
+                twilio_phone: document.getElementById('twilio_phone').value,
+                ngrok_domain: ngrokInput.value,
+                openai_api_key: document.getElementById('openai_api_key').value || null
+            };
+
+            saveValues();
+
+            // Get selected memory store display name for the final env output
+            const memoryStoreSelect = document.getElementById('memory_store_select');
+            const selectedOption = memoryStoreSelect.options[memoryStoreSelect.selectedIndex];
+            memoryStoreName = selectedOption.dataset.displayName || memoryStoreId;
+
+            // Skip memory store creation - user has already selected one
+            const profileSuccess = await createProfile(credentials);
+
+            if (profileSuccess) {
+                const configurationSuccess = await createConversationConfiguration(credentials);
+                showResults(profileSuccess && configurationSuccess, credentials);
+            } else {
+                showResults(false, credentials);
+            }
+
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Set Up Services';
+        });
+    </script>
+</body>
+</html>

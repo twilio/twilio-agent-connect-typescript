@@ -33,10 +33,7 @@ export { BaseChannel } from './channels/base';
 export type { BaseChannelEvents, BaseChannelOptions } from './channels/base';
 
 export { MessagingChannel } from './channels/messaging';
-export type {
-  MessagingChannelConfig,
-  MessagingChannelEvents,
-} from './channels/messaging';
+export type { MessagingChannelConfig, MessagingChannelEvents } from './channels/messaging';
 
 export { SMSChannel } from './channels/sms';
 
@@ -45,10 +42,7 @@ export { RCSChannel } from './channels/rcs';
 export { WhatsAppChannel } from './channels/whatsapp';
 
 export { ChatChannel } from './channels/chat';
-export type {
-  ChatChannelConfig,
-  InitiateChatConversationOptions,
-} from './channels/chat';
+export type { ChatChannelConfig, InitiateChatConversationOptions } from './channels/chat';
 
 export { VoiceChannel } from './channels/voice';
 export type {

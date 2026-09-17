@@ -56,12 +56,13 @@ npm install twilio-agent-connect
 
 **Option 1: Use the Setup Wizard**
 
-Use the [Twilio Setup Wizard](https://github.com/twilio/twilio-agent-connect-python/tree/main/getting_started/twilio_setup) from the Python SDK to automatically create a Memory Store and Conversation Configuration and generate your `.env` file:
+Use the [Twilio Setup Wizard](getting_started/twilio-setup/) to automatically create a Memory Store and Conversation Configuration and generate your `.env` file:
 
 ```bash
-git clone https://github.com/twilio/twilio-agent-connect-python.git
-cd twilio-agent-connect-python
-make setup  # Open http://localhost:8080
+git clone https://github.com/twilio/twilio-agent-connect-typescript.git
+cd twilio-agent-connect-typescript
+npm install
+npm run setup  # Open http://localhost:8080
 ```
 
 **Option 2: Manual Setup**
@@ -181,6 +182,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com
 **Examples & Guides:**
 - **[API Reference](https://twilio.github.io/twilio-agent-connect-typescript/)** - Full API documentation generated from the source
 - **[Getting Started Guide](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/)** - Examples and comprehensive documentation
+- **[Twilio Setup Wizard](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/twilio-setup/)** - Create your Memory Store and Conversation Configuration from a local web UI
 - **[OpenAI SDK Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/openai/)** - Complete multi-channel example with Voice, SMS, and Chat
 - **[WhatsApp Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/whatsapp/)** - WhatsApp channel with memory integration
 - **[Chat Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/chat/)** - Web chat integration example

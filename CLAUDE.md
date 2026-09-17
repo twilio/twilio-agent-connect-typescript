@@ -32,7 +32,7 @@ packages/
 src/
   index.ts     # Root re-export of all three packages (single entry point)
 tests/         # Vitest test suite
-getting_started/  # Example apps (OpenAI integration)
+getting_started/  # Example apps (OpenAI integration) + twilio-setup/ wizard (npm run setup)
 ```
 
 ## Code Conventions
