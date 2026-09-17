@@ -10,7 +10,6 @@ import {
   ConversationRelayCallbackPayload,
   TwilioProviderCallbackResponse,
   InitiateVoiceConversationOptions,
-  InitiateVoiceConversationOptionsOpenAIRealtime,
   VoiceTwiMLOptionsConversationRelay,
   TwiMLRequest,
   ConversationWebhookPayload,
@@ -660,7 +659,7 @@ export class VoiceChannel extends BaseChannel {
    * @returns The placed call's `callSid`.
    */
   public async initiateOutboundConversation(
-    options: InitiateVoiceConversationOptions | InitiateVoiceConversationOptionsOpenAIRealtime
+    options: InitiateVoiceConversationOptions
   ): Promise<InitiateVoiceConversationResult> {
     return this.provider.initiateOutboundConversation(options);
   }
