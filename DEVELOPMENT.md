@@ -14,6 +14,7 @@ twilio-agent-connect-typescript/
 │   └── index.ts             # Root re-export (single entry point)
 ├── getting_started/         # Getting started guide and examples
 │   ├── README.md            # Step-by-step tutorial
+│   ├── twilio-setup/        # Setup wizard (npm run setup)
 │   └── examples/            # Example apps (OpenAI, chat, WhatsApp, etc.)
 ├── tests/                   # Vitest test suite
 └── package.json             # Package root (published as twilio-agent-connect)
@@ -86,6 +87,9 @@ npm run format:check
 # Testing
 npm test
 npm run test:coverage
+
+# Twilio setup wizard (creates Memory Store + Conversation Configuration)
+npm run setup
 
 # Run examples
 npm run example:getting-started  # OpenAI example (SMS + Voice)
