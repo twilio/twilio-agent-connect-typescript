@@ -114,6 +114,22 @@ export abstract class MessagingChannel extends BaseChannel {
   protected abstract getAgentAddress(conversationId: ConversationId): ConversationAddress;
 
   /**
+   * Report a delivered response.
+   *
+   * Each channel calls this from its own `sendResponse` rather than the base
+   * wrapping the call: `sendResponse` is the public extension point, so making
+   * it a template method would break subclasses defined outside this package.
+   */
+  protected trackResponseSent(conversationId: ConversationId): void {
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      response_type: 'full',
+    });
+  }
+
+  /**
    * Check if a message is from the bot itself (2-tier).
    *
    * 1. Default agent address (stateless, no API call)

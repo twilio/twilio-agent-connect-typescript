@@ -50,6 +50,7 @@ function makeChannelStub() {
     getConversationSession: (id: string) => sessions.get(id),
     getActiveConversations: () => sessions,
     getLoggerInternal: () => logger,
+    isOrchestratorEnabledInternal: () => false,
     handleErrorInternal,
   };
   return Object.assign(channel, { createCall, logger, handleErrorInternal });

@@ -276,6 +276,7 @@ export class ConversationRelayProvider extends VoiceProvider {
           channel: 'voice',
           conversation_id: conversationId,
           provider: this.providerId,
+          orchestrator_enabled: this.channel.isOrchestratorEnabledInternal(),
         });
 
         return conversationId;
@@ -539,6 +540,7 @@ export class ConversationRelayProvider extends VoiceProvider {
         duration_until_interrupt_ms: durationUntilInterruptMs,
       }),
       provider: this.providerId,
+      orchestrator_enabled: this.channel.isOrchestratorEnabledInternal(),
     });
   }
 
@@ -593,6 +595,7 @@ export class ConversationRelayProvider extends VoiceProvider {
       channel: 'voice',
       conversation_id: conversationId,
       provider: this.providerId,
+      orchestrator_enabled: this.channel.isOrchestratorEnabledInternal(),
     });
 
     if (!this.channel.isOrchestratorEnabledInternal()) {

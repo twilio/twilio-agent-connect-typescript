@@ -395,6 +395,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
           channel: 'voice',
           conversation_id: conversationId,
           provider: this.providerId,
+          orchestrator_enabled: this.channel.isOrchestratorEnabledInternal(),
         });
         void this.cleanupCall(conversationId).catch((err: unknown) => {
           this.logger.error({ err, conversation_id: conversationId }, 'Call cleanup error');
@@ -461,6 +462,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         channel: 'voice',
         conversation_id: conversationId,
         provider: this.providerId,
+        orchestrator_enabled: this.channel.isOrchestratorEnabledInternal(),
       });
     } catch (err) {
       // startConversationInternal inserts the session before invoking the
