@@ -500,15 +500,40 @@ describe('VoiceChannel', () => {
 
       expect(twiml).toContain('action="https://customizer.example.com/end"');
     });
+
+    it('should reject hostTwimlOptions containing an unknown key', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      await expect(
+        voiceChannel.handleIncomingCall(
+          { extra: {} },
+          // Cast simulates an untyped JavaScript consumer passing a typo'd key.
+          { hostTwimlOptions: { welcomGreeting: 'typo' } as any }
+        )
+      ).rejects.toThrow(/VoiceTwiMLOptionsConversationRelay/);
+    });
+
+    it('should reject a customizer that returns an unknown key', async () => {
+      const tac = await createTestTAC(getVoiceConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      // Cast simulates an untyped JavaScript consumer returning a typo'd key.
+      voiceChannel.onInboundCallTwiml(async () => ({ welcomGreeting: 'typo' }) as any);
+
+      await expect(voiceChannel.handleIncomingCall({ extra: {} })).rejects.toThrow(
+        /VoiceTwiMLOptionsConversationRelay/
+      );
+    });
   });
 
   describe('handleIncomingCall websocketUrl layering', () => {
     const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
 
-    // websocketUrl is a normal TwiMLOptions field, so it rides the same layered
-    // merge as every other attribute. This is the affinity-routed-host case
-    // (e.g. Azure Hosted Agents) appending a per-call token to the upgrade URL —
-    // done through the existing customizer, no new API surface.
+    // websocketUrl is a normal VoiceTwiMLOptionsConversationRelay field, so it
+    // rides the same layered merge as every other attribute. This is the
+    // affinity-routed-host case (e.g. Azure Hosted Agents) appending a per-call
+    // token to the upgrade URL — done through the existing customizer, no new
+    // API surface.
     it('should let a customizer override websocketUrl per call', async () => {
       const tac = await createTestTAC(getVoiceConfig());
       const voiceChannel = new VoiceChannel(tac, {
@@ -1322,6 +1347,7 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(200);
@@ -1340,6 +1366,7 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(403);
@@ -1353,7 +1380,7 @@ describe('VoiceChannel', () => {
       const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
 
       // Simulate an established call mapping so the guard is what prevents cleanup.
-      (voiceChannel as any).callSidToConversationId.set('CA123', 'CH123');
+      (voiceChannel as any).provider.callSidToConversationId.set('CA123', 'CH123');
 
       const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACtest123',
@@ -1361,12 +1388,13 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(200);
       expect(endSpy).not.toHaveBeenCalled();
       // Mapping is left intact; CO webhook cleanup owns teardown.
-      expect((voiceChannel as any).callSidToConversationId.has('CA123')).toBe(true);
+      expect((voiceChannel as any).provider.callSidToConversationId.has('CA123')).toBe(true);
     });
 
     it('ends the conversation on completion in voice-only mode', async () => {
@@ -1376,7 +1404,7 @@ describe('VoiceChannel', () => {
       const voiceChannel = new VoiceChannel(tac);
       const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
 
-      (voiceChannel as any).callSidToConversationId.set('CA123', 'CH123');
+      (voiceChannel as any).provider.callSidToConversationId.set('CA123', 'CH123');
 
       const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACtest123',
@@ -1384,12 +1412,24 @@ describe('VoiceChannel', () => {
         CallStatus: 'completed',
         From: '+15551234567',
         To: '+15559876543',
+        Direction: 'inbound',
       });
 
       expect(result.status).toBe(200);
       expect(endSpy).toHaveBeenCalledWith('CH123');
       // Mapping is cleared as part of cleanup.
-      expect((voiceChannel as any).callSidToConversationId.has('CA123')).toBe(false);
+      expect((voiceChannel as any).provider.callSidToConversationId.has('CA123')).toBe(false);
+    });
+
+    it('should return 400 when the payload fails schema validation', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+
+      const result = await voiceChannel.handleTwilioProviderCallback({ CallSid: 'CA123' });
+
+      expect(result.status).toBe(400);
+      expect(result.content).toBe('Invalid payload');
+      expect(result.contentType).toBe('text/plain');
     });
   });
 
@@ -1650,13 +1690,13 @@ describe('VoiceChannel', () => {
       mockWs._emit('message', Buffer.from(promptMessage));
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      const { controller } = (voiceChannel as any).startStreamTask('CHdtmf_test123');
+      const { controller } = voiceChannel.startStreamTask('CHdtmf_test123' as any);
 
       mockWs._emit('message', Buffer.from(dtmfMessage('0')));
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(controller.signal.aborted).toBe(false);
-      expect((voiceChannel as any).streamTasks.has('CHdtmf_test123')).toBe(true);
+      expect((voiceChannel as any).provider.streamTasks.has('CHdtmf_test123')).toBe(true);
     });
 
     it('is a no-op when no handler is registered', async () => {
@@ -2258,9 +2298,9 @@ describe('VoiceChannel', () => {
   });
 
   describe('ConversationRelay attribute emission', () => {
-    // Exercises the merged-TwiMLOptions emit path via handleIncomingCall +
-    // defaultTwimlOptions. The widened TwiMLOptions surface should emit every
-    // documented attribute.
+    // Exercises the merged-VoiceTwiMLOptionsConversationRelay emit path via
+    // handleIncomingCall + defaultTwimlOptions. The widened options surface
+    // should emit every documented attribute.
     const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
 
     const emit = async (defaultTwimlOptions: Record<string, unknown>): Promise<string> => {

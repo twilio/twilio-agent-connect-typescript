@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { twiMLRequestFromForm, TwiMLOptionsSchema, LanguageConfigSchema } from '@twilio/tac-core';
+import {
+  twiMLRequestFromForm,
+  VoiceTwiMLOptionsConversationRelaySchema,
+  LanguageConfigSchema,
+} from '@twilio/tac-core';
 
 describe('twiMLRequestFromForm', () => {
   it('parses known webhook fields', () => {
@@ -42,39 +46,47 @@ describe('twiMLRequestFromForm', () => {
   });
 });
 
-describe('TwiMLOptions validation', () => {
+describe('VoiceTwiMLOptionsConversationRelay validation', () => {
   it('rejects unknown keys (strict)', () => {
     // A typo in a field name should fail loudly rather than be dropped.
-    const result = TwiMLOptionsSchema.safeParse({ voicee: 'en-US-Journey-D' });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({
+      voicee: 'en-US-Journey-D',
+    });
     expect(result.success).toBe(false);
   });
 
   it('accepts the literal "auto" speechTimeout', () => {
-    const result = TwiMLOptionsSchema.safeParse({ speechTimeout: 'auto' });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({ speechTimeout: 'auto' });
     expect(result.success).toBe(true);
   });
 
   it('rejects other string speechTimeout values', () => {
-    const result = TwiMLOptionsSchema.safeParse({ speechTimeout: 'fast' });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({ speechTimeout: 'fast' });
     expect(result.success).toBe(false);
   });
 
   it('accepts a numeric speechTimeout', () => {
-    const result = TwiMLOptionsSchema.safeParse({ speechTimeout: 800 });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({ speechTimeout: 800 });
     expect(result.success).toBe(true);
   });
 
   it('accepts both enum and boolean interruptible', () => {
-    expect(TwiMLOptionsSchema.safeParse({ interruptible: 'speech' }).success).toBe(true);
-    expect(TwiMLOptionsSchema.safeParse({ interruptible: true }).success).toBe(true);
+    expect(
+      VoiceTwiMLOptionsConversationRelaySchema.safeParse({ interruptible: 'speech' }).success
+    ).toBe(true);
+    expect(
+      VoiceTwiMLOptionsConversationRelaySchema.safeParse({ interruptible: true }).success
+    ).toBe(true);
   });
 
   it('rejects an invalid interruptible enum value', () => {
-    expect(TwiMLOptionsSchema.safeParse({ interruptible: 'loud' }).success).toBe(false);
+    expect(
+      VoiceTwiMLOptionsConversationRelaySchema.safeParse({ interruptible: 'loud' }).success
+    ).toBe(false);
   });
 
   it('rejects extra keys that shadow typed fields', () => {
-    const result = TwiMLOptionsSchema.safeParse({
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({
       voice: 'en-US-Journey-D',
       extra: { voice: 'should-not-appear' },
     });
@@ -86,37 +98,49 @@ describe('TwiMLOptions validation', () => {
 
   it('rejects shadow keys even when the typed field is unset', () => {
     // The typed field must be used directly so validators / coercion run.
-    const result = TwiMLOptionsSchema.safeParse({ extra: { speechTimeout: 800 } });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({
+      extra: { speechTimeout: 800 },
+    });
     expect(result.success).toBe(false);
   });
 
   it('allows extra with non-shadowing keys', () => {
-    const result = TwiMLOptionsSchema.safeParse({ extra: { futureFeature: 'on' } });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({
+      extra: { futureFeature: 'on' },
+    });
     expect(result.success).toBe(true);
   });
 
   it('accepts a websocketUrl field', () => {
-    const result = TwiMLOptionsSchema.safeParse({
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({
       websocketUrl: 'wss://example.com/ws?agent_session_id=CA1',
     });
     expect(result.success).toBe(true);
   });
 
   it('rejects extra.websocketUrl (shadows the typed field)', () => {
-    const result = TwiMLOptionsSchema.safeParse({ extra: { websocketUrl: 'wss://x/ws' } });
+    const result = VoiceTwiMLOptionsConversationRelaySchema.safeParse({
+      extra: { websocketUrl: 'wss://x/ws' },
+    });
     expect(result.success).toBe(false);
   });
 
   it('rejects an empty-string actionUrl (would silently drop the action)', () => {
-    expect(TwiMLOptionsSchema.safeParse({ actionUrl: '' }).success).toBe(false);
+    expect(VoiceTwiMLOptionsConversationRelaySchema.safeParse({ actionUrl: '' }).success).toBe(
+      false
+    );
   });
 
   it('rejects an empty-string websocketUrl', () => {
-    expect(TwiMLOptionsSchema.safeParse({ websocketUrl: '' }).success).toBe(false);
+    expect(VoiceTwiMLOptionsConversationRelaySchema.safeParse({ websocketUrl: '' }).success).toBe(
+      false
+    );
   });
 
   it('still accepts an explicit undefined actionUrl (suppresses the action)', () => {
-    expect(TwiMLOptionsSchema.safeParse({ actionUrl: undefined }).success).toBe(true);
+    expect(
+      VoiceTwiMLOptionsConversationRelaySchema.safeParse({ actionUrl: undefined }).success
+    ).toBe(true);
   });
 });
 

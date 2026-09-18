@@ -8,8 +8,9 @@
  *      TwiMLRequest (parsed Twilio webhook fields: from, to, callerCountry, …).
  *      Inbound only. For outbound, pass per-call twimlOptions on
  *      InitiateVoiceConversationOptions.
- *   2. `VoiceChannelConfig.defaultTwimlOptions` — static TwiMLOptions applied to
- *      every call (inbound and outbound).
+ *   2. `VoiceChannelConfig.defaultTwimlOptions` — static
+ *      VoiceTwiMLOptionsConversationRelay applied to every call (inbound and
+ *      outbound).
  *
  * Layers merge per-field: the customizer overrides only the fields it explicitly
  * sets; everything else falls through to `defaultTwimlOptions` and then to TAC
@@ -25,7 +26,7 @@
 
 import { config } from 'dotenv';
 import { TAC, TACConfig, VoiceChannel, TACServer } from 'twilio-agent-connect';
-import type { TwiMLRequest, TwiMLOptions } from 'twilio-agent-connect';
+import type { TwiMLRequest, VoiceTwiMLOptionsConversationRelay } from 'twilio-agent-connect';
 
 config({ path: '../.env' });
 
@@ -37,7 +38,7 @@ tac.onMessageReady(async ({ message }) => `You said: ${message}`);
  * Per-call overrides for inbound calls. Only the fields you set here override
  * the channel default; the rest fall through.
  */
-async function customizeTwiml(req: TwiMLRequest): Promise<TwiMLOptions> {
+async function customizeTwiml(req: TwiMLRequest): Promise<VoiceTwiMLOptionsConversationRelay> {
   if (req.callerCountry === 'MX') {
     return { language: 'es-MX', welcomeGreeting: '¡Hola! ¿En qué puedo ayudarte?' };
   }

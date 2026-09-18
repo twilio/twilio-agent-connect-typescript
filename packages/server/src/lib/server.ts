@@ -10,11 +10,7 @@ import gracefulShutdown from 'fastify-graceful-shutdown';
 import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
-import {
-  ConversationRelayCallbackPayloadSchema,
-  twiMLRequestFromForm,
-  CALL_EVENT_KINDS,
-} from '@twilio/tac-core';
+import { twiMLRequestFromForm, CALL_EVENT_KINDS } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 
 /**
@@ -373,20 +369,12 @@ export class TACServer {
 
           const voiceChannel = this.voiceChannel;
 
-          // Parse form data into payload
+          // Pass the raw form data through; the active provider validates its
+          // own callback shape. Parsing against ConversationRelay's schema here
+          // would reject Media Streams <Connect action> payloads before they
+          // ever reach the provider.
           const formData = request.body as Record<string, string>;
-          const parseResult = ConversationRelayCallbackPayloadSchema.safeParse(formData);
-
-          if (!parseResult.success) {
-            this.fastify.log.error(
-              { errors: parseResult.error.issues },
-              'Invalid ConversationRelay callback payload'
-            );
-            await reply.code(400).send({ error: 'Invalid payload' });
-            return;
-          }
-
-          const result = await voiceChannel.handleConversationRelayCallback(parseResult.data);
+          const result = await voiceChannel.handleTwilioProviderCallback(formData);
 
           await reply.code(result.status).type(result.contentType).send(result.content);
         } catch (error) {

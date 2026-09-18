@@ -16,6 +16,7 @@
   },
   "sort": ["source-order"],
   "intentionallyNotExported": [
+    "CallState",
     "InitiateChatConversationOptionsSchema",
     "HandoffParams",
     "KnowledgeSearchParams",
