@@ -29,8 +29,10 @@ function getClient(): Analytics | null {
     flushAt: 20,
     flushInterval: 10_000,
   });
+  // Debug, not warn: telemetry is best-effort and its failures are not the
+  // consumer's problem, so they shouldn't surface in an application's logs.
   client.on('error', err => {
-    getLog().warn({ err }, 'Segment analytics error');
+    getLog().debug({ err }, 'Segment analytics error');
   });
   return client;
 }
@@ -57,7 +59,7 @@ export function trackEvent(event: string, properties: EventProperties): void {
     });
     getLog().debug({ event }, 'Analytics event tracked');
   } catch (err) {
-    getLog().warn({ err, event }, 'Analytics event failed');
+    getLog().debug({ err, event }, 'Analytics event failed');
   }
 }
 
