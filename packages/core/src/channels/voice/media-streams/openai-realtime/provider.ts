@@ -12,6 +12,7 @@ import {
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
 import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
 import type { VoiceChannel } from '../../channel';
+import { trackEvent } from '../../../../lib/analytics';
 import {
   MediaStreamsOpenAIProvider,
   OPENAI_USER_AGENT,
@@ -83,6 +84,11 @@ function isTwilioMediaStreamAudioFormat(value: unknown): boolean {
  * ```
  */
 export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState> {
+  /** @internal */
+  public override get providerId(): string {
+    return 'openai_realtime';
+  }
+
   /**
    * The Realtime-specific config this provider was built with.
    *
@@ -333,6 +339,13 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
     ws.on('close', () => {
       this.logger.info({ conversation_id: conversationId }, 'Media stream WebSocket closed');
       if (conversationId !== null) {
+        trackEvent('Websocket Disconnected', {
+          account_sid: this.tacConfig.accountSid,
+          channel: 'voice',
+          conversation_id: conversationId,
+          provider: this.providerId,
+          orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+        });
         void this.cleanupCall(conversationId).catch((err: unknown) => {
           this.logger.error({ err, conversation_id: conversationId }, 'Call cleanup error');
         });
@@ -387,6 +400,14 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
       session.callSid = message.callSid;
       session.metadata.streamSid = message.streamSid;
       session.metadata.transcript = [];
+
+      trackEvent('Conversation Initialized', {
+        account_sid: this.tacConfig.accountSid,
+        channel: 'voice',
+        conversation_id: conversationId,
+        provider: this.providerId,
+        orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+      });
     } catch (err) {
       // startConversationInternal inserts the session before invoking the
       // host's onConversationStarted callback unguarded. A throw from that
@@ -720,6 +741,18 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
       audio_end_ms: bargeIn.currentItemAudioMs,
     });
     this.twilioSend(conversationId, { event: 'clear', streamSid: session.metadata.streamSid });
+
+    // Past the guard above, so a reply really was playing when the caller cut
+    // in. `currentItemAudioMs` is how much of it they heard, the same quantity
+    // ConversationRelay reports as `durationUntilInterruptMs`.
+    trackEvent('Voice Interrupt', {
+      account_sid: this.tacConfig.accountSid,
+      channel: 'voice',
+      conversation_id: conversationId,
+      duration_until_interrupt_ms: bargeIn.currentItemAudioMs,
+      provider: this.providerId,
+      orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+    });
 
     bargeIn.mutedItemId = lastAssistantItem;
     bargeIn.lastAssistantItem = null;

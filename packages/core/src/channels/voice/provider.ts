@@ -36,6 +36,18 @@ export class VoiceProvider {
   }
 
   /**
+   * Stable snake_case identifier for this provider, reported on voice
+   * telemetry events so emissions from different transports are
+   * distinguishable. Built-in providers override it; a provider defined outside
+   * the SDK inherits `"custom"`.
+   *
+   * @internal
+   */
+  public get providerId(): string {
+    return 'custom';
+  }
+
+  /**
    * Channel name identifier, e.g. `"VOICE"`.
    *
    * A label for this provider's transport; it does not change how

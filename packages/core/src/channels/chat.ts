@@ -180,6 +180,8 @@ export class ChatChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    this.trackResponseSent(conversationId);
   }
 
   /**

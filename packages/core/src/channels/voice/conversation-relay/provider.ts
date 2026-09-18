@@ -30,6 +30,7 @@ import type { InitiateVoiceConversationResult } from '../../../types/conversatio
 import { maskAddress, redactTwimlParameters } from '../../../util/log-redaction';
 import type { VoiceChannel } from '../channel';
 import { VoiceProvider } from '../provider';
+import { trackEvent } from '../../../lib/analytics';
 import { filterUnsetValues } from '../twiml';
 import type { ConversationRelayProviderConfig } from './config';
 import { TwiMLBuilderConversationRelay } from './twiml';
@@ -56,6 +57,11 @@ export interface StreamTask {
  * explicitly.
  */
 export class ConversationRelayProvider extends VoiceProvider {
+  /** @internal */
+  public override get providerId(): string {
+    return 'conversation_relay';
+  }
+
   /**
    * The owning channel's logger, so relocated ConversationRelay logic keeps
    * logging exactly as it did when it lived on `VoiceChannel`.
@@ -264,6 +270,15 @@ export class ConversationRelayProvider extends VoiceProvider {
           { conversation_id: conversationId, call_sid: sid },
           'Conversation initialization succeeded'
         );
+
+        trackEvent('Conversation Initialized', {
+          account_sid: this.tacConfig.accountSid,
+          channel: 'voice',
+          conversation_id: conversationId,
+          provider: this.providerId,
+          orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+        });
+
         return conversationId;
       } catch (err) {
         initializationFailed = true;
@@ -516,6 +531,17 @@ export class ConversationRelayProvider extends VoiceProvider {
         durationUntilInterruptMs,
       });
     }
+
+    trackEvent('Voice Interrupt', {
+      account_sid: this.tacConfig.accountSid,
+      channel: 'voice',
+      conversation_id: conversationId,
+      ...(durationUntilInterruptMs !== undefined && {
+        duration_until_interrupt_ms: durationUntilInterruptMs,
+      }),
+      provider: this.providerId,
+      orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+    });
   }
 
   /**
@@ -563,6 +589,14 @@ export class ConversationRelayProvider extends VoiceProvider {
     if (voiceCallbacks.onWebSocketDisconnected) {
       voiceCallbacks.onWebSocketDisconnected({ conversationId });
     }
+
+    trackEvent('Websocket Disconnected', {
+      account_sid: this.tacConfig.accountSid,
+      channel: 'voice',
+      conversation_id: conversationId,
+      provider: this.providerId,
+      orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+    });
 
     if (!this.channel.isOrchestratorEnabledInternal()) {
       await this.channel.endConversationInternal(conversationId);

@@ -14,6 +14,7 @@ import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
 import { Logger, createLogger } from './logger';
+import { shutdownAnalytics } from './analytics';
 import { maskAddress } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
 
@@ -647,6 +648,7 @@ export class TAC {
     }
 
     this.channels.clear();
+    shutdownAnalytics().catch(() => {});
     this.logger.info('TAC shutdown complete');
   }
 }
