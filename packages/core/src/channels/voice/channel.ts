@@ -580,7 +580,7 @@ export class VoiceChannel extends BaseChannel {
       account_sid: this.config.accountSid,
       channel: 'voice',
       provider: this.provider.providerId,
-      orchestrator_enabled: this.isOrchestratorEnabledInternal(),
+      orchestrator_enabled: this.config.isOrchestratorEnabled(),
     });
 
     // A provider may serve the socket synchronously or await an upstream
@@ -609,7 +609,7 @@ export class VoiceChannel extends BaseChannel {
       conversation_id: conversationId,
       response_type: 'full',
       provider: this.provider.providerId,
-      orchestrator_enabled: this.isOrchestratorEnabledInternal(),
+      orchestrator_enabled: this.config.isOrchestratorEnabled(),
     });
   }
 
@@ -642,7 +642,7 @@ export class VoiceChannel extends BaseChannel {
         conversation_id: conversationId,
         response_type: 'streaming',
         provider: this.provider.providerId,
-        orchestrator_enabled: this.isOrchestratorEnabledInternal(),
+        orchestrator_enabled: this.config.isOrchestratorEnabled(),
       });
     }
 

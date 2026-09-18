@@ -20,7 +20,11 @@ const validSessionConfig = {
 const SESSION_CONFIG_TOKEN_PARAM_LITERAL = '_tac_session_config_token';
 
 function makeTacConfigStub() {
-  return { voicePublicDomain: 'example.ngrok.io', voiceWebsocketPath: '/voice-stream' } as never;
+  return {
+    voicePublicDomain: 'example.ngrok.io',
+    voiceWebsocketPath: '/voice-stream',
+    isOrchestratorEnabled: () => false,
+  } as never;
 }
 
 function makeChannelStub() {
@@ -50,7 +54,6 @@ function makeChannelStub() {
     getConversationSession: (id: string) => sessions.get(id),
     getActiveConversations: () => sessions,
     getLoggerInternal: () => logger,
-    isOrchestratorEnabledInternal: () => false,
     handleErrorInternal,
   };
   return Object.assign(channel, { createCall, logger, handleErrorInternal });
