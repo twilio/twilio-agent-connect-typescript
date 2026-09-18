@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   ConversationRelayProvider,
   ConversationRelayProviderConfig,
+  GPTLiveProvider,
+  OpenAIRealtimeProvider,
   VoiceChannel,
   VoiceProvider,
   VoiceProviderConfig,
@@ -51,6 +53,19 @@ describe('VoiceProvider', () => {
   it('defaults channelName to VOICE', () => {
     const provider = new VoiceProvider({} as never);
     expect(provider.channelName).toBe('VOICE');
+  });
+
+  it('defaults providerId to custom, so a provider defined outside the SDK is identifiable', () => {
+    const provider = new VoiceProvider({} as never);
+    expect(provider.providerId).toBe('custom');
+  });
+
+  // Read off the prototype: the getter returns a literal, so this avoids
+  // standing up each provider's constructor dependencies.
+  it('gives each built-in provider a distinct providerId', () => {
+    expect(ConversationRelayProvider.prototype.providerId).toBe('conversation_relay');
+    expect(GPTLiveProvider.prototype.providerId).toBe('gpt_live');
+    expect(OpenAIRealtimeProvider.prototype.providerId).toBe('openai_realtime');
   });
 
   it('rejects unsupported inbound calls by naming the subclass', async () => {

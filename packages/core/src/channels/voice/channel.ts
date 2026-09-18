@@ -579,6 +579,7 @@ export class VoiceChannel extends BaseChannel {
     trackEvent('Websocket Connected', {
       account_sid: this.config.accountSid,
       channel: 'voice',
+      provider: this.provider.providerId,
     });
 
     // A provider may serve the socket synchronously or await an upstream
@@ -606,6 +607,7 @@ export class VoiceChannel extends BaseChannel {
       channel: 'voice',
       conversation_id: conversationId,
       response_type: 'full',
+      provider: this.provider.providerId,
     });
   }
 
@@ -637,6 +639,7 @@ export class VoiceChannel extends BaseChannel {
         channel: 'voice',
         conversation_id: conversationId,
         response_type: 'streaming',
+        provider: this.provider.providerId,
       });
     }
 

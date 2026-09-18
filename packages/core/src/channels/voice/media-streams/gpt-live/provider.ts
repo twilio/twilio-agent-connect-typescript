@@ -15,6 +15,7 @@ import {
 } from '../../../../types/index';
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
 import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
+import { trackEvent } from '../../../../lib/analytics';
 import type { GPTLiveProviderConfig } from './config';
 import { CallState } from './state';
 
@@ -114,6 +115,11 @@ async function waitWithTimeout(promise: Promise<void>, ms: number): Promise<bool
  * API.
  */
 export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
+  /** @internal */
+  public override get providerId(): string {
+    return 'gpt_live';
+  }
+
   /**
    * No `override`: TypeScript rejects it alongside `declare` (TS1243), and
    * `declare` is what keeps this a pure type narrowing of the base's field
@@ -384,6 +390,12 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     ws.on('close', () => {
       this.logger.info({ conversation_id: conversationId }, 'Media stream WebSocket closed');
       if (conversationId !== null) {
+        trackEvent('Websocket Disconnected', {
+          account_sid: this.tacConfig.accountSid,
+          channel: 'voice',
+          conversation_id: conversationId,
+          provider: this.providerId,
+        });
         void this.cleanupCall(conversationId).catch((err: unknown) => {
           this.logger.error({ err, conversation_id: conversationId }, 'Call cleanup error');
         });
@@ -443,6 +455,13 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       session.callSid = message.callSid;
       session.metadata.streamSid = message.streamSid;
       session.metadata.transcript = [];
+
+      trackEvent('Conversation Initialized', {
+        account_sid: this.tacConfig.accountSid,
+        channel: 'voice',
+        conversation_id: conversationId,
+        provider: this.providerId,
+      });
     } catch (err) {
       // startConversationInternal inserts the session before invoking the
       // host's onConversationStarted callback unguarded. A throw from that

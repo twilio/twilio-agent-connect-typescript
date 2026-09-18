@@ -57,6 +57,11 @@ export interface StreamTask {
  * explicitly.
  */
 export class ConversationRelayProvider extends VoiceProvider {
+  /** @internal */
+  public override get providerId(): string {
+    return 'conversation_relay';
+  }
+
   /**
    * The owning channel's logger, so relocated ConversationRelay logic keeps
    * logging exactly as it did when it lived on `VoiceChannel`.
@@ -270,6 +275,7 @@ export class ConversationRelayProvider extends VoiceProvider {
           account_sid: this.tacConfig.accountSid,
           channel: 'voice',
           conversation_id: conversationId,
+          provider: this.providerId,
         });
 
         return conversationId;
@@ -532,6 +538,7 @@ export class ConversationRelayProvider extends VoiceProvider {
       ...(durationUntilInterruptMs !== undefined && {
         duration_until_interrupt_ms: durationUntilInterruptMs,
       }),
+      provider: this.providerId,
     });
   }
 
@@ -585,6 +592,7 @@ export class ConversationRelayProvider extends VoiceProvider {
       account_sid: this.tacConfig.accountSid,
       channel: 'voice',
       conversation_id: conversationId,
+      provider: this.providerId,
     });
 
     if (!this.channel.isOrchestratorEnabledInternal()) {
