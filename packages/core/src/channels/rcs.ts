@@ -138,6 +138,8 @@ export class RCSChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    this.trackResponseSent(conversationId);
   }
 
   /**

@@ -138,6 +138,8 @@ export class WhatsAppChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    this.trackResponseSent(conversationId);
   }
 
   /**

@@ -27,6 +27,7 @@ import type { ConversationClient } from '../../clients/conversation';
 import type { TAC } from '../../lib/tac';
 import type { TACConfig } from '../../lib/config';
 import { warnDeprecated } from '../../lib/deprecation';
+import { trackEvent } from '../../lib/analytics';
 import type { Logger } from '../../lib/logger';
 import type { TACMemoryResponse } from '../../lib/tac-memory-response';
 import { ConversationRelayProviderConfig } from './conversation-relay/config';
@@ -572,6 +573,16 @@ export class VoiceChannel extends BaseChannel {
    *   transport the active provider serves.
    */
   public handleWebSocketConnection(ws: WebSocket): void {
+    // Socket-open half of the Websocket Connected/Disconnected pair. Tracked
+    // here rather than in a provider so every transport is covered; no
+    // conversation identifier exists yet at this point.
+    trackEvent('Websocket Connected', {
+      account_sid: this.config.accountSid,
+      channel: 'voice',
+      provider: this.provider.providerId,
+      orchestrator_enabled: this.config.isOrchestratorEnabled(),
+    });
+
     // A provider may serve the socket synchronously or await an upstream
     // handshake first. Owning the returned promise here keeps an async
     // provider from producing an unhandled rejection.
@@ -586,12 +597,20 @@ export class VoiceChannel extends BaseChannel {
   /**
    * Send voice response via WebSocket
    */
-  public sendResponse(
+  public async sendResponse(
     conversationId: ConversationId,
     message: string,
     metadata?: Record<string, unknown>
   ): Promise<void> {
-    return this.provider.sendResponse(conversationId, message, metadata);
+    await this.provider.sendResponse(conversationId, message, metadata);
+    trackEvent('Response Sent', {
+      account_sid: this.config.accountSid,
+      channel: 'voice',
+      conversation_id: conversationId,
+      response_type: 'full',
+      provider: this.provider.providerId,
+      orchestrator_enabled: this.config.isOrchestratorEnabled(),
+    });
   }
 
   /**
@@ -612,7 +631,22 @@ export class VoiceChannel extends BaseChannel {
     stream: AsyncIterable<string>,
     options?: { signal?: AbortSignal }
   ): Promise<string> {
-    return this.provider.sendStreamingResponse(conversationId, stream, options);
+    const fullResponse = await this.provider.sendStreamingResponse(conversationId, stream, options);
+
+    // Empty means nothing reached the caller — an immediate abort, say — so
+    // there is no response to report.
+    if (fullResponse) {
+      trackEvent('Response Sent', {
+        account_sid: this.config.accountSid,
+        channel: 'voice',
+        conversation_id: conversationId,
+        response_type: 'streaming',
+        provider: this.provider.providerId,
+        orchestrator_enabled: this.config.isOrchestratorEnabled(),
+      });
+    }
+
+    return fullResponse;
   }
 
   // =========================================================================

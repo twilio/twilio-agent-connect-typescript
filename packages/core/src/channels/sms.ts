@@ -121,6 +121,8 @@ export class SMSChannel extends MessagingChannel {
       });
       throw error;
     }
+
+    this.trackResponseSent(conversationId);
   }
 
   /**
