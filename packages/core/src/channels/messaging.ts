@@ -456,15 +456,17 @@ export abstract class MessagingChannel extends BaseChannel {
         }
 
         const [agentParticipant, customerParticipant] = resolved;
-        const agentAddrValue = agentParticipant.addresses.find(
-          a => a.channel === channelName
-        )?.address;
-        const fallbackAddr =
+        // When the webhook told us which of our numbers the customer
+        // contacted, that address is authoritative — keep it as the session's
+        // active agent address so digital handoff and outbound replies send
+        // From the number the customer reached, even if the reconciled
+        // participant lists several same-channel addresses.
+        const agentAddrValue =
           inboundAgentAddress !== undefined
             ? inboundAgentAddress.address
-            : this.getAgentAddress(conversationId).address;
+            : agentParticipant.addresses.find(a => a.channel === channelName)?.address;
         session.aiAgentInfo = {
-          address: agentAddrValue ?? fallbackAddr,
+          address: agentAddrValue ?? this.getAgentAddress(conversationId).address,
           participantId: agentParticipant.id,
         };
         // When reconcile resolved a customer (SMS path — chat disables customer

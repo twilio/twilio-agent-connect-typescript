@@ -998,6 +998,32 @@ describe('SMS Channel', () => {
       expect(session?.aiAgentInfo?.participantId).toBe('PA_agent2');
     });
 
+    it('keeps the webhook-matched recipient when the agent participant lists several same-channel addresses', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      // Agent participant carries BOTH numbers, the default (AGENT_A) listed first.
+      vi.spyOn(multiChannel as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA_agent_multi',
+          conversationId: 'conv_x',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT' as const,
+          addresses: [
+            { channel: 'SMS' as const, address: AGENT_A },
+            { channel: 'SMS' as const, address: AGENT_B },
+          ],
+        },
+        customerParticipant(),
+      ]);
+
+      await multiChannel.processWebhook(inboundWebhook('conv_multi_addr', AGENT_B));
+
+      const session = multiChannel.getConversationSession('conv_multi_addr' as any);
+      // The number the customer contacted, not the participant's first-listed address.
+      expect(session?.aiAgentInfo?.address).toBe(AGENT_B);
+      expect(session?.aiAgentInfo?.participantId).toBe('PA_agent_multi');
+    });
+
     it('falls back (agentAddress undefined) when the webhook has no channel recipient', async () => {
       const reconcileSpy = vi
         .spyOn(channel as any, 'reconcileParticipants')
