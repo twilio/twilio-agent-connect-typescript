@@ -178,7 +178,7 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
       };
     }
 
-    const fromNumber = this.tacConfig.phoneNumber;
+    const fromNumber = this.resolveFromNumber(validated.from);
 
     this.logger.info(
       { to: maskPhone(validated.to), from: maskPhone(fromNumber) },

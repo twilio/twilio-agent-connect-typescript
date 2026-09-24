@@ -1151,8 +1151,8 @@ export function callOptionsToCreateParams(options: CallOptions): Record<string, 
 /**
  * Options for initiating an outbound voice conversation.
  *
- * The caller identity is always TAC's configured `config.phoneNumber`.
- * Multi-number deployments should run one TAC instance per line.
+ * The caller identity is TAC's configured `config.phoneNumber` by default, or
+ * `from` when set to one of `config.phoneNumbers`.
  *
  * TwiML for the outbound call is built by merging per-field, highest precedence
  * first:
@@ -1168,6 +1168,11 @@ export function callOptionsToCreateParams(options: CallOptions): Record<string, 
  */
 export interface InitiateVoiceConversationOptions {
   to: string;
+  /**
+   * Phone number to place the call from. Must be one of `config.phoneNumbers`.
+   * When omitted, `config.phoneNumber` (the default sender) is used.
+   */
+  from?: string | undefined;
   /**
    * Public WebSocket URL for ConversationRelay (e.g. 'wss://your-domain.ngrok.app/ws').
    * Optional — defaults to the URL derived from `TACConfig.voicePublicDomain` +
@@ -1202,6 +1207,7 @@ export interface InitiateVoiceConversationOptions {
  */
 const InitiateVoiceConversationOptionsBase = z.object({
   to: z.string().min(1, 'Recipient phone number is required'),
+  from: z.string().min(1).optional(),
   websocketUrl: z.url().optional(),
   twimlOptions: VoiceTwiMLOptionsConversationRelaySchema.optional(),
   callOptions: CallOptionsSchema.optional(),

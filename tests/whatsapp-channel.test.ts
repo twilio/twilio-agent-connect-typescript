@@ -64,10 +64,10 @@ describe('WhatsApp Channel', () => {
         conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
       };
       const tacWithoutWhatsApp = await createTestTAC(configWithoutWhatsApp);
-      const whatsappChannel = new WhatsAppChannel(tacWithoutWhatsApp);
 
-      expect(() => (whatsappChannel as any).isDefaultAgentAddress('whatsapp:+15551234567')).toThrow(
-        'whatsappNumber is required for WhatsApp channel'
+      // Construction itself throws — WhatsApp requires at least one number.
+      expect(() => new WhatsAppChannel(tacWithoutWhatsApp)).toThrow(
+        /whatsappNumber\(s\) is required for WhatsApp channel/
       );
     });
 
@@ -222,24 +222,14 @@ describe('WhatsApp Channel', () => {
   });
 
   describe('initiateOutboundConversation', () => {
-    it('should throw error if whatsappNumber is not configured', async () => {
-      const configWithoutWhatsApp = {
-        accountSid: 'ACtest123456789',
-        authToken: 'test_token_123',
-        apiKey: 'test_api_key',
-        apiSecret: 'test_api_token',
-        phoneNumber: '+15551234567',
-        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
-      };
-      const tacWithoutWhatsApp = await createTestTAC(configWithoutWhatsApp);
-      const whatsappChannel = new WhatsAppChannel(tacWithoutWhatsApp);
-
+    it('should reject an outbound from that is not a configured WhatsApp sender', async () => {
       await expect(
-        whatsappChannel.initiateOutboundConversation({
+        channel.initiateOutboundConversation({
           to: 'whatsapp:+15559876543',
           message: 'Hello',
+          from: 'whatsapp:+19998887777',
         })
-      ).rejects.toThrow('whatsappNumber is required for WhatsApp channel');
+      ).rejects.toThrow(/from 'whatsapp:\+19998887777' is not a configured WHATSAPP sender/);
     });
 
     it('should initiate outbound WhatsApp conversation', async () => {
@@ -420,6 +410,37 @@ describe('WhatsApp Channel', () => {
       await expect(channelAlways.processWebhook(webhookPayload)).resolves.not.toThrow();
 
       expect(retrieveMemorySpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('multi-sender support', () => {
+    const multiConfig = () => ({
+      ...getTestConfig(),
+      whatsappNumbers: ['whatsapp:+15551234567', 'whatsapp:+14440000000'],
+    });
+
+    it('isDefaultAgentAddress matches any configured number', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new WhatsAppChannel(multiTac);
+      expect((multiChannel as any).isDefaultAgentAddress('whatsapp:+15551234567')).toBe(true);
+      expect((multiChannel as any).isDefaultAgentAddress('whatsapp:+14440000000')).toBe(true);
+      expect((multiChannel as any).isDefaultAgentAddress('whatsapp:+19999999999')).toBe(false);
+    });
+
+    it('outbound from selects a configured number', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new WhatsAppChannel(multiTac);
+      const initSpy = vi
+        .spyOn(multiChannel as any, 'initiateOutboundMessagingConversation')
+        .mockResolvedValue({ conversationId: 'CH1', session: {} });
+
+      await multiChannel.initiateOutboundConversation({
+        to: 'whatsapp:+19998887777',
+        message: 'hi',
+        from: 'whatsapp:+14440000000',
+      });
+
+      expect(initSpy.mock.calls[0]![0].from).toBe('whatsapp:+14440000000');
     });
   });
 });

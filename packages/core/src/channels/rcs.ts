@@ -23,10 +23,11 @@ export class RCSChannel extends MessagingChannel {
   constructor(tac: TAC, config?: MessagingChannelConfig) {
     super(tac, config);
 
-    if (!this.config.rcsSenderId) {
+    if (this.config.rcsSenderIds.length === 0) {
       throw new Error(
-        'rcsSenderId is required for RCS channel. ' +
-          'Please set TWILIO_RCS_SENDER_ID environment variable or provide rcsSenderId in TACConfig.'
+        'rcsSenderId(s) is required for RCS channel. ' +
+          'Set TWILIO_RCS_SENDER_ID / TWILIO_RCS_SENDER_IDS or provide ' +
+          'rcsSenderId / rcsSenderIds in TACConfig.'
       );
     }
   }
@@ -36,7 +37,7 @@ export class RCSChannel extends MessagingChannel {
   }
 
   protected isDefaultAgentAddress(authorAddress: string): boolean {
-    return authorAddress === this.config.rcsSenderId;
+    return this.config.rcsSenderIds.includes(authorAddress);
   }
 
   protected getAgentAddress(_conversationId: ConversationId): ConversationAddress {
@@ -147,16 +148,13 @@ export class RCSChannel extends MessagingChannel {
    *
    * Creates a conversation via Conversation Orchestrator, adds customer and
    * agent participants, then sends the initial message via the Actions API.
-   * The sender is always `config.rcsSenderId`.
+   * Uses `options.from` when provided (must be one of the configured RCS
+   * senders), otherwise falls back to the default `config.rcsSenderId`.
    */
   public async initiateOutboundConversation(
     options: InitiateMessagingConversationOptions
   ): Promise<InitiateConversationResult> {
     const validated = InitiateMessagingConversationOptionsSchema.parse(options);
-
-    if (!this.config.rcsSenderId) {
-      throw new Error('rcsSenderId is required for RCS channel.');
-    }
 
     this.logger.info(
       { to: maskAddress(validated.to), message_length: validated.message.length },
@@ -166,7 +164,10 @@ export class RCSChannel extends MessagingChannel {
     return this.initiateOutboundMessagingConversation({
       channel: 'RCS',
       to: validated.to,
-      from: this.config.rcsSenderId,
+      from: this.resolveOutboundFrom(validated.from, {
+        allowlist: this.config.rcsSenderIds,
+        default: this.config.rcsSenderId,
+      }),
       message: validated.message,
       ...(validated.metadata ? { metadata: validated.metadata } : {}),
     });

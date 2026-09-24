@@ -238,6 +238,60 @@ describe('handoff tool execution — digital channels', () => {
     expect(result).toEqual({ status: 'handoff_initiated', channel: 'sms' });
   });
 
+  it('sends From the session active agent number, not the default sender', async () => {
+    const tac = await createTestTAC(
+      getTestConfig({
+        phoneNumber: '+15551234567',
+        phoneNumbers: ['+15551234567', '+14440000000'],
+        apiKey: 'SK_key',
+        apiSecret: 'tok',
+      })
+    );
+    vi.spyOn(tac.getConversationClient(), 'updateConversation').mockResolvedValue({} as never);
+    vi.spyOn(tac.getConversationClient(), 'clearStatusCallbacks').mockResolvedValue();
+
+    // The customer is talking to the second configured number.
+    const session = makeSession({
+      channel: 'sms',
+      aiAgentInfo: { address: '+14440000000', participantId: 'p_agent' },
+    });
+    const tool = createStudioHandoffTool(tac, session);
+    await tool.implementation({ reason: 'Customer wants human' });
+
+    const [, body] = (axios.post as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
+      string,
+      string,
+    ];
+    expect(new URLSearchParams(body).get('From')).toBe('+14440000000');
+  });
+
+  it('uses the configured phone number as Chat From, not the agent identity', async () => {
+    const tac = await createTestTAC(
+      getTestConfig({
+        phoneNumber: '+15551234567',
+        apiKey: 'SK_key',
+        apiSecret: 'tok',
+      })
+    );
+    vi.spyOn(tac.getConversationClient(), 'updateConversation').mockResolvedValue({} as never);
+    vi.spyOn(tac.getConversationClient(), 'clearStatusCallbacks').mockResolvedValue();
+
+    // Chat's agent address is an identity (e.g. "ai-assistant"), not a Twilio
+    // number. Studio's From must be a phone number, so Chat keeps the default.
+    const session = makeSession({
+      channel: 'chat',
+      aiAgentInfo: { address: 'ai-assistant', participantId: 'p_agent' },
+    });
+    const tool = createStudioHandoffTool(tac, session);
+    await tool.implementation({ reason: 'Customer wants human' });
+
+    const [, body] = (axios.post as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
+      string,
+      string,
+    ];
+    expect(new URLSearchParams(body).get('From')).toBe('+15551234567');
+  });
+
   it('returns handoff_failed when Studio POST raises (not a silent success)', async () => {
     (axios.post as unknown as { mockReset: () => void }).mockReset();
     vi.spyOn(axios, 'post').mockRejectedValue(new Error('boom'));

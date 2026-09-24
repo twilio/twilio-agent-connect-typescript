@@ -863,4 +863,176 @@ describe('SMS Channel', () => {
       expect(retrieveMemorySpy).toHaveBeenCalled();
     });
   });
+
+  describe('multi-sender support', () => {
+    const AGENT_A = '+15551234567';
+    const AGENT_B = '+14440000000';
+    const CUSTOMER = '+12345678901';
+
+    const multiConfig = () => ({ ...getTestConfig(), phoneNumbers: [AGENT_A, AGENT_B] });
+
+    const agentParticipant = (address = AGENT_A, id = 'PA_agent') => ({
+      id,
+      conversationId: 'conv_x',
+      accountId: 'ACtest123456789',
+      type: 'AI_AGENT' as const,
+      addresses: [{ channel: 'SMS' as const, address }],
+    });
+    const customerParticipant = () => ({
+      id: 'PA_cust',
+      conversationId: 'conv_x',
+      accountId: 'ACtest123456789',
+      type: 'CUSTOMER' as const,
+      addresses: [{ channel: 'SMS' as const, address: CUSTOMER }],
+    });
+
+    const inboundWebhook = (conversationId: string, recipientAddress: string | undefined) => ({
+      eventType: 'COMMUNICATION_CREATED',
+      data: {
+        id: `comms_${conversationId}`,
+        conversationId,
+        content: { type: 'TEXT', text: 'hello' },
+        // No author.participantId: keeps isOwnMessage on its stateless fast path
+        // (no listParticipants API call) so these tests stay hermetic.
+        author: { address: CUSTOMER, channel: 'SMS' },
+        ...(recipientAddress !== undefined
+          ? { recipients: [{ channel: 'SMS', address: recipientAddress, participantId: 'PA_agent' }] }
+          : { recipients: [] }),
+      },
+    });
+
+    it('resolveOutboundFrom validates membership', () => {
+      const c = channel as any;
+      expect(
+        c.resolveOutboundFrom(AGENT_A, { allowlist: tac.config.phoneNumbers, default: tac.config.phoneNumber })
+      ).toBe(AGENT_A);
+      // omitted → default
+      expect(
+        c.resolveOutboundFrom(undefined, {
+          allowlist: tac.config.phoneNumbers,
+          default: tac.config.phoneNumber,
+        })
+      ).toBe(AGENT_A);
+      // explicit, not in set → throws
+      expect(() =>
+        c.resolveOutboundFrom('+19998887777', {
+          allowlist: tac.config.phoneNumbers,
+          default: tac.config.phoneNumber,
+        })
+      ).toThrow(/is not a configured SMS sender/);
+    });
+
+    it('isDefaultAgentAddress matches any configured number', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      expect((multiChannel as any).isDefaultAgentAddress(AGENT_A)).toBe(true);
+      expect((multiChannel as any).isDefaultAgentAddress(AGENT_B)).toBe(true);
+      expect((multiChannel as any).isDefaultAgentAddress('+19999999999')).toBe(false);
+    });
+
+    it('outbound from selects a configured number', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      const initSpy = vi
+        .spyOn(multiChannel as any, 'initiateOutboundMessagingConversation')
+        .mockResolvedValue({ conversationId: 'CH1', session: {} });
+
+      await multiChannel.initiateOutboundConversation({
+        to: '+19998887777',
+        message: 'hi',
+        from: AGENT_B,
+      });
+
+      expect(initSpy.mock.calls[0]![0].from).toBe(AGENT_B);
+    });
+
+    it('outbound from defaults to phoneNumber', async () => {
+      const initSpy = vi
+        .spyOn(channel as any, 'initiateOutboundMessagingConversation')
+        .mockResolvedValue({ conversationId: 'CH1', session: {} });
+
+      await channel.initiateOutboundConversation({ to: '+19998887777', message: 'hi' });
+
+      expect(initSpy.mock.calls[0]![0].from).toBe(AGENT_A);
+    });
+
+    it('inbound agent address is derived from the webhook recipient', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      const reconcileSpy = vi
+        .spyOn(multiChannel as any, 'reconcileParticipants')
+        .mockResolvedValue([agentParticipant(), customerParticipant()]);
+
+      await multiChannel.processWebhook(inboundWebhook('conv1', AGENT_A));
+
+      expect(reconcileSpy).toHaveBeenCalled();
+      expect(reconcileSpy.mock.calls[0]![1]).toMatchObject({ channel: 'SMS', address: AGENT_A });
+    });
+
+    it('drops an inbound message addressed to an unconfigured number', async () => {
+      const reconcileSpy = vi.spyOn(channel as any, 'reconcileParticipants');
+      const errors: { error: Error; context?: Record<string, unknown> }[] = [];
+      channel.on('error', data => errors.push(data));
+
+      await channel.processWebhook(inboundWebhook('conv2', '+19998887777'));
+
+      expect(reconcileSpy).not.toHaveBeenCalled();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.context?.dropped_inbound).toBe(true);
+      expect(errors[0]!.context?.channel).toBe('SMS');
+      expect(channel.isConversationActive('conv2')).toBe(false);
+    });
+
+    it('inbound to the second number sets aiAgentInfo to that number end-to-end', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      vi.spyOn(multiChannel as any, 'reconcileParticipants').mockResolvedValue([
+        agentParticipant(AGENT_B, 'PA_agent2'),
+        customerParticipant(),
+      ]);
+
+      await multiChannel.processWebhook(inboundWebhook('conv_second', AGENT_B));
+
+      const session = multiChannel.getConversationSession('conv_second' as any);
+      expect(session?.aiAgentInfo?.address).toBe(AGENT_B);
+      expect(session?.aiAgentInfo?.participantId).toBe('PA_agent2');
+    });
+
+    it('keeps the webhook-matched recipient when the agent participant lists several same-channel addresses', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      // Agent participant carries BOTH numbers, the default (AGENT_A) listed first.
+      vi.spyOn(multiChannel as any, 'reconcileParticipants').mockResolvedValue([
+        {
+          id: 'PA_agent_multi',
+          conversationId: 'conv_x',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT' as const,
+          addresses: [
+            { channel: 'SMS' as const, address: AGENT_A },
+            { channel: 'SMS' as const, address: AGENT_B },
+          ],
+        },
+        customerParticipant(),
+      ]);
+
+      await multiChannel.processWebhook(inboundWebhook('conv_multi_addr', AGENT_B));
+
+      const session = multiChannel.getConversationSession('conv_multi_addr' as any);
+      // The number the customer contacted, not the participant's first-listed address.
+      expect(session?.aiAgentInfo?.address).toBe(AGENT_B);
+      expect(session?.aiAgentInfo?.participantId).toBe('PA_agent_multi');
+    });
+
+    it('falls back (agentAddress undefined) when the webhook has no channel recipient', async () => {
+      const reconcileSpy = vi
+        .spyOn(channel as any, 'reconcileParticipants')
+        .mockResolvedValue([agentParticipant(), customerParticipant()]);
+
+      await channel.processWebhook(inboundWebhook('conv3', undefined));
+
+      expect(reconcileSpy).toHaveBeenCalled();
+      expect(reconcileSpy.mock.calls[0]![1]).toBeUndefined();
+    });
+  });
 });

@@ -22,9 +22,24 @@ export class TACConfig {
   public readonly authToken: string;
   public readonly apiKey: string;
   public readonly apiSecret: string;
+  /**
+   * Default Twilio phone number for Voice and SMS — the sender used for
+   * outbound when a call does not specify `from`. Always populated and always a
+   * member of {@link phoneNumbers}.
+   */
   public readonly phoneNumber: string;
+  /**
+   * Full set of Twilio phone numbers this instance serves for Voice and SMS
+   * (the inbound allowlist). Always includes {@link phoneNumber} as the first,
+   * default sender.
+   */
+  public readonly phoneNumbers: string[];
   public readonly rcsSenderId?: string;
+  /** Full set of RCS Sender IDs this instance serves; the default is first. */
+  public readonly rcsSenderIds: string[];
   public readonly whatsappNumber?: string;
+  /** Full set of WhatsApp numbers this instance serves; the default is first. */
+  public readonly whatsappNumbers: string[];
   public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
@@ -56,12 +71,15 @@ export class TACConfig {
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
     this.phoneNumber = validatedConfig.phoneNumber;
+    this.phoneNumbers = validatedConfig.phoneNumbers;
     if (validatedConfig.rcsSenderId) {
       this.rcsSenderId = validatedConfig.rcsSenderId;
     }
+    this.rcsSenderIds = validatedConfig.rcsSenderIds;
     if (validatedConfig.whatsappNumber) {
       this.whatsappNumber = validatedConfig.whatsappNumber;
     }
+    this.whatsappNumbers = validatedConfig.whatsappNumbers;
     // Assign the validated memory config directly; schema parsing already validates shape and applies defaults
     this.memoryConfig = validatedConfig.memoryConfig;
     if (validatedConfig.conversationConfigurationId) {
@@ -96,10 +114,13 @@ export class TACConfig {
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
    * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
    * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
-   * - TWILIO_PHONE_NUMBER: Phone number for voice and SMS channels
+   * - TWILIO_PHONE_NUMBER and/or TWILIO_PHONE_NUMBERS: at least one is required.
+   *   Phone number(s) for voice and SMS channels — see **Multi-Value Senders** below.
    *
    * Optional environment variables:
-   * - TWILIO_WHATSAPP_NUMBER: WhatsApp number for WhatsApp channel (e.g., 'whatsapp:+1234567890')
+   * - TWILIO_WHATSAPP_NUMBER / TWILIO_WHATSAPP_NUMBERS: WhatsApp number(s) for the
+   *   WhatsApp channel (e.g., 'whatsapp:+1234567890')
+   * - TWILIO_RCS_SENDER_ID / TWILIO_RCS_SENDER_IDS: RCS Sender ID(s) for the RCS channel
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
    * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; a port and/or base path are allowed, e.g., 'abc123.ngrok.app', 'example.ngrok.app:8080', or 'example.com/server1')
    * - TWILIO_VOICE_WEBSOCKET_PATH: Path for the voice WebSocket (default: /ws)
@@ -107,7 +128,16 @@ export class TACConfig {
    * - TWILIO_VOICE_CALL_EVENT_PATH: Base path for the call-event callbacks — status, async AMD, recording (default: /twilio/call-events)
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
-   * - TWILIO_RCS_SENDER_ID: RCS Sender ID for the RCS channel
+   *
+   * Multi-Value Senders:
+   * - Each singular env var (TWILIO_PHONE_NUMBER, TWILIO_RCS_SENDER_ID,
+   *   TWILIO_WHATSAPP_NUMBER) pairs with a plural, comma-separated one
+   *   (TWILIO_PHONE_NUMBERS, TWILIO_RCS_SENDER_IDS, TWILIO_WHATSAPP_NUMBERS),
+   *   e.g. `TWILIO_PHONE_NUMBERS=+1555,+1444`. Whichever side is set back-fills
+   *   the other: the singular becomes the default sender and the plural the full
+   *   allowlist. Entries are whitespace-trimmed and de-duplicated, with the
+   *   default kept first. `phoneNumber` requires at least one of the two; the RCS
+   *   and WhatsApp pairs stay optional.
    *
    * Memory Configuration (defaults defined in TwilioMemoryConfigSchema):
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
@@ -131,12 +161,14 @@ export class TACConfig {
    */
   public static fromEnv(): TACConfig {
     // Check for required environment variables
+    // TWILIO_PHONE_NUMBER is intentionally NOT hard-required here: the schema
+    // requires at least one of TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS and
+    // back-fills the default, so either env var satisfies it.
     const requiredVars = [
       { key: EnvironmentVariables.TWILIO_ACCOUNT_SID, name: 'TWILIO_ACCOUNT_SID' },
       { key: EnvironmentVariables.TWILIO_AUTH_TOKEN, name: 'TWILIO_AUTH_TOKEN' },
       { key: EnvironmentVariables.TWILIO_API_KEY, name: 'TWILIO_API_KEY' },
       { key: EnvironmentVariables.TWILIO_API_SECRET, name: 'TWILIO_API_SECRET' },
-      { key: EnvironmentVariables.TWILIO_PHONE_NUMBER, name: 'TWILIO_PHONE_NUMBER' },
     ];
 
     // Throw error for missing required variables (like Python's KeyError)
@@ -208,14 +240,24 @@ export class TACConfig {
       return parsed;
     };
 
+    // Parse a comma-separated env var into a trimmed, non-empty list.
+    const splitCsvEnv = (value: string | undefined): string[] =>
+      (value ?? '')
+        .split(',')
+        .map(part => part.trim())
+        .filter(part => part.length > 0);
+
     const rawConfig = {
       accountSid: process.env[EnvironmentVariables.TWILIO_ACCOUNT_SID]!,
       authToken: process.env[EnvironmentVariables.TWILIO_AUTH_TOKEN]!,
       apiKey: process.env[EnvironmentVariables.TWILIO_API_KEY]!,
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
-      phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER]!,
+      phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER] || undefined,
+      phoneNumbers: splitCsvEnv(process.env[EnvironmentVariables.TWILIO_PHONE_NUMBERS]),
       rcsSenderId: process.env[EnvironmentVariables.TWILIO_RCS_SENDER_ID],
+      rcsSenderIds: splitCsvEnv(process.env[EnvironmentVariables.TWILIO_RCS_SENDER_IDS]),
       whatsappNumber: process.env[EnvironmentVariables.TWILIO_WHATSAPP_NUMBER] || undefined,
+      whatsappNumbers: splitCsvEnv(process.env[EnvironmentVariables.TWILIO_WHATSAPP_NUMBERS]),
       memoryConfig: {
         traitGroups,
         observationsLimit: parseIntEnv(

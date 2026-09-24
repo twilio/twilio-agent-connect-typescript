@@ -424,16 +424,24 @@ export type ConversationConfiguration = z.infer<typeof ConversationConfiguration
 // =========================================================================
 
 /**
- * Options for initiating an outbound SMS conversation.
+ * Options for initiating an outbound messaging conversation (SMS/RCS/WhatsApp).
  *
- * The sender is always TAC's configured `config.phoneNumber`. Multi-sender
- * deployments should run one TAC instance per sender so inbound webhook
- * routing, memory scoping, and configuration stay in sync.
+ * The sender defaults to the channel's configured default (`config.phoneNumber`
+ * for SMS, `config.rcsSenderId` for RCS, `config.whatsappNumber` for WhatsApp).
+ * Set `from` to send from any other configured sender for that channel
+ * (`config.phoneNumbers` / `rcsSenderIds` / `whatsappNumbers`).
  */
 export const InitiateMessagingConversationOptionsSchema = z.object({
   to: z.string().min(1, 'Recipient address is required'),
   message: z.string().min(1, 'Initial message is required'),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Sender address to send from. Must be one of the channel's configured
+   * senders (`config.phoneNumbers` / `rcsSenderIds` / `whatsappNumbers`). When
+   * omitted, the channel default is used (`config.phoneNumber` / `rcsSenderId` /
+   * `whatsappNumber`).
+   */
+  from: z.string().min(1).optional(),
 });
 
 export type InitiateMessagingConversationOptions = z.infer<

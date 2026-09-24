@@ -215,9 +215,19 @@ export function createStudioHandoffTool(
         // handoff_failed so the LLM can tell the user instead of claiming
         // success.
         try {
+          // Studio's `From` must be a Twilio phone number. Phone-based
+          // channels (SMS/RCS/WhatsApp) hand off From the number the customer
+          // actually reached (`session.aiAgentInfo.address`, now that TAC may
+          // serve several). Chat's agent address is an identity (e.g.
+          // "ai-assistant"), not a number, so it keeps the configured default
+          // sender.
+          const fromAddress =
+            session.channel !== 'chat' && session.aiAgentInfo?.address
+              ? session.aiAgentInfo.address
+              : config.phoneNumber;
           await postStudioHandoff(payload, session, {
             handoffUrl: studioExecutionsUrl(flowSid),
-            fromAddress: config.phoneNumber,
+            fromAddress,
             apiKey: config.apiKey,
             apiSecret: config.apiSecret,
           });

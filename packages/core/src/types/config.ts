@@ -50,102 +50,202 @@ export type CallEventKind = z.infer<typeof CallEventKindSchema>;
 /** Iterable form of {@link CallEventKind}, for registering every route. */
 export const CALL_EVENT_KINDS: readonly CallEventKind[] = CallEventKindSchema.options;
 
+const RCS_SENDER_ID_REGEX = /^rcs:.+$/;
+const RCS_SENDER_ID_MESSAGE =
+  'RCS sender ID must be in format: rcs:<sender-id-or-phone> (e.g., rcs:brand_acme_agent or rcs:+1234567890)';
+const WHATSAPP_NUMBER_REGEX = /^whatsapp:\+\d+$/;
+const WHATSAPP_NUMBER_MESSAGE = 'WhatsApp number must be in format: whatsapp:+1234567890';
+
+/**
+ * Reconcile a `(default, allowlist)` sender pair.
+ *
+ * Mirrors the Python SDK's `TACConfig._normalize_sender_pair` — keep the two in
+ * step. Strips entries, back-fills whichever side is missing, guarantees the
+ * default is a member of the allowlist (and kept first), and de-duplicates.
+ * When `required` and both sides are empty, returns an `error` message instead
+ * of a resolved pair.
+ */
+function normalizeSenderPair(
+  defaultValue: string | undefined,
+  plural: readonly string[],
+  options: { required: boolean; field: string }
+): { default: string | undefined; plural: string[]; error?: string } {
+  const trimmedDefault =
+    typeof defaultValue === 'string' && defaultValue.trim().length > 0
+      ? defaultValue.trim()
+      : undefined;
+
+  const cleaned: string[] = [];
+  for (const entry of plural) {
+    const trimmed = entry.trim();
+    if (trimmed && !cleaned.includes(trimmed)) {
+      cleaned.push(trimmed);
+    }
+  }
+
+  if (trimmedDefault === undefined && cleaned.length === 0) {
+    if (options.required) {
+      return {
+        default: undefined,
+        plural: [],
+        error: `At least one of \`${options.field}\` / \`${options.field}s\` must be set.`,
+      };
+    }
+    return { default: undefined, plural: [] };
+  }
+
+  const resolvedDefault = trimmedDefault ?? cleaned[0]!;
+  // Guarantee the default is present AND first.
+  const withoutDefault = cleaned.filter(a => a !== resolvedDefault);
+  return { default: resolvedDefault, plural: [resolvedDefault, ...withoutDefault] };
+}
+
 /**
  * TAC configuration schema
  */
-export const TACConfigSchema = z.object({
-  accountSid: z.string().min(1, 'Twilio Account SID is required'),
-  authToken: z.string().min(1, 'Twilio Auth Token is required'),
-  apiKey: z.string().min(1, 'Twilio API Key is required'),
-  apiSecret: z.string().min(1, 'Twilio API Secret is required'),
-  phoneNumber: z.string().min(1, 'Twilio Phone Number is required'),
-  rcsSenderId: z
-    .string()
-    .regex(
-      /^rcs:.+$/,
-      'RCS sender ID must be in format: rcs:<sender-id-or-phone> (e.g., rcs:brand_acme_agent or rcs:+1234567890)'
-    )
-    .optional(),
-  whatsappNumber: z
-    .string()
-    .regex(/^whatsapp:\+\d+$/, 'WhatsApp number must be in format: whatsapp:+1234567890')
-    .optional(),
-  memoryConfig: TwilioMemoryConfigSchema.prefault({}),
-  conversationConfigurationId: z
-    .string()
-    .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
-    .optional(),
-  /**
-   * Public domain where voice routes are reachable, optionally including a port
-   * and/or base path (e.g. "example.ngrok.app", "example.ngrok.app:8080",
-   * or "example.com/server1"). Used by VoiceChannel to construct the public
-   * WebSocket URL and ConversationRelay action URL. Required when using the Voice channel.
-   *
-   * Whitespace, schemes (https://, wss://), and trailing slashes are stripped
-   * automatically; anything else is passed through as given. Mirrors the Python
-   * SDK's `_normalize_voice_public_domain` — keep the two in step.
-   */
-  voicePublicDomain: z
-    .preprocess(v => {
-      if (typeof v !== 'string') return v;
-      let s = v.trim();
-      if (s.length === 0) return undefined;
-      for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
-        if (s.toLowerCase().startsWith(scheme)) {
-          s = s.slice(scheme.length);
-          break;
+export const TACConfigSchema = z
+  .object({
+    accountSid: z.string().min(1, 'Twilio Account SID is required'),
+    authToken: z.string().min(1, 'Twilio Auth Token is required'),
+    apiKey: z.string().min(1, 'Twilio API Key is required'),
+    apiSecret: z.string().min(1, 'Twilio API Secret is required'),
+    /**
+     * Default Twilio phone number for Voice (inbound) and SMS. Optional if
+     * `phoneNumbers` is set; at least one of the two is required. After
+     * validation this is always populated and is a member of `phoneNumbers`.
+     */
+    phoneNumber: z.string().min(1, 'Twilio Phone Number is required').optional(),
+    /**
+     * Full set of Twilio phone numbers this instance serves for Voice and SMS
+     * (the inbound allowlist). Defaults to `[phoneNumber]` when omitted;
+     * `phoneNumber` is always included as the default sender.
+     */
+    phoneNumbers: z.array(z.string().min(1, 'Twilio Phone Number is required')).optional(),
+    /** Default Twilio RCS Sender ID. Optional; symmetric with `rcsSenderIds`. */
+    rcsSenderId: z.string().regex(RCS_SENDER_ID_REGEX, RCS_SENDER_ID_MESSAGE).optional(),
+    /**
+     * Full set of Twilio RCS Sender IDs this instance serves. Defaults to
+     * `[rcsSenderId]` when a default is set.
+     */
+    rcsSenderIds: z.array(z.string().regex(RCS_SENDER_ID_REGEX, RCS_SENDER_ID_MESSAGE)).optional(),
+    /** Default Twilio WhatsApp number. Optional; symmetric with `whatsappNumbers`. */
+    whatsappNumber: z.string().regex(WHATSAPP_NUMBER_REGEX, WHATSAPP_NUMBER_MESSAGE).optional(),
+    /**
+     * Full set of Twilio WhatsApp numbers this instance serves. Defaults to
+     * `[whatsappNumber]` when a default is set.
+     */
+    whatsappNumbers: z
+      .array(z.string().regex(WHATSAPP_NUMBER_REGEX, WHATSAPP_NUMBER_MESSAGE))
+      .optional(),
+    memoryConfig: TwilioMemoryConfigSchema.prefault({}),
+    conversationConfigurationId: z
+      .string()
+      .regex(/^conv_configuration_[0-9a-z]{26}$/, 'Invalid Conversation Configuration ID format')
+      .optional(),
+    /**
+     * Public domain where voice routes are reachable, optionally including a port
+     * and/or base path (e.g. "example.ngrok.app", "example.ngrok.app:8080",
+     * or "example.com/server1"). Used by VoiceChannel to construct the public
+     * WebSocket URL and ConversationRelay action URL. Required when using the Voice channel.
+     *
+     * Whitespace, schemes (https://, wss://), and trailing slashes are stripped
+     * automatically; anything else is passed through as given. Mirrors the Python
+     * SDK's `_normalize_voice_public_domain` — keep the two in step.
+     */
+    voicePublicDomain: z
+      .preprocess(v => {
+        if (typeof v !== 'string') return v;
+        let s = v.trim();
+        if (s.length === 0) return undefined;
+        for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
+          if (s.toLowerCase().startsWith(scheme)) {
+            s = s.slice(scheme.length);
+            break;
+          }
         }
-      }
-      s = s.replace(/\/+$/, '');
-      return s.length === 0 ? undefined : s;
-    }, z.string().optional())
-    .optional(),
+        s = s.replace(/\/+$/, '');
+        return s.length === 0 ? undefined : s;
+      }, z.string().optional())
+      .optional(),
 
-  /**
-   * Path the voice WebSocket is served at. Combined with voicePublicDomain to
-   * build the public WebSocket URL the voice channel hands to Twilio in TwiML;
-   * TACServer also registers its WebSocket route at this path. Override only if
-   * you mount the route at a non-default path. Must start with '/'.
-   */
-  voiceWebsocketPath: voicePathSchema('/ws'),
+    /**
+     * Path the voice WebSocket is served at. Combined with voicePublicDomain to
+     * build the public WebSocket URL the voice channel hands to Twilio in TwiML;
+     * TACServer also registers its WebSocket route at this path. Override only if
+     * you mount the route at a non-default path. Must start with '/'.
+     */
+    voiceWebsocketPath: voicePathSchema('/ws'),
 
-  /**
-   * Path the ConversationRelay action callback is served at. Same role as
-   * voiceWebsocketPath but for the `<Connect action=...>` cleanup callback.
-   * Must start with '/'.
-   */
-  voiceActionPath: voicePathSchema('/conversation-relay-callback'),
+    /**
+     * Path the ConversationRelay action callback is served at. Same role as
+     * voiceWebsocketPath but for the `<Connect action=...>` cleanup callback.
+     * Must start with '/'.
+     */
+    voiceActionPath: voicePathSchema('/conversation-relay-callback'),
 
-  /**
-   * Base path for the call-event callbacks (status, async AMD, recording).
-   * TACServer registers one route per callback under it — `<base>/status`,
-   * `<base>/amd`, `<base>/recording` — so the route identifies the event. Same
-   * role as voiceActionPath. Must start with '/'.
-   */
-  voiceCallEventPath: voicePathSchema('/twilio/call-events'),
-  cintelConfigurationId: z.string().optional(),
-  cintelSummaryOperatorSid: z.string().optional(),
-  region: z
-    .string()
-    .max(63, 'Invalid Twilio region format (must be a valid DNS label)')
-    .regex(
-      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
-      'Invalid Twilio region format (must be a valid DNS label)'
-    )
-    .optional(),
-  /**
-   * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
-   * TAC derives both the digital-handoff Studio Executions URL and the voice
-   * `<Connect action>` webhook URL from this SID.
-   */
-  studioHandoffFlowSid: z
-    .string()
-    .regex(
-      /^FW[0-9a-f]{32}$/,
-      'Invalid Studio Flow SID format (expected FW followed by 32 hex chars)'
-    )
-    .optional(),
-});
+    /**
+     * Base path for the call-event callbacks (status, async AMD, recording).
+     * TACServer registers one route per callback under it — `<base>/status`,
+     * `<base>/amd`, `<base>/recording` — so the route identifies the event. Same
+     * role as voiceActionPath. Must start with '/'.
+     */
+    voiceCallEventPath: voicePathSchema('/twilio/call-events'),
+    cintelConfigurationId: z.string().optional(),
+    cintelSummaryOperatorSid: z.string().optional(),
+    region: z
+      .string()
+      .max(63, 'Invalid Twilio region format (must be a valid DNS label)')
+      .regex(
+        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+        'Invalid Twilio region format (must be a valid DNS label)'
+      )
+      .optional(),
+    /**
+     * Twilio Studio Flow SID (FWxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx) for handoff.
+     * TAC derives both the digital-handoff Studio Executions URL and the voice
+     * `<Connect action>` webhook URL from this SID.
+     */
+    studioHandoffFlowSid: z
+      .string()
+      .regex(
+        /^FW[0-9a-f]{32}$/,
+        'Invalid Studio Flow SID format (expected FW followed by 32 hex chars)'
+      )
+      .optional(),
+  })
+  // Reconcile each `(default, allowlist)` sender pair: back-fill whichever side
+  // is missing, keep the default first, de-duplicate. `phoneNumber` requires at
+  // least one of the two; RCS/WhatsApp stay optional. Mirrors the Python SDK's
+  // `_normalize_sender_sets` model validator.
+  .transform((data, ctx) => {
+    const phone = normalizeSenderPair(data.phoneNumber, data.phoneNumbers ?? [], {
+      required: true,
+      field: 'phoneNumber',
+    });
+    if (phone.error) {
+      ctx.addIssue({ code: 'custom', message: phone.error, path: ['phoneNumber'] });
+      return z.NEVER;
+    }
+    const rcs = normalizeSenderPair(data.rcsSenderId, data.rcsSenderIds ?? [], {
+      required: false,
+      field: 'rcsSenderId',
+    });
+    const whatsapp = normalizeSenderPair(data.whatsappNumber, data.whatsappNumbers ?? [], {
+      required: false,
+      field: 'whatsappNumber',
+    });
+
+    return {
+      ...data,
+      // Guaranteed populated: the required check above returned early otherwise.
+      phoneNumber: phone.default!,
+      phoneNumbers: phone.plural,
+      rcsSenderId: rcs.default,
+      rcsSenderIds: rcs.plural,
+      whatsappNumber: whatsapp.default,
+      whatsappNumbers: whatsapp.plural,
+    };
+  });
 
 export type TACConfigData = z.infer<typeof TACConfigSchema>;
 
@@ -158,8 +258,11 @@ export const EnvironmentVariables = {
   TWILIO_API_KEY: 'TWILIO_API_KEY',
   TWILIO_API_SECRET: 'TWILIO_API_SECRET',
   TWILIO_PHONE_NUMBER: 'TWILIO_PHONE_NUMBER',
+  TWILIO_PHONE_NUMBERS: 'TWILIO_PHONE_NUMBERS',
   TWILIO_RCS_SENDER_ID: 'TWILIO_RCS_SENDER_ID',
+  TWILIO_RCS_SENDER_IDS: 'TWILIO_RCS_SENDER_IDS',
   TWILIO_WHATSAPP_NUMBER: 'TWILIO_WHATSAPP_NUMBER',
+  TWILIO_WHATSAPP_NUMBERS: 'TWILIO_WHATSAPP_NUMBERS',
   TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: 'TWILIO_MEMORY_PROFILE_TRAIT_GROUPS',
   TWILIO_MEMORY_OBSERVATIONS_LIMIT: 'TWILIO_MEMORY_OBSERVATIONS_LIMIT',
   TWILIO_MEMORY_SUMMARIES_LIMIT: 'TWILIO_MEMORY_SUMMARIES_LIMIT',
