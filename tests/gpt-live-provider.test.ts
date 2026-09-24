@@ -35,8 +35,14 @@ function makeChannelStub() {
   // asserts on `logger.info` calls.
   const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const handleErrorInternal = vi.fn();
+  const tacConfig = {
+    phoneNumber: '+15550009999',
+    phoneNumbers: ['+15550009999'],
+    callEventUrl: () => null,
+  };
   const channel = {
-    tac: { config: { phoneNumber: '+15550009999', callEventUrl: () => null } },
+    tac: { config: tacConfig },
+    getTacConfig: () => tacConfig,
     getInboundCallTwimlHandler: () => undefined,
     getCallEventHandlers: () => ({ status: undefined, amd: undefined, recording: undefined }),
     getTwilioClientInternal: () => ({ calls: { create: createCall } }),

@@ -217,7 +217,10 @@ export function createStudioHandoffTool(
         try {
           await postStudioHandoff(payload, session, {
             handoffUrl: studioExecutionsUrl(flowSid),
-            fromAddress: config.phoneNumber,
+            // Send from the session's active agent number (which of TAC's
+            // configured senders the customer is talking to), falling back to
+            // the default sender when the session has no agent info.
+            fromAddress: session.aiAgentInfo?.address ?? config.phoneNumber,
             apiKey: config.apiKey,
             apiSecret: config.apiSecret,
           });

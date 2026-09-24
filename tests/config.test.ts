@@ -21,11 +21,15 @@ describe('TACConfig', () => {
       TWILIO_API_KEY: process.env.TWILIO_API_KEY,
       TWILIO_API_SECRET: process.env.TWILIO_API_SECRET,
       TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER,
+      TWILIO_PHONE_NUMBERS: process.env.TWILIO_PHONE_NUMBERS,
       TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
       TWILIO_VOICE_PUBLIC_DOMAIN: process.env.TWILIO_VOICE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
       TWILIO_STUDIO_HANDOFF_FLOW_SID: process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID,
       TWILIO_RCS_SENDER_ID: process.env.TWILIO_RCS_SENDER_ID,
+      TWILIO_RCS_SENDER_IDS: process.env.TWILIO_RCS_SENDER_IDS,
+      TWILIO_WHATSAPP_NUMBER: process.env.TWILIO_WHATSAPP_NUMBER,
+      TWILIO_WHATSAPP_NUMBERS: process.env.TWILIO_WHATSAPP_NUMBERS,
       TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: process.env.TWILIO_MEMORY_PROFILE_TRAIT_GROUPS,
       TWILIO_MEMORY_OBSERVATIONS_LIMIT: process.env.TWILIO_MEMORY_OBSERVATIONS_LIMIT,
       TWILIO_MEMORY_SUMMARIES_LIMIT: process.env.TWILIO_MEMORY_SUMMARIES_LIMIT,
@@ -392,13 +396,34 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_API_SECRET');
     });
 
-    it('should throw error when TWILIO_PHONE_NUMBER is missing', () => {
+    it('should throw error when neither TWILIO_PHONE_NUMBER nor TWILIO_PHONE_NUMBERS is set', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_PHONE_NUMBER;
+      delete process.env.TWILIO_PHONE_NUMBERS;
 
       expect(() => {
         TACConfig.fromEnv();
-      }).toThrow('Missing required environment variable: TWILIO_PHONE_NUMBER');
+      }).toThrow(/At least one of `phoneNumber` \/ `phoneNumbers` must be set/);
+    });
+
+    it('should accept TWILIO_PHONE_NUMBERS alone (no singular) and back-fill the default', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_PHONE_NUMBER;
+      process.env.TWILIO_PHONE_NUMBERS = '+15551110000, +15552220000';
+
+      const config = TACConfig.fromEnv();
+      expect(config.phoneNumber).toBe('+15551110000');
+      expect(config.phoneNumbers).toEqual(['+15551110000', '+15552220000']);
+    });
+
+    it('should merge TWILIO_PHONE_NUMBER and TWILIO_PHONE_NUMBERS with the default kept first', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_PHONE_NUMBER = '+15550000001';
+      process.env.TWILIO_PHONE_NUMBERS = '+15550000002,+15550000001,+15550000003';
+
+      const config = TACConfig.fromEnv();
+      expect(config.phoneNumber).toBe('+15550000001');
+      expect(config.phoneNumbers).toEqual(['+15550000001', '+15550000002', '+15550000003']);
     });
 
     it('should succeed without TWILIO_CONVERSATION_CONFIGURATION_ID (relay-only mode)', () => {
@@ -689,6 +714,78 @@ describe('TACConfig', () => {
       // CALL_EVENT_KINDS is what TACServer iterates to register and validate its
       // routes; this pins the set they have to stay in step with.
       expect([...CALL_EVENT_KINDS]).toEqual(['status', 'amd', 'recording']);
+    });
+  });
+
+  describe('multi-sender normalization', () => {
+    // Minimal credentials shared by the normalization cases below. Mirrors the
+    // Python SDK's `test_config.py::BASE`.
+    const BASE = {
+      accountSid: 'ACtest123456789',
+      authToken: 'test_token_123',
+      apiKey: 'SKtest123456789',
+      apiSecret: 'test_api_token_123',
+    };
+
+    it('back-fills phoneNumbers from the singular phoneNumber', () => {
+      const cfg = new TACConfig({ ...BASE, phoneNumber: '+1555' });
+      expect(cfg.phoneNumber).toBe('+1555');
+      expect(cfg.phoneNumbers).toEqual(['+1555']);
+    });
+
+    it('back-fills the default from the first plural entry', () => {
+      const cfg = new TACConfig({ ...BASE, phoneNumbers: ['+1555', '+1444'] });
+      expect(cfg.phoneNumber).toBe('+1555');
+      expect(cfg.phoneNumbers).toEqual(['+1555', '+1444']);
+    });
+
+    it('adds the default to the allowlist when missing and de-duplicates', () => {
+      const cfg = new TACConfig({
+        ...BASE,
+        phoneNumber: '+1999',
+        phoneNumbers: ['+1555', '+1555', '+1444'],
+      });
+      // default kept first, list de-duplicated, order otherwise preserved
+      expect(cfg.phoneNumber).toBe('+1999');
+      expect(cfg.phoneNumbers).toEqual(['+1999', '+1555', '+1444']);
+    });
+
+    it('moves the default to the front when present but not first', () => {
+      const cfg = new TACConfig({ ...BASE, phoneNumber: '+1555', phoneNumbers: ['+1444', '+1555'] });
+      expect(cfg.phoneNumber).toBe('+1555');
+      expect(cfg.phoneNumbers).toEqual(['+1555', '+1444']);
+    });
+
+    it('strips whitespace from entries', () => {
+      const cfg = new TACConfig({ ...BASE, phoneNumbers: [' +1555 ', '+1444'] });
+      expect(cfg.phoneNumbers).toEqual(['+1555', '+1444']);
+    });
+
+    it('requires at least one of phoneNumber / phoneNumbers', () => {
+      expect(() => new TACConfig(BASE as never)).toThrow(
+        /At least one of `phoneNumber` \/ `phoneNumbers` must be set/
+      );
+    });
+
+    it('keeps RCS and WhatsApp optional and symmetric', () => {
+      const cfg = new TACConfig({
+        ...BASE,
+        phoneNumber: '+1555',
+        rcsSenderIds: ['rcs:a'],
+        whatsappNumber: 'whatsapp:+15550001111',
+      });
+      expect(cfg.rcsSenderId).toBe('rcs:a');
+      expect(cfg.rcsSenderIds).toEqual(['rcs:a']);
+      expect(cfg.whatsappNumber).toBe('whatsapp:+15550001111');
+      expect(cfg.whatsappNumbers).toEqual(['whatsapp:+15550001111']);
+    });
+
+    it('leaves RCS and WhatsApp empty when unset', () => {
+      const cfg = new TACConfig({ ...BASE, phoneNumber: '+1555' });
+      expect(cfg.rcsSenderId).toBeUndefined();
+      expect(cfg.rcsSenderIds).toEqual([]);
+      expect(cfg.whatsappNumber).toBeUndefined();
+      expect(cfg.whatsappNumbers).toEqual([]);
     });
   });
 });

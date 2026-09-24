@@ -64,7 +64,7 @@ describe('RCS Channel', () => {
     it('should require rcsSenderId on TAC config', async () => {
       const { rcsSenderId: _omitted, ...configWithoutSender } = getTestConfig();
       const tacWithoutSender = await createTestTAC(configWithoutSender);
-      expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId is required/);
+      expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId\(s\) is required/);
     });
 
     it('should reject zero dedupCapacity', () => {
@@ -254,6 +254,47 @@ describe('RCS Channel', () => {
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHtest123456789');
       expect(captured[0].channel).toBe('rcs');
+    });
+  });
+
+  describe('multi-sender support', () => {
+    const multiConfig = () => ({
+      ...getTestConfig(),
+      rcsSenderIds: ['rcs:twilio_signal_test_agent', 'rcs:alt_agent'],
+    });
+
+    it('isDefaultAgentAddress matches any configured sender', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new RCSChannel(multiTac);
+      expect((multiChannel as any).isDefaultAgentAddress('rcs:twilio_signal_test_agent')).toBe(true);
+      expect((multiChannel as any).isDefaultAgentAddress('rcs:alt_agent')).toBe(true);
+      expect((multiChannel as any).isDefaultAgentAddress('rcs:other')).toBe(false);
+    });
+
+    it('outbound from selects a configured sender', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new RCSChannel(multiTac);
+      const initSpy = vi
+        .spyOn(multiChannel as any, 'initiateOutboundMessagingConversation')
+        .mockResolvedValue({ conversationId: 'CH1', session: {} });
+
+      await multiChannel.initiateOutboundConversation({
+        to: '+19998887777',
+        message: 'hi',
+        from: 'rcs:alt_agent',
+      });
+
+      expect(initSpy.mock.calls[0]![0].from).toBe('rcs:alt_agent');
+    });
+
+    it('outbound rejects a from that is not a configured sender', async () => {
+      await expect(
+        channel.initiateOutboundConversation({
+          to: '+19998887777',
+          message: 'hi',
+          from: 'rcs:unconfigured',
+        })
+      ).rejects.toThrow(/is not a configured RCS sender/);
     });
   });
 });

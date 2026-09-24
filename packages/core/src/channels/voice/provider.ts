@@ -186,6 +186,27 @@ export class VoiceProvider {
     }
     return callParams;
   }
+
+  /**
+   * Resolve the outbound caller ID for a voice call.
+   *
+   * `requested` (the caller's `options.from`) wins when it is one of
+   * `config.phoneNumbers`; otherwise throws. When omitted, the default
+   * `config.phoneNumber` is used.
+   */
+  protected resolveFromNumber(requested: string | undefined): string {
+    const cfg = this.channel.getTacConfig();
+    if (requested !== undefined) {
+      if (!cfg.phoneNumbers.includes(requested)) {
+        throw new Error(
+          `from '${requested}' is not a configured phone number; ` +
+            `configured: ${JSON.stringify(cfg.phoneNumbers)}`
+        );
+      }
+      return requested;
+    }
+    return cfg.phoneNumber;
+  }
 }
 
 /**

@@ -49,6 +49,10 @@ export class ChatChannel extends MessagingChannel {
   // CHAT participant could pick the wrong recipient.
   protected override reconcileCustomerType: boolean = false;
 
+  // Chat's agent is a single identity, not a set of numbers, so it keeps the
+  // default-address path rather than deriving the agent from webhook recipients.
+  protected override deriveInboundAgentFromRecipients: boolean = false;
+
   constructor(tac: TAC, config?: ChatChannelConfig) {
     super(tac, config);
     this.agentAddress = config?.agentAddress ?? 'ai-assistant';

@@ -22,7 +22,7 @@ export class SMSChannel extends MessagingChannel {
   }
 
   protected isDefaultAgentAddress(authorAddress: string): boolean {
-    return authorAddress === this.config.phoneNumber;
+    return this.config.phoneNumbers.includes(authorAddress);
   }
 
   protected getAgentAddress(_conversationId: ConversationId): ConversationAddress {
@@ -130,7 +130,8 @@ export class SMSChannel extends MessagingChannel {
    *
    * Creates a conversation via Conversation Orchestrator, adds customer and
    * agent participants, then sends the initial message via the Actions API.
-   * The sender is always `config.phoneNumber`.
+   * Uses `options.from` when provided (must be one of the configured phone
+   * numbers), otherwise falls back to the default `config.phoneNumber`.
    */
   public async initiateOutboundConversation(
     options: InitiateMessagingConversationOptions
@@ -145,7 +146,10 @@ export class SMSChannel extends MessagingChannel {
     return this.initiateOutboundMessagingConversation({
       channel: 'SMS',
       to: validated.to,
-      from: this.config.phoneNumber,
+      from: this.resolveOutboundFrom(validated.from, {
+        allowlist: this.config.phoneNumbers,
+        default: this.config.phoneNumber,
+      }),
       message: validated.message,
       ...(validated.metadata ? { metadata: validated.metadata } : {}),
     });

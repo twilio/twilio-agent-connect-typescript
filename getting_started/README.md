@@ -77,6 +77,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - `TWILIO_API_KEY`: Twilio API key
 - `TWILIO_API_SECRET`: Twilio API secret
 - `TWILIO_PHONE_NUMBER`: Your Twilio phone number
+- `TWILIO_PHONE_NUMBERS`: Optional comma-separated allowlist of additional Twilio phone numbers to send/receive from (e.g. `+15551234567,+14440000000`). `TWILIO_PHONE_NUMBER` remains the default sender
 - `TWILIO_CONVERSATION_CONFIGURATION_ID`: Conversation configuration ID
 - `OPENAI_API_KEY`: Your OpenAI API key (for OpenAI example)
 
@@ -84,6 +85,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 - `TWILIO_VOICE_PUBLIC_DOMAIN`: Public host for voice routes (required for voice, e.g., `abc123.ngrok.app`). May include a port and/or base path (e.g., `example.ngrok.app:8080` or `example.com/server1`). Schemes like `https://` and trailing slashes are stripped automatically.
 - `TWILIO_WHATSAPP_NUMBER`: Your Twilio WhatsApp number (required for WhatsApp channel, e.g., `whatsapp:+1234567890`)
+- `TWILIO_WHATSAPP_NUMBERS`: Optional comma-separated allowlist of additional WhatsApp-enabled numbers (same `whatsapp:+1234567890` format). `TWILIO_WHATSAPP_NUMBER` remains the default sender
 
 ### Optional (Handoff)
 
@@ -96,6 +98,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 ### Optional (RCS Channel)
 
 - `TWILIO_RCS_SENDER_ID`: RCS Sender ID (required for the `rcs/` example and RCS outbound, e.g., `rcs:your_sender_id`)
+- `TWILIO_RCS_SENDER_IDS`: Optional comma-separated allowlist of additional RCS Sender IDs. `TWILIO_RCS_SENDER_ID` remains the default sender
 
 ## Other Examples
 

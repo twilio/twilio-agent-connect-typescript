@@ -5,6 +5,7 @@ import {
   ConversationParticipant,
   ConversationWebhookPayload,
   InitiateConversationResult,
+  ParticipantAddressType,
   ProfileId,
   SendMessageActionRequest,
   isConversationId,
@@ -74,6 +75,12 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
  *   promote a channel-matching UNKNOWN participant (not owning the agent
  *   address) to CUSTOMER. Set `false` for channels where the customer is
  *   identified author-driven (e.g. chat).
+ * - `deriveInboundAgentFromRecipients`: if `true` (default), the inbound agent
+ *   address is derived from the webhook's recipient (which of TAC's configured
+ *   numbers was messaged), validated against the channel's allowlist. `true` for
+ *   phone-like channels (SMS, RCS, WhatsApp). Set `false` for channels where the
+ *   agent is a single identity rather than a number set (e.g. chat), which keeps
+ *   the default-address path instead.
  */
 export abstract class MessagingChannel extends BaseChannel {
   protected override readonly conversationClient: ConversationClient;
@@ -84,6 +91,22 @@ export abstract class MessagingChannel extends BaseChannel {
    * participant to CUSTOMER. Subclasses override to opt out (e.g. chat).
    */
   protected reconcileCustomerType: boolean = true;
+
+  /**
+   * Phone-like channels derive the agent address from the inbound webhook's
+   * recipient (which of TAC's numbers was messaged). Chat uses a single identity
+   * and opts out, keeping the default-address path.
+   */
+  protected deriveInboundAgentFromRecipients: boolean = true;
+
+  /**
+   * The uppercase Conversation Orchestrator channel name for this channel (e.g.
+   * `"SMS"`, `"RCS"`), used to filter webhook recipients and participant
+   * addresses. Derived from {@link channelType}.
+   */
+  protected getChannelName(): ParticipantAddressType {
+    return this.channelType.toUpperCase() as ParticipantAddressType;
+  }
 
   constructor(tac: TAC, config?: MessagingChannelConfig) {
     super(tac, config);
@@ -317,6 +340,43 @@ export abstract class MessagingChannel extends BaseChannel {
       return;
     }
 
+    // Derive which of TAC's configured numbers this message was addressed to,
+    // from the webhook's recipients, and validate it against this channel's
+    // allowlist. Drop messages sent to a number we don't serve.
+    const channelName = this.getChannelName();
+    let inboundAgentAddress: ConversationAddress | undefined;
+    if (this.deriveInboundAgentFromRecipients) {
+      const channelRecipients = (payload.data?.recipients ?? []).filter(
+        r => r.channel === channelName
+      );
+      if (channelRecipients.length > 0) {
+        const matched = channelRecipients.find(
+          r => r.address !== undefined && this.isDefaultAgentAddress(r.address)
+        )?.address;
+        if (matched === undefined) {
+          const maskedRecipients = channelRecipients.map(r => maskAddress(r.address ?? ''));
+          const error = new Error('Inbound message to an unconfigured agent address; dropped');
+          error.name = 'UnconfiguredAgentAddressError';
+          this.logger.error(
+            {
+              conversation_id: conversationId,
+              channel: channelName,
+              recipients: maskedRecipients,
+            },
+            "Inbound message addressed to a number not in this channel's configured set; dropping"
+          );
+          this.handleError(error, {
+            conversation_id: conversationId,
+            channel: channelName,
+            dropped_inbound: true,
+            recipients: maskedRecipients,
+          });
+          return;
+        }
+        inboundAgentAddress = { channel: channelName, address: matched };
+      }
+    }
+
     // Initialize conversation if not already active
     if (!this.isConversationActive(conversationId)) {
       this.logger.debug({ conversation_id: conversationId }, 'Starting new conversation');
@@ -374,7 +434,7 @@ export abstract class MessagingChannel extends BaseChannel {
       // overwritten from every webhook so it's not a reliable "already
       // reconciled" signal.
       if (!session.aiAgentInfo) {
-        const resolved = await this.reconcileParticipants(conversationId);
+        const resolved = await this.reconcileParticipants(conversationId, inboundAgentAddress);
         if (!resolved) {
           // Surface via handleError (logs at error level AND fires the app's
           // onError callback) rather than a bare warn — otherwise the dropped
@@ -396,9 +456,15 @@ export abstract class MessagingChannel extends BaseChannel {
         }
 
         const [agentParticipant, customerParticipant] = resolved;
-        const agentAddress = this.getAgentAddress(conversationId);
+        const agentAddrValue = agentParticipant.addresses.find(
+          a => a.channel === channelName
+        )?.address;
+        const fallbackAddr =
+          inboundAgentAddress !== undefined
+            ? inboundAgentAddress.address
+            : this.getAgentAddress(conversationId).address;
         session.aiAgentInfo = {
-          address: agentAddress.address,
+          address: agentAddrValue ?? fallbackAddr,
           participantId: agentParticipant.id,
         };
         // When reconcile resolved a customer (SMS path — chat disables customer
@@ -506,16 +572,18 @@ export abstract class MessagingChannel extends BaseChannel {
    * (via `session.authorInfo.participantId`), so promoting some other
    * `UNKNOWN` CHAT participant could pick the wrong recipient.
    *
+   * @param agentAddress - The agent address for this conversation, normally
+   * derived from the inbound webhook's recipient. When omitted, it is resolved
+   * from a participant scan (phone-like channels) or the channel default.
    * @returns `[agent, customerOrNull]` on success. `customer` is `null` when
    * `reconcileCustomerType` is `false`. `null` overall when either the agent
    * or the customer cannot be resolved — the caller treats `null` as a hard
    * stop and skips the message-ready callback.
    */
   protected async reconcileParticipants(
-    conversationId: ConversationId
+    conversationId: ConversationId,
+    agentAddress?: ConversationAddress
   ): Promise<[ConversationParticipant, ConversationParticipant | null] | null> {
-    const agentAddress = this.getAgentAddress(conversationId);
-
     let participants: ConversationParticipant[];
     try {
       participants = await this.conversationClient.listParticipants(conversationId);
@@ -527,7 +595,15 @@ export abstract class MessagingChannel extends BaseChannel {
       return null;
     }
 
-    const channel = agentAddress.channel;
+    const channel = this.getChannelName();
+    // The inbound webhook is the primary source of the agent address (which of
+    // TAC's numbers was messaged). When it carried none, fall back to a
+    // participant scan on phone-like channels, or the channel default otherwise.
+    if (agentAddress === undefined) {
+      agentAddress = this.deriveInboundAgentFromRecipients
+        ? this.fallbackAgentAddress(conversationId, participants, channel)
+        : this.getAgentAddress(conversationId);
+    }
 
     const ownsAgentAddress = (p: ConversationParticipant): boolean =>
       Array.isArray(p.addresses) &&
@@ -594,6 +670,62 @@ export abstract class MessagingChannel extends BaseChannel {
       'No customer participant resolvable; skipping webhook'
     );
     return null;
+  }
+
+  /**
+   * Resolve the agent address when the inbound webhook carried no recipient.
+   *
+   * Scans the conversation's participants for any of TAC's configured addresses
+   * on this channel; falls back to the channel default when none is present.
+   * Defensive path — the primary source is the webhook.
+   */
+  protected fallbackAgentAddress(
+    conversationId: ConversationId,
+    participants: ConversationParticipant[],
+    channel: ParticipantAddressType
+  ): ConversationAddress {
+    const owned = participants
+      .flatMap(p => p.addresses)
+      .find(a => a.channel === channel && this.isDefaultAgentAddress(a.address))?.address;
+    if (owned !== undefined) {
+      this.logger.warn(
+        { conversation_id: conversationId, channel },
+        'Inbound webhook had no channel recipient; using owned participant address from participant scan'
+      );
+      return { channel, address: owned };
+    }
+
+    this.logger.warn(
+      { conversation_id: conversationId, channel },
+      'Inbound webhook had no channel recipient and no owned participant; using default agent address'
+    );
+    return this.getAgentAddress(conversationId);
+  }
+
+  /**
+   * Resolve the outbound sender address for this channel.
+   *
+   * `requested` (the caller's `options.from`) wins when it is one of the
+   * channel's configured senders; otherwise throws. When omitted, the channel
+   * default is used.
+   */
+  protected resolveOutboundFrom(
+    requested: string | undefined,
+    options: { allowlist: string[]; default: string | undefined }
+  ): string {
+    if (requested !== undefined) {
+      if (!options.allowlist.includes(requested)) {
+        throw new Error(
+          `from '${requested}' is not a configured ${this.getChannelName()} sender; ` +
+            `configured senders: ${JSON.stringify(options.allowlist)}`
+        );
+      }
+      return requested;
+    }
+    if (options.default === undefined) {
+      throw new Error(`No default sender configured for ${this.getChannelName()}.`);
+    }
+    return options.default;
   }
 
   /**
