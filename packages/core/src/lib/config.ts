@@ -1,6 +1,10 @@
-import { TACConfigData, TACConfigSchema, EnvironmentVariables } from '../types/index';
+import {
+  TACConfigData,
+  TACConfigInput,
+  TACConfigSchema,
+  EnvironmentVariables,
+} from '../types/index';
 import type { CallEventKind } from '../types/index';
-import { z } from 'zod';
 
 /**
  * TAC Configuration class with Python-like static factory methods
@@ -61,7 +65,7 @@ export class TACConfig {
    * from this SID.
    */
   public readonly studioHandoffFlowSid?: string;
-  constructor(data: TACConfigData | z.input<typeof TACConfigSchema>) {
+  constructor(data: TACConfigInput) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
 

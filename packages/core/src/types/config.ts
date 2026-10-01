@@ -33,9 +33,10 @@ export type TwilioMemoryConfig = z.infer<typeof TwilioMemoryConfigSchema>;
  * Schema for a voice route path (e.g. voiceWebsocketPath). Trims whitespace,
  * maps an empty string to undefined so the `.default` applies, and requires a
  * leading '/' so path concatenation onto the domain can't produce a malformed
- * URL (e.g. `wss://example.comws`).
+ * URL (e.g. `wss://example.comws`). The return type is spelled out (not
+ * `z.ZodType<string>`) so the field stays optional in {@link TACConfigInput}.
  */
-const voicePathSchema = (defaultPath: string): z.ZodType<string> =>
+const voicePathSchema = (defaultPath: string): z.ZodPreprocess<z.ZodDefault<z.ZodString>> =>
   z.preprocess(v => {
     if (typeof v !== 'string') return v;
     const trimmed = v.trim();
@@ -253,6 +254,17 @@ export const TACConfigSchema = z
     };
   });
 
+/**
+ * Raw TAC configuration accepted by `new TACConfig()` and `TACOptions.config`.
+ * Fields the schema back-fills or defaults (e.g. `phoneNumbers`, `memoryConfig`)
+ * are optional here.
+ */
+export type TACConfigInput = z.input<typeof TACConfigSchema>;
+
+/**
+ * Normalized TAC configuration produced by validating a {@link TACConfigInput}:
+ * defaults applied and each sender pair back-filled (default first, de-duplicated).
+ */
 export type TACConfigData = z.infer<typeof TACConfigSchema>;
 
 /**
