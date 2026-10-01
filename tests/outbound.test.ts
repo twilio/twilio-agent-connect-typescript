@@ -826,10 +826,10 @@ describe('Outbound Conversations', () => {
       expect(mockCallCreate.mock.calls[0]![0].from).toBe('+15551234567');
     });
 
-    it('rejects a `from` that is not a configured phone number', async () => {
+    it('rejects a `from` that is not a configured voice sender', async () => {
       await expect(
         channel.initiateOutboundConversation({ to: '+15559876543', from: '+19998887777' })
-      ).rejects.toThrow(/is not a configured phone number/);
+      ).rejects.toThrow(/is not a configured voice sender/);
     });
   });
 

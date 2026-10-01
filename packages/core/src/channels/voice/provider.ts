@@ -13,6 +13,7 @@ import type {
 import type { InitiateVoiceConversationResult } from '../../types/conversation';
 import type { BaseChannelOptions } from '../base';
 import type { VoiceChannel } from './channel';
+import { resolveOutboundSender } from '../../util/outbound-sender';
 
 /**
  * Base class for a {@link VoiceChannel}'s real-time media provider.
@@ -190,22 +191,17 @@ export class VoiceProvider {
   /**
    * Resolve the outbound caller ID for a voice call.
    *
-   * `requested` (the caller's `options.from`) wins when it is one of
-   * `config.phoneNumbers`; otherwise throws. When omitted, the default
-   * `config.phoneNumber` is used.
+   * Validates `requested` against `config.phoneNumbers`, defaulting to
+   * `config.phoneNumber` — the same rule messaging channels apply via
+   * `resolveOutboundSender`.
    */
   protected resolveFromNumber(requested: string | undefined): string {
     const cfg = this.channel.getTacConfig();
-    if (requested !== undefined) {
-      if (!cfg.phoneNumbers.includes(requested)) {
-        throw new Error(
-          `from '${requested}' is not a configured phone number; ` +
-            `configured: ${JSON.stringify(cfg.phoneNumbers)}`
-        );
-      }
-      return requested;
-    }
-    return cfg.phoneNumber;
+    return resolveOutboundSender(requested, {
+      allowlist: cfg.phoneNumbers,
+      default: cfg.phoneNumber,
+      channel: 'voice',
+    });
   }
 }
 

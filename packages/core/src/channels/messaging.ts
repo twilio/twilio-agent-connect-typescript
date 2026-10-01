@@ -122,8 +122,11 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Fast-path check: is the author address this channel's default agent address?
-   * (e.g., config.phoneNumber for SMS, agentAddress for Chat)
+   * Fast-path check: is the author address one of this channel's configured agent addresses?
+   *
+   * Checks the channel's full sender allowlist, not just the default sender:
+   * `config.phoneNumbers` for SMS, `config.rcsSenderIds` for RCS,
+   * `config.whatsappNumbers` for WhatsApp, and `agentAddress` for Chat.
    */
   protected abstract isDefaultAgentAddress(authorAddress: string): boolean;
 
@@ -702,32 +705,6 @@ export abstract class MessagingChannel extends BaseChannel {
       'Inbound webhook had no channel recipient and no owned participant; using default agent address'
     );
     return this.getAgentAddress(conversationId);
-  }
-
-  /**
-   * Resolve the outbound sender address for this channel.
-   *
-   * `requested` (the caller's `options.from`) wins when it is one of the
-   * channel's configured senders; otherwise throws. When omitted, the channel
-   * default is used.
-   */
-  protected resolveOutboundFrom(
-    requested: string | undefined,
-    options: { allowlist: string[]; default: string | undefined }
-  ): string {
-    if (requested !== undefined) {
-      if (!options.allowlist.includes(requested)) {
-        throw new Error(
-          `from '${requested}' is not a configured ${this.getChannelName()} sender; ` +
-            `configured senders: ${JSON.stringify(options.allowlist)}`
-        );
-      }
-      return requested;
-    }
-    if (options.default === undefined) {
-      throw new Error(`No default sender configured for ${this.getChannelName()}.`);
-    }
-    return options.default;
   }
 
   /**

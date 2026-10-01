@@ -919,7 +919,7 @@ describe('SMS Channel', () => {
           allowlist: tac.config.phoneNumbers,
           default: tac.config.phoneNumber,
         })
-      ).toThrow(/is not a configured SMS sender/);
+      ).toThrow(/is not a configured sms sender/);
     });
 
     it('isDefaultAgentAddress matches any configured number', async () => {

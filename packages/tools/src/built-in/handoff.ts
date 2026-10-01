@@ -215,12 +215,14 @@ export function createStudioHandoffTool(
         // handoff_failed so the LLM can tell the user instead of claiming
         // success.
         try {
-          // Studio's `From` must be a Twilio phone number. Phone-based
-          // channels (SMS/RCS/WhatsApp) hand off From the number the customer
-          // actually reached (`session.aiAgentInfo.address`, now that TAC may
-          // serve several). Chat's agent address is an identity (e.g.
-          // "ai-assistant"), not a number, so it keeps the configured default
-          // sender.
+          // Studio's `From` is the Twilio sender its widgets reply from, so it
+          // must match the channel of `To` (the customer address). SMS/RCS/
+          // WhatsApp hand off From the sender the customer actually reached
+          // (`session.aiAgentInfo.address`), in the same channel-prefixed form
+          // as `To` — `+1555…`, `rcs:<sender_id>`, `whatsapp:+1555…` — which is
+          // what Studio expects for those channels. Chat's agent address is an
+          // identity (e.g. "ai-assistant"), not a Twilio sender, so it keeps
+          // the configured default phone number.
           const fromAddress =
             session.channel !== 'chat' && session.aiAgentInfo?.address
               ? session.aiAgentInfo.address

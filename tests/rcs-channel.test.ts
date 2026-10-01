@@ -294,7 +294,7 @@ describe('RCS Channel', () => {
           message: 'hi',
           from: 'rcs:unconfigured',
         })
-      ).rejects.toThrow(/is not a configured RCS sender/);
+      ).rejects.toThrow(/is not a configured rcs sender/);
     });
   });
 });

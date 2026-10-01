@@ -229,7 +229,7 @@ describe('WhatsApp Channel', () => {
           message: 'Hello',
           from: 'whatsapp:+19998887777',
         })
-      ).rejects.toThrow(/from 'whatsapp:\+19998887777' is not a configured WHATSAPP sender/);
+      ).rejects.toThrow(/from 'whatsapp:\+19998887777' is not a configured whatsapp sender/);
     });
 
     it('should initiate outbound WhatsApp conversation', async () => {
