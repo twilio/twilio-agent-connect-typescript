@@ -122,20 +122,26 @@ export const TACConfigSchema = z
      */
     phoneNumbers: z.array(z.string().min(1, 'Twilio Phone Number is required')).optional(),
     /** Default Twilio RCS Sender ID. Optional; symmetric with `rcsSenderIds`. */
-    rcsSenderId: z.string().regex(RCS_SENDER_ID_REGEX, RCS_SENDER_ID_MESSAGE).optional(),
+    rcsSenderId: z.string().trim().regex(RCS_SENDER_ID_REGEX, RCS_SENDER_ID_MESSAGE).optional(),
     /**
      * Full set of Twilio RCS Sender IDs this instance serves. Defaults to
      * `[rcsSenderId]` when a default is set.
      */
-    rcsSenderIds: z.array(z.string().regex(RCS_SENDER_ID_REGEX, RCS_SENDER_ID_MESSAGE)).optional(),
+    rcsSenderIds: z
+      .array(z.string().trim().regex(RCS_SENDER_ID_REGEX, RCS_SENDER_ID_MESSAGE))
+      .optional(),
     /** Default Twilio WhatsApp number. Optional; symmetric with `whatsappNumbers`. */
-    whatsappNumber: z.string().regex(WHATSAPP_NUMBER_REGEX, WHATSAPP_NUMBER_MESSAGE).optional(),
+    whatsappNumber: z
+      .string()
+      .trim()
+      .regex(WHATSAPP_NUMBER_REGEX, WHATSAPP_NUMBER_MESSAGE)
+      .optional(),
     /**
      * Full set of Twilio WhatsApp numbers this instance serves. Defaults to
      * `[whatsappNumber]` when a default is set.
      */
     whatsappNumbers: z
-      .array(z.string().regex(WHATSAPP_NUMBER_REGEX, WHATSAPP_NUMBER_MESSAGE))
+      .array(z.string().trim().regex(WHATSAPP_NUMBER_REGEX, WHATSAPP_NUMBER_MESSAGE))
       .optional(),
     memoryConfig: TwilioMemoryConfigSchema.prefault({}),
     conversationConfigurationId: z

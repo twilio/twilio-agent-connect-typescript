@@ -751,7 +751,11 @@ describe('TACConfig', () => {
     });
 
     it('moves the default to the front when present but not first', () => {
-      const cfg = new TACConfig({ ...BASE, phoneNumber: '+1555', phoneNumbers: ['+1444', '+1555'] });
+      const cfg = new TACConfig({
+        ...BASE,
+        phoneNumber: '+1555',
+        phoneNumbers: ['+1444', '+1555'],
+      });
       expect(cfg.phoneNumber).toBe('+1555');
       expect(cfg.phoneNumbers).toEqual(['+1555', '+1444']);
     });
@@ -778,6 +782,21 @@ describe('TACConfig', () => {
       expect(cfg.rcsSenderIds).toEqual(['rcs:a']);
       expect(cfg.whatsappNumber).toBe('whatsapp:+15550001111');
       expect(cfg.whatsappNumbers).toEqual(['whatsapp:+15550001111']);
+    });
+
+    it('trims RCS and WhatsApp senders before validating their format', () => {
+      const cfg = new TACConfig({
+        ...BASE,
+        phoneNumber: '+1555',
+        rcsSenderId: ' rcs:a ',
+        rcsSenderIds: [' rcs:b '],
+        whatsappNumber: ' whatsapp:+15550001111 ',
+        whatsappNumbers: [' whatsapp:+15550002222 '],
+      });
+      expect(cfg.rcsSenderId).toBe('rcs:a');
+      expect(cfg.rcsSenderIds).toEqual(['rcs:a', 'rcs:b']);
+      expect(cfg.whatsappNumber).toBe('whatsapp:+15550001111');
+      expect(cfg.whatsappNumbers).toEqual(['whatsapp:+15550001111', 'whatsapp:+15550002222']);
     });
 
     it('leaves RCS and WhatsApp empty when unset', () => {
