@@ -5,9 +5,6 @@ on:
     types: [published]
   workflow_dispatch:
 
-env:
-  ARTIFACTORY_URL: ${{ vars.ARTIFACTORY_URL }}
-
 # Serialize doc deployments so concurrent releases don't clobber the gh-pages
 # branch (each run appends a new version folder to the existing history).
 concurrency:
@@ -26,7 +23,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Artifactory OIDC Auth
-        uses: ./.github/actions/artifactory-oidc
+        uses: twilio/sdk-actions/artifactory-oidc@26f95a54e57993c1bf3b26bec2905f395814c23a # v1.0.0
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
