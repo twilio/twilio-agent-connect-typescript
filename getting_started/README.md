@@ -76,14 +76,16 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - `TWILIO_AUTH_TOKEN`: Twilio auth token
 - `TWILIO_API_KEY`: Twilio API key
 - `TWILIO_API_SECRET`: Twilio API secret
-- `TWILIO_PHONE_NUMBER`: Your Twilio phone number
+- `TWILIO_PHONE_NUMBER`: Your Twilio phone number (or set `TWILIO_PHONE_NUMBERS` instead)
+- `TWILIO_PHONE_NUMBERS`: For multiple phone numbers, set this comma-separated list (e.g. `+15551234567,+14440000000`) instead of `TWILIO_PHONE_NUMBER`. The first number is the default sender for outbound
 - `TWILIO_CONVERSATION_CONFIGURATION_ID`: Conversation configuration ID
 - `OPENAI_API_KEY`: Your OpenAI API key (for OpenAI example)
 
 ### Optional (Server)
 
 - `TWILIO_VOICE_PUBLIC_DOMAIN`: Public host for voice routes (required for voice, e.g., `abc123.ngrok.app`). May include a port and/or base path (e.g., `example.ngrok.app:8080` or `example.com/server1`). Schemes like `https://` and trailing slashes are stripped automatically.
-- `TWILIO_WHATSAPP_NUMBER`: Your Twilio WhatsApp number (required for WhatsApp channel, e.g., `whatsapp:+1234567890`)
+- `TWILIO_WHATSAPP_NUMBER`: Your Twilio WhatsApp number (required for WhatsApp channel, e.g., `whatsapp:+1234567890`, or set `TWILIO_WHATSAPP_NUMBERS` instead)
+- `TWILIO_WHATSAPP_NUMBERS`: For multiple WhatsApp numbers, set this comma-separated list (same `whatsapp:+1234567890` format) instead of `TWILIO_WHATSAPP_NUMBER`. The first number is the default sender for outbound
 
 ### Optional (Handoff)
 
@@ -95,7 +97,8 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 ### Optional (RCS Channel)
 
-- `TWILIO_RCS_SENDER_ID`: RCS Sender ID (required for the `rcs/` example and RCS outbound, e.g., `rcs:your_sender_id`)
+- `TWILIO_RCS_SENDER_ID`: RCS Sender ID (required for the `rcs/` example and RCS outbound, e.g., `rcs:your_sender_id`, or set `TWILIO_RCS_SENDER_IDS` instead)
+- `TWILIO_RCS_SENDER_IDS`: For multiple RCS senders, set this comma-separated list instead of `TWILIO_RCS_SENDER_ID`. The first sender is the default sender for outbound
 
 ## Other Examples
 

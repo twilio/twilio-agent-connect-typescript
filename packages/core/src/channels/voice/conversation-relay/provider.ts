@@ -974,7 +974,7 @@ export class ConversationRelayProvider extends VoiceProvider {
     options: InitiateVoiceConversationOptions
   ): Promise<InitiateVoiceConversationResult> {
     const validated = InitiateVoiceConversationOptionsSchema.parse(options);
-    const fromNumber = this.tacConfig.phoneNumber;
+    const fromNumber = this.resolveFromNumber(validated.from);
 
     this.logger.info(
       { to: validated.to, from: fromNumber },

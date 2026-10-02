@@ -15,6 +15,7 @@ import { Logger } from '../lib/logger';
 import { trackEvent } from '../lib/analytics';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
+import { resolveOutboundSender } from '../util/outbound-sender';
 
 /**
  * Base channel event callbacks
@@ -100,6 +101,20 @@ export abstract class BaseChannel {
    * Get the channel type (implemented by subclasses)
    */
   public abstract get channelType(): ChannelType;
+
+  /**
+   * Resolve the outbound sender address for this channel.
+   *
+   * `requested` (the caller's `options.from`) wins when it is one of the
+   * channel's configured senders; otherwise throws. When omitted, the channel
+   * default is used.
+   */
+  protected resolveOutboundFrom(
+    requested: string | undefined,
+    options: { allowlist: string[]; default: string | undefined }
+  ): string {
+    return resolveOutboundSender(requested, { ...options, channel: this.channelType });
+  }
 
   /**
    * Register event callbacks
