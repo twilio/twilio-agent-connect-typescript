@@ -13,8 +13,8 @@
 import { buildApp } from './app';
 
 const port = Number(process.env.TAC_SETUP_PORT ?? 8080);
-// Defaults to all interfaces to match the Python wizard. Set TAC_SETUP_HOST=127.0.0.1 to
-// keep the credential form reachable only from this machine.
+// Defaults to all interfaces so the wizard is reachable when it runs in a container or VM.
+// Set TAC_SETUP_HOST=127.0.0.1 to keep the credential form reachable only from this machine.
 const host = process.env.TAC_SETUP_HOST ?? '0.0.0.0';
 
 const app = buildApp();

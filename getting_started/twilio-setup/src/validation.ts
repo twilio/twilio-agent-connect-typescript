@@ -22,10 +22,10 @@ export function readField(body: unknown, key: string): string | undefined {
 /**
  * Reads every named field, returning `null` if any one of them is absent.
  *
- * Absence mirrors Python's `if not all([...])`: a missing key, a JSON `null`, a
- * non-string and `''` all count as absent, but a whitespace-only string counts as
- * present. Pass `trim` for the stricter behavior `poll-operation-status` uses, where
- * whitespace-only is absent and the trimmed values are what get used.
+ * A missing key, a JSON `null`, a non-string and `''` all count as absent, but a
+ * whitespace-only string counts as present. Pass `trim` for the stricter behavior
+ * `poll-operation-status` uses, where whitespace-only is absent and the trimmed values are
+ * what get used.
  */
 export function requireFields<const K extends readonly string[]>(
   body: unknown,
@@ -48,7 +48,6 @@ export function requireFields<const K extends readonly string[]>(
  * `new URL()` resolves `..` segments while parsing, so `URL.pathname` cannot be used to
  * detect path traversal — `/v1/ControlPlane/Operations/../Operations/x` would arrive here
  * already collapsed to `/v1/ControlPlane/Operations/x` and pass the prefix allowlist.
- * Python checks the unnormalized `urlparse().path`, so this reproduces that input.
  */
 function rawPath(url: string): string {
   const afterScheme = url.indexOf('://');
@@ -92,7 +91,7 @@ export function validateOperationStatusUrl(statusUrl: string): OperationUrlValid
   }
 
   // `URL.port` is '' both when the port is omitted and when it is the scheme default,
-  // so this accepts exactly the same inputs as Python's `port not in (None, 443)`.
+  // so this accepts an explicit `:443` as well as no port at all.
   if (parsed.port !== '') {
     return { error: `Invalid status_url port: ${parsed.port}. Must be 443 or omitted.` };
   }
@@ -102,8 +101,8 @@ export function validateOperationStatusUrl(statusUrl: string): OperationUrlValid
     return { error: 'Invalid status_url path: Path traversal detected.' };
   }
 
-  // Strip trailing slashes the way posixpath.normpath does, so a bare
-  // `/v1/ControlPlane/Operations/` fails the prefix check as it does in Python.
+  // Strip trailing slashes so a bare `/v1/ControlPlane/Operations/`, with no operation id,
+  // fails the prefix check.
   const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/';
   if (!ALLOWED_OPERATION_PATHS.some(prefix => normalizedPath.startsWith(prefix))) {
     return {
@@ -116,7 +115,7 @@ export function validateOperationStatusUrl(statusUrl: string): OperationUrlValid
   return { url: parsed.href };
 }
 
-/** Python's `str(e)` equivalent. */
+/** Message text for any thrown value, `Error` or not. */
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

@@ -1,9 +1,8 @@
 /**
  * Memory Store routes: create, poll, get, list, delete and verify.
  *
- * Ported from the Python wizard's `server.py`. Message strings, status-code branches and
- * envelope keys are kept identical so the shared `templates/index.html` works unchanged
- * against either backend.
+ * Message strings, status-code branches and envelope keys are exactly what
+ * `templates/index.html` reads, so changing any of them changes what the wizard shows.
  */
 
 import type { FastifyInstance } from 'fastify';

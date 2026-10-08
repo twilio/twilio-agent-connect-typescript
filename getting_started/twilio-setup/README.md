@@ -49,14 +49,15 @@ Then open http://localhost:8080 in your browser.
 
 ## Implementation notes
 
-`templates/index.html` is a verbatim copy of the same file in the
-[Python SDK](https://github.com/twilio/twilio-agent-connect-python/tree/main/getting_started/twilio_setup).
-It is backend-agnostic — all of the wizard's step sequencing, polling and retry logic
-lives in that page, and it only calls the `/api/*` endpoints this server exposes. Keep the
-two files identical; update this one by copying from the Python repo so `diff` stays empty.
+`templates/index.html` holds all of the wizard's step sequencing, polling and retry logic,
+and only calls the `/api/*` endpoints this server exposes — the server is a thin,
+credential-forwarding proxy to the Twilio control-plane APIs. The
+[Python SDK's setup wizard](https://github.com/twilio/twilio-agent-connect-python/tree/main/getting_started/twilio_setup)
+serves the same page, so change both copies together and keep them identical.
 
 The server deliberately does not use the SDK's `BaseClient`. That class is built from a
 validated `TACConfig` with one fixed base URL and retries through axios-retry, whereas the
 wizard has only the API key and secret you just typed into the browser, polls an arbitrary
 absolute operation URL, and needs to branch on status codes rather than catch. Plain axios
-matches the Python wizard's single-attempt calls exactly.
+makes one attempt per call and leaves retrying to the page, which already polls on its own
+schedule.

@@ -223,7 +223,7 @@ function traitMismatch(
   return `${field} (expected: ${expected}, got: ${actual ?? 'None'})`;
 }
 
-/** Renders a list the way Python's `str(list)` does, so the message text matches. */
+/** Renders a list as `['a', 'b']` for the pending-lookup message. */
 function formatList(values: string[]): string {
   return `[${values.map(value => `'${value}'`).join(', ')}]`;
 }

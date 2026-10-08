@@ -5,8 +5,8 @@
  * a validated `TACConfig` and one fixed base URL, retries via axios-retry, and throws on
  * non-2xx responses. The wizard has only the API key and secret the operator just typed
  * into the browser, hits an arbitrary absolute URL when polling an operation, and needs
- * to branch on the status code rather than catch. Plain axios matches the Python wizard's
- * single-attempt httpx calls exactly.
+ * to branch on the status code rather than catch. Plain axios makes one attempt per call
+ * and leaves retrying to the page, which already polls on its own schedule.
  *
  * The API key and secret must never be logged.
  */
@@ -54,7 +54,7 @@ export async function twilioRequest(options: TwilioRequestOptions): Promise<Twil
     headers,
     ...(options.body !== undefined ? { data: options.body } : {}),
     timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-    // Branch on the status code instead of catching, the way the Python wizard does.
+    // Never throw on an HTTP status; every route branches on the status code instead.
     validateStatus: () => true,
     // Keep the body as raw text. The frontend runs JSON.parse on the `response` field of
     // an error envelope, so it has to receive a string, not an already-parsed object.
@@ -85,7 +85,7 @@ export function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-/** Reads a string field, returning null when absent — matching Python's `.get()`. */
+/** Reads a string field, returning null when it is absent or not a string. */
 export function readString(value: unknown, key: string): string | null {
   const field = asRecord(value)[key];
   return typeof field === 'string' ? field : null;
