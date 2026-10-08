@@ -12,6 +12,7 @@
  */
 
 import axios from 'axios';
+import { stdSerializers } from 'pino';
 
 export const MEMORY_API_BASE = 'https://memory.twilio.com/v1/ControlPlane';
 export const MEMORY_STORES_BASE = 'https://memory.twilio.com/v1/Stores';
@@ -72,6 +73,34 @@ function safeJsonParse(text: string): unknown {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Log serializer for `err`. An AxiosError carries the request config — including the Basic
+ * Authorization header built from the operator's API key and secret — and Pino's default
+ * error serializer copies those enumerable fields into the log line. Keep only fields that
+ * help diagnose a failed call.
+ */
+export interface LoggedError {
+  type: string;
+  message: string;
+  stack: string;
+  [key: string]: unknown;
+}
+
+export function serializeError(error: Error): LoggedError {
+  if (axios.isAxiosError(error)) {
+    return {
+      type: 'AxiosError',
+      message: error.message,
+      stack: error.stack ?? '',
+      code: error.code,
+      method: error.config?.method,
+      url: error.config?.url,
+      status: error.response?.status,
+    };
+  }
+  return stdSerializers.err(error);
 }
 
 export function isTimeout(error: unknown): boolean {

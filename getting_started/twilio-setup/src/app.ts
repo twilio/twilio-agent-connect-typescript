@@ -13,6 +13,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { configurationRoutes } from './routes/configurations';
 import { memoryStoreRoutes } from './routes/memory-stores';
 import { profileRoutes } from './routes/profiles';
+import { serializeError } from './twilio-api';
 import { errorMessage } from './validation';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,7 +21,10 @@ const INDEX_HTML = path.join(__dirname, '..', 'templates', 'index.html');
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
-    logger: { level: process.env.TWILIO_LOG_LEVEL?.toLowerCase() ?? 'info' },
+    logger: {
+      level: process.env.TWILIO_LOG_LEVEL?.toLowerCase() ?? 'info',
+      serializers: { err: serializeError },
+    },
   });
 
   app.get('/', async (_request, reply) => {

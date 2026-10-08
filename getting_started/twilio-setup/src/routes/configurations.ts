@@ -16,8 +16,12 @@ import { errorMessage, readField, requireFields } from '../validation';
 const DISPLAY_NAME_MAX_LENGTH = 32;
 const DESCRIPTION_MAX_LENGTH = 128;
 
-/** displayName doubles as a URL path segment, so the character set is restricted. */
-const URL_SAFE_DISPLAY_NAME = /^[A-Za-z0-9._~-]+$/;
+/**
+ * The Conversation API needs a URL-safe displayName, and the SDK's configuration schema
+ * (validated when `TAC.create()` loads it) disallows `.` and `~`. Allowing only what both
+ * accept keeps a wizard-created configuration loadable by the examples.
+ */
+const DISPLAY_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export function configurationRoutes(app: FastifyInstance): void {
   app.post('/api/create-conversation-configuration', async (request): Promise<WizardResponse> => {
@@ -46,10 +50,9 @@ export function configurationRoutes(app: FastifyInstance): void {
       });
     }
 
-    if (!URL_SAFE_DISPLAY_NAME.test(displayName)) {
+    if (!DISPLAY_NAME_PATTERN.test(displayName)) {
       return errorResponse(
-        'Display name must be URL-safe: only letters, numbers, ' +
-          'dot (.), underscore (_), tilde (~), and hyphen (-) are allowed',
+        'Display name may only contain letters, numbers, underscores (_), and hyphens (-)',
         { details: `Invalid display name: ${displayName}` }
       );
     }
