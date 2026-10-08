@@ -78,7 +78,7 @@ jobs:
 
       - name: Run type check
         run: |
-          echo "Type checking TypeScript files (tsconfig.json excludes getting_started/):"
+          echo "Type checking TypeScript files (packages/, src/, and getting_started/twilio-setup/):"
           echo ""
           echo "TypeScript files in packages/:"
           find packages -name "*.ts" -type f 2>/dev/null | wc -l || echo "0"
