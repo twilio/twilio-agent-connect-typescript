@@ -12,8 +12,10 @@ import {
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
 import { Logger } from '../lib/logger';
+import { trackEvent } from '../lib/analytics';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
+import { resolveOutboundSender } from '../util/outbound-sender';
 
 /**
  * Base channel event callbacks
@@ -101,6 +103,20 @@ export abstract class BaseChannel {
   public abstract get channelType(): ChannelType;
 
   /**
+   * Resolve the outbound sender address for this channel.
+   *
+   * `requested` (the caller's `options.from`) wins when it is one of the
+   * channel's configured senders; otherwise throws. When omitted, the channel
+   * default is used.
+   */
+  protected resolveOutboundFrom(
+    requested: string | undefined,
+    options: { allowlist: string[]; default: string | undefined }
+  ): string {
+    return resolveOutboundSender(requested, { ...options, channel: this.channelType });
+  }
+
+  /**
    * Register event callbacks
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic event callback needs to accept any args
@@ -177,6 +193,13 @@ export abstract class BaseChannel {
       this.callbacks.onConversationStarted({ session });
     }
 
+    trackEvent('Conversation Started', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      has_profile_id: !!profileId,
+    });
+
     return session;
   }
 
@@ -202,6 +225,13 @@ export abstract class BaseChannel {
           );
         }
       }
+
+      trackEvent('Conversation Ended', {
+        account_sid: this.config.accountSid,
+        channel: this.channelType,
+        conversation_id: conversationId,
+        duration_ms: Date.now() - session.startedAt.getTime(),
+      });
 
       this.activeConversations.delete(conversationId);
       this.logger.debug(

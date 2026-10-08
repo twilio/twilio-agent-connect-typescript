@@ -6,6 +6,8 @@ import {
   VoiceChannel,
   TAC,
   CallOptionsSchema,
+  VoiceTwiMLOptionsSchema,
+  VoiceTwiMLOptionsConversationRelaySchema,
 } from '@twilio/tac-core';
 import type { CallOptions } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
@@ -802,6 +804,33 @@ describe('Outbound Conversations', () => {
         })
       ).rejects.toThrow();
     });
+
+    it('places the call from a configured `from` when provided', async () => {
+      const multiTac = await createTestTAC({
+        ...getVoiceConfig(),
+        phoneNumbers: ['+15551234567', '+14440000000'],
+      });
+      const multiChannel = new VoiceChannel(multiTac);
+      mockCallCreate.mockResolvedValue({ sid: 'CAfrom' });
+
+      await multiChannel.initiateOutboundConversation({ to: '+15559876543', from: '+14440000000' });
+
+      expect(mockCallCreate.mock.calls[0]![0].from).toBe('+14440000000');
+    });
+
+    it('defaults the caller ID to config.phoneNumber when `from` is omitted', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAdefault' });
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      expect(mockCallCreate.mock.calls[0]![0].from).toBe('+15551234567');
+    });
+
+    it('rejects a `from` that is not a configured voice sender', async () => {
+      await expect(
+        channel.initiateOutboundConversation({ to: '+15559876543', from: '+19998887777' })
+      ).rejects.toThrow(/is not a configured voice sender/);
+    });
   });
 
   // =============================================================================
@@ -1239,7 +1268,22 @@ describe('Outbound Conversations', () => {
       const tacWithoutSender = await createTestTAC(configWithoutSender);
 
       // Instantiating RCSChannel itself throws — which is what we want users to see
-      expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId is required/);
+      expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId\(s\) is required/);
     });
+  });
+});
+
+describe('VoiceTwiMLOptions provider-agnostic base', () => {
+  it('accepts a base VoiceTwiMLOptions where a provider-specific one is expected', () => {
+    const parsed = VoiceTwiMLOptionsSchema.parse({ websocketUrl: 'wss://example.test/ws' });
+    expect(parsed.websocketUrl).toBe('wss://example.test/ws');
+  });
+
+  it('keeps ConversationRelay-only fields on the ConversationRelay subtype', () => {
+    const parsed = VoiceTwiMLOptionsConversationRelaySchema.parse({
+      welcomeGreeting: 'Hi there',
+      websocketUrl: 'wss://example.test/ws',
+    });
+    expect(parsed.welcomeGreeting).toBe('Hi there');
   });
 });

@@ -122,7 +122,7 @@ Send an outbound WhatsApp message:
 npm run dev -- --to whatsapp:+16505551234 --channel whatsapp --message "Hi! This is a follow-up about your recent order."
 ```
 
-The agent sends the initial WhatsApp message, then waits for the customer to reply. Each reply triggers an OpenAI-powered response. Note: `TWILIO_WHATSAPP_NUMBER` must be configured in your `.env` file.
+The agent sends the initial WhatsApp message, then waits for the customer to reply. Each reply triggers an OpenAI-powered response. Note: `TWILIO_WHATSAPP_NUMBER` (or `TWILIO_WHATSAPP_NUMBERS`) must be configured in your `.env` file.
 
 ### Voice
 
@@ -142,6 +142,17 @@ npm run dev -- --to +16505551234 --channel voice --welcome-greeting "Hello! I'm 
 
 Note: the customer's "hello?" may interrupt the greeting. For most outbound use cases, omitting `--welcome-greeting` and letting the agent respond to the customer's first utterance is more natural.
 
+### Sending From a Non-Default Sender
+
+If you configured multiple senders (`TWILIO_PHONE_NUMBERS`, `TWILIO_RCS_SENDER_IDS`, or `TWILIO_WHATSAPP_NUMBERS`), pass `--from` to send from one other than the default:
+
+```bash
+npm run dev -- --to +16505551234 --channel sms --message "Hello!" --from +14440000000
+npm run dev -- --to +16505551234 --channel voice --from +14440000000
+```
+
+The address must be one of the channel's configured senders; omit `--from` to use the default (first) sender.
+
 ### CLI Arguments
 
 | Argument | Required | Description |
@@ -150,6 +161,7 @@ Note: the customer's "hello?" may interrupt the greeting. For most outbound use 
 | `--channel` | Yes | Channel type: `sms`, `whatsapp`, or `voice` |
 | `--message` | SMS/WhatsApp | Initial outbound message text (required for `sms` and `whatsapp` channels) |
 | `--welcome-greeting` | No | Voice greeting spoken when the call is answered |
+| `--from` | No | Sender to send from; must be one of the channel's configured senders. Defaults to the channel's default sender |
 
 ## How It Works
 

@@ -59,7 +59,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       } as unknown as WebSocket;
 
       // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).provider.webSocketConnections.set('conv123', mockWs);
       (voiceChannel as any).startConversation('conv123', 'prof123');
 
       // Set up prompt callback spy
@@ -72,7 +72,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         voicePrompt: 'Hello, I need help',
       };
 
-      await (voiceChannel as any).handlePromptMessage('conv123', promptMessage);
+      await (voiceChannel as any).provider.handlePromptMessage('conv123', promptMessage);
 
       // Verify memory was retrieved
       // "always" sends the transcript as query plus the conversation id.
@@ -127,7 +127,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       };
 
       // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).provider.webSocketConnections.set('conv123', mockWs);
       (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptCallbackSpy = vi.fn();
@@ -140,7 +140,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
       // Should not throw - graceful degradation
       await expect(
-        (voiceChannel as any).handlePromptMessage('conv123', promptMessage)
+        (voiceChannel as any).provider.handlePromptMessage('conv123', promptMessage)
       ).resolves.not.toThrow();
 
       // Callback should still be invoked (without memory)
@@ -188,7 +188,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       };
 
       // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).provider.webSocketConnections.set('conv123', mockWs);
       (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptMessage: PromptMessage = {
@@ -196,7 +196,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
         voicePrompt: 'Integration test message',
       };
 
-      await (voiceChannel as any).handlePromptMessage('conv123', promptMessage);
+      await (voiceChannel as any).provider.handlePromptMessage('conv123', promptMessage);
 
       // TAC's onMessageReady should receive enriched memory
       expect(messageReadySpy).toHaveBeenCalledWith(
@@ -251,7 +251,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       };
 
       // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).provider.webSocketConnections.set('conv123', mockWs);
       (voiceChannel as any).startConversation('conv123', 'prof123');
 
       const promptMessage: PromptMessage = {
@@ -261,7 +261,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
       // Should not throw - old callbacks still work
       await expect(
-        (voiceChannel as any).handlePromptMessage('conv123', promptMessage)
+        (voiceChannel as any).provider.handlePromptMessage('conv123', promptMessage)
       ).resolves.not.toThrow();
 
       expect(oldStyleCallback).toHaveBeenCalled();
@@ -315,7 +315,7 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
       };
 
       // Manually set up conversation state (simulating what happens after first prompt)
-      (voiceChannel as any).webSocketConnections.set('conv123', mockWs);
+      (voiceChannel as any).provider.webSocketConnections.set('conv123', mockWs);
       (voiceChannel as any).startConversation('conv123', 'prof123');
 
       // Send 3 prompts in quick succession
@@ -325,26 +325,26 @@ describe('VoiceChannel - Active Voice Memory Enrichment', () => {
 
       // Simulate the serialization that happens in handleWebSocketConnection
       const conversationId = 'conv123';
-      const promptQueues = (voiceChannel as any).promptQueues as Map<string, Promise<void>>;
+      const promptQueues = (voiceChannel as any).provider.promptQueues as Map<string, Promise<void>>;
 
       // First prompt
       const previousPrompt1 = promptQueues.get(conversationId) ?? Promise.resolve();
       const currentPrompt1 = previousPrompt1
-        .then(() => (voiceChannel as any).handlePromptMessage(conversationId, promptMessage1))
+        .then(() => (voiceChannel as any).provider.handlePromptMessage(conversationId, promptMessage1))
         .catch(() => {});
       promptQueues.set(conversationId, currentPrompt1);
 
       // Second prompt (chained after first)
       const previousPrompt2 = promptQueues.get(conversationId) ?? Promise.resolve();
       const currentPrompt2 = previousPrompt2
-        .then(() => (voiceChannel as any).handlePromptMessage(conversationId, promptMessage2))
+        .then(() => (voiceChannel as any).provider.handlePromptMessage(conversationId, promptMessage2))
         .catch(() => {});
       promptQueues.set(conversationId, currentPrompt2);
 
       // Third prompt (chained after second)
       const previousPrompt3 = promptQueues.get(conversationId) ?? Promise.resolve();
       const currentPrompt3 = previousPrompt3
-        .then(() => (voiceChannel as any).handlePromptMessage(conversationId, promptMessage3))
+        .then(() => (voiceChannel as any).provider.handlePromptMessage(conversationId, promptMessage3))
         .catch(() => {});
       promptQueues.set(conversationId, currentPrompt3);
 

@@ -42,6 +42,8 @@ TAC includes examples for different integration approaches. Each one is a self-c
 
 - **[`openai/`](examples/openai/)** — OpenAI Chat Completions across Voice and SMS with conversation memory and user context. **Start here.**
 - **[`openai-streaming/`](examples/openai-streaming/)** — Stream LLM responses token-by-token for faster time-to-first-audio on voice
+- **[`openai-realtime/`](examples/openai-realtime/)** — Speech-to-speech voice calls bridging Twilio Media Streams to the OpenAI Realtime API
+- **[`gpt-live/`](examples/gpt-live/)** — Speech-to-speech voice calls bridging Twilio Media Streams to OpenAI GPT-Live
 
 ### Channel Examples
 
@@ -112,7 +114,8 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 - `TWILIO_AUTH_TOKEN`: Twilio auth token
 - `TWILIO_API_KEY`: Twilio API key SID (starts with `SK`)
 - `TWILIO_API_SECRET`: Twilio API key secret
-- `TWILIO_PHONE_NUMBER`: Your Twilio phone number
+- `TWILIO_PHONE_NUMBER`: Your Twilio phone number (or set `TWILIO_PHONE_NUMBERS` instead)
+- `TWILIO_PHONE_NUMBERS`: For multiple phone numbers, set this comma-separated list (e.g. `+15551234567,+14440000000`) instead of `TWILIO_PHONE_NUMBER`. The first number is the default sender for outbound
 
 ### Required for Orchestrator Mode (omit for ConversationRelay-only)
 
@@ -128,8 +131,10 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 ### Optional (Channel-Specific)
 
-- `TWILIO_WHATSAPP_NUMBER`: WhatsApp-enabled phone number in format `whatsapp:+1234567890` (required for [`whatsapp/`](examples/whatsapp/))
-- `TWILIO_RCS_SENDER_ID`: RCS Sender ID, e.g., `rcs:your_sender_id` (required for [`rcs/`](examples/rcs/) and RCS outbound)
+- `TWILIO_WHATSAPP_NUMBER`: WhatsApp-enabled phone number in format `whatsapp:+1234567890` (required for [`whatsapp/`](examples/whatsapp/), or set `TWILIO_WHATSAPP_NUMBERS` instead)
+- `TWILIO_WHATSAPP_NUMBERS`: For multiple WhatsApp numbers, set this comma-separated list (same `whatsapp:+1234567890` format) instead of `TWILIO_WHATSAPP_NUMBER`. The first number is the default sender for outbound
+- `TWILIO_RCS_SENDER_ID`: RCS Sender ID, e.g., `rcs:your_sender_id` (required for [`rcs/`](examples/rcs/) and RCS outbound, or set `TWILIO_RCS_SENDER_IDS` instead)
+- `TWILIO_RCS_SENDER_IDS`: For multiple RCS senders, set this comma-separated list instead of `TWILIO_RCS_SENDER_ID`. The first sender is the default sender for outbound
 - `TWILIO_CONVERSATIONS_SERVICE_SID`: Conversations Service SID, starts with `IS` (required for [`chat/`](examples/chat/))
 - `TWILIO_STUDIO_HANDOFF_FLOW_SID`: Studio Flow SID used by `createStudioHandoffTool` to route conversations to a human agent, e.g., via Flex (required for [`handoff/`](examples/handoff/))
 

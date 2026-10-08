@@ -25,6 +25,7 @@ export default defineConfig({
     'ws',
     'pino',
     'zod',
+    '@segment/analytics-node',
   ],
   esbuildOptions(options) {
     options.alias = {

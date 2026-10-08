@@ -4,7 +4,8 @@
  * Demonstrates the RCS (Rich Communication Services) channel with TAC memory
  * injection, using the OpenAI Agents SDK.
  *
- * Requires `TWILIO_RCS_SENDER_ID` in addition to the usual TAC env vars —
+ * Requires `TWILIO_RCS_SENDER_ID` (or `TWILIO_RCS_SENDER_IDS`) in addition to
+ * the usual TAC env vars —
  * see `.env.example`.
  */
 

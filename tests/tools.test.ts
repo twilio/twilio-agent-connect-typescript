@@ -262,6 +262,25 @@ describe('Tool System', () => {
       });
     });
 
+    it('emits a flat schema for the Realtime API, unlike the nested Chat format', () => {
+      const tool = defineTool(
+        'get_weather',
+        'Look up the weather',
+        { type: 'object', properties: { city: { type: 'string' } } },
+        async () => 'sunny'
+      );
+
+      expect(tool.toRealtimeFormat()).toEqual({
+        type: 'function',
+        name: 'get_weather',
+        description: 'Look up the weather',
+        parameters: { type: 'object', properties: { city: { type: 'string' } } },
+      });
+
+      // Chat Completions nests the same fields under `function`.
+      expect(tool.toOpenAIFormat().function.name).toBe('get_weather');
+    });
+
     it('should convert to JSON string', () => {
       const tool = defineTool(
         'test_tool',

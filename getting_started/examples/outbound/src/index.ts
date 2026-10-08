@@ -10,6 +10,11 @@
  *   npm run dev -- --to rcs:+16505551234 --channel rcs --message "Hello!"
  *   npm run dev -- --to whatsapp:+16505551234 --channel whatsapp --message "Hello!"
  *   npm run dev -- --to +16505551234 --channel voice
+ *
+ *   # Send from a non-default sender (must be in TWILIO_PHONE_NUMBERS /
+ *   # TWILIO_RCS_SENDER_IDS / TWILIO_WHATSAPP_NUMBERS)
+ *   npm run dev -- --to +16505551234 --channel sms --message "Hello!" --from +14440000000
+ *   npm run dev -- --to +16505551234 --channel voice --from +14440000000
  */
 
 import { parseArgs } from 'node:util';
@@ -41,6 +46,9 @@ const { values: args } = parseArgs({
     channel: { type: 'string' },
     message: { type: 'string' },
     'welcome-greeting': { type: 'string' },
+    // Optional sender to send from; must be one of the channel's configured
+    // senders. Omitted → the channel's default sender.
+    from: { type: 'string' },
   },
   strict: true,
 });
@@ -49,6 +57,7 @@ const to = args.to;
 const channel = args.channel as 'sms' | 'rcs' | 'whatsapp' | 'voice' | undefined;
 const message = args.message;
 const welcomeGreeting = args['welcome-greeting'];
+const from = args.from;
 
 if (!to || !channel) {
   console.error('Usage:');
@@ -181,18 +190,20 @@ server
       const result = await smsChannel.initiateOutboundConversation({
         to,
         message: message!,
+        from,
       });
       console.log(`SMS sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
       console.log('\nWaiting for replies... (Ctrl+C to exit)\n');
     } else if (channel === 'rcs') {
       if (!rcsChannel) {
-        console.error('RCS requires TWILIO_RCS_SENDER_ID environment variable to be set.');
+        console.error('RCS requires TWILIO_RCS_SENDER_ID or TWILIO_RCS_SENDER_IDS to be set.');
         process.exit(1);
       }
       const result = await rcsChannel.initiateOutboundConversation({
         to,
         message: message!,
+        from,
       });
       console.log(`RCS sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
@@ -200,13 +211,14 @@ server
     } else if (channel === 'whatsapp') {
       if (!whatsappChannel) {
         console.error(
-          'TWILIO_WHATSAPP_NUMBER is required for WhatsApp channel. Set it in your .env file (e.g., whatsapp:+15551234567)'
+          'TWILIO_WHATSAPP_NUMBER or TWILIO_WHATSAPP_NUMBERS is required for WhatsApp channel. Set it in your .env file (e.g., whatsapp:+15551234567)'
         );
         process.exit(1);
       }
       const result = await whatsappChannel.initiateOutboundConversation({
         to,
         message: message!,
+        from,
       });
       console.log(`WhatsApp message sent to ${to} (conversation: ${result.conversationId})`);
       console.log(`[${result.conversationId}] Agent: ${message}`);
@@ -214,6 +226,7 @@ server
     } else if (channel === 'voice') {
       const result = await voiceChannel.initiateOutboundConversation({
         to,
+        from,
         ...(welcomeGreeting ? { twimlOptions: { welcomeGreeting } } : {}),
       });
       console.log(`Call placed to ${to}`);

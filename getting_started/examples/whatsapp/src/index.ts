@@ -4,7 +4,8 @@
  * Demonstrates WhatsApp text messaging with TAC memory injection.
  * This example sends and receives text messages only.
  *
- * Requires OPENAI_API_KEY and TWILIO_WHATSAPP_NUMBER in addition to standard TAC env vars.
+ * Requires OPENAI_API_KEY and TWILIO_WHATSAPP_NUMBER (or TWILIO_WHATSAPP_NUMBERS) in addition
+ * to standard TAC env vars.
  *
  * Usage:
  *   npm run dev

@@ -38,6 +38,7 @@ Seamlessly integrate with Twilio Conversation Memory and Conversation Orchestrat
 ## Key Features
 
 - **Multi-Channel Support**: Built-in handling for Voice (ConversationRelay), SMS, RCS, WhatsApp, and Chat
+- **Multi-Sender Support**: Configure multiple phone numbers, RCS Sender IDs, or WhatsApp numbers per channel by setting the comma-separated plural env var (`TWILIO_PHONE_NUMBERS`, `TWILIO_RCS_SENDER_IDS`, `TWILIO_WHATSAPP_NUMBERS`) instead of the singular one; the first entry is the default sender for outbound
 - **Outbound Conversations**: Agent-initiated conversations across all supported channels
 - **ConversationRelay-Only Mode**: Get started quickly with TAC's voice plumbing (TwiML, WebSocket, callbacks) before adding Conversation Orchestrator or Conversation Memory
 - **Memory Management**: Automatic integration with Twilio Conversation Memory for persistent user context
@@ -177,6 +178,18 @@ TAC simplifies building AI agents by handling the integration between Twilio's c
 
 For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md).
 
+## Telemetry
+
+The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel, a conversation ID, the SDK name and version, and timing such as conversation duration.
+
+Message content, transcripts, phone numbers, and other end-user identifiers are never collected.
+
+Telemetry is on by default. To disable it, set the following environment variable:
+
+```bash
+TAC_ANALYTICS_DISABLED=true
+```
+
 ## Learn More
 
 **Examples & Guides:**
@@ -187,8 +200,11 @@ For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com
 - **[WhatsApp Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/whatsapp/)** - WhatsApp channel with memory integration
 - **[Chat Example](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/chat/)** - Web chat integration example
 - **[ConversationRelay-Only Mode](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/relay-only/)** - Get started with voice using just ConversationRelay
+- **[OpenAI Realtime over Media Streams](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/openai-realtime/)** - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI Realtime API
+- **[GPT-Live over Media Streams](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/gpt-live/)** - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI GPT-Live API
 - **[Outbound Conversations](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/outbound/)** - Agent-initiated conversations example
 - **[Voice Call Events](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-call-events/)** - Answering machine detection, recording, and call disposition on outbound calls
+- **[Voice DTMF](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-dtmf/)** - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context
 - More examples coming soon
 
 **AWS and Microsoft connectors:**
