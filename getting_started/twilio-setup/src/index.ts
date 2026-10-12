@@ -13,9 +13,9 @@
 import { buildApp } from './app';
 
 const port = Number(process.env.TAC_SETUP_PORT ?? 8080);
-// Defaults to all interfaces so the wizard is reachable when it runs in a container or VM.
-// Set TAC_SETUP_HOST=127.0.0.1 to keep the credential form reachable only from this machine.
-const host = process.env.TAC_SETUP_HOST ?? '0.0.0.0';
+// Loopback only by default: the page takes account credentials over plain HTTP. Set
+// TAC_SETUP_HOST=0.0.0.0 to reach it from outside a container or VM.
+const host = process.env.TAC_SETUP_HOST ?? '127.0.0.1';
 
 const app = buildApp();
 
