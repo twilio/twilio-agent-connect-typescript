@@ -29,6 +29,28 @@ function extractProfileIds(operatorResult: OperatorResult): string[] {
 }
 
 /**
+ * Find the memory store ID for an event
+ *
+ * Intelligence sends it per operator result, at `executionDetails.resolvedContext.memory.memoryStoreId`.
+ * A top-level `memoryStoreId` is still honoured if present.
+ *
+ * @param event - The validated operator result event
+ * @returns The memory store ID, or undefined if the event has none
+ */
+function resolveMemoryStoreId(event: OperatorResultEvent): string | undefined {
+  if (event.memoryStoreId) {
+    return event.memoryStoreId;
+  }
+  for (const operatorResult of event.operatorResults) {
+    const storeId = operatorResult.executionDetails?.resolvedContext?.memory?.memoryStoreId;
+    if (storeId) {
+      return storeId;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Generate content string from operator result
  *
  * @param operatorResult - The operator result to generate content from
@@ -135,7 +157,8 @@ export class OperatorResultProcessor {
     }
 
     // Check for memory store ID and verify it matches the client's store ID
-    if (!event.memoryStoreId) {
+    const memoryStoreId = resolveMemoryStoreId(event);
+    if (!memoryStoreId) {
       this.logger.warn({ conversation_id: event.conversationId }, 'No memory store ID in event');
       return {
         success: false,
@@ -146,11 +169,11 @@ export class OperatorResultProcessor {
     }
 
     const clientStoreId = this.memoryClient.getStoreId();
-    if (event.memoryStoreId !== clientStoreId) {
+    if (memoryStoreId !== clientStoreId) {
       this.logger.debug(
         {
           conversation_id: event.conversationId,
-          event_store_id: event.memoryStoreId,
+          event_store_id: memoryStoreId,
           client_store_id: clientStoreId,
         },
         'Skipping event from different memory store'
@@ -158,7 +181,7 @@ export class OperatorResultProcessor {
       return {
         success: true,
         skipped: true,
-        skipReason: `Event from different memory store: ${event.memoryStoreId} (expected ${clientStoreId})`,
+        skipReason: `Event from different memory store: ${memoryStoreId} (expected ${clientStoreId})`,
         createdCount: 0,
       };
     }
