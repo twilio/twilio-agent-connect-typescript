@@ -24,3 +24,6 @@ export {
   createKnowledgeSearchToolAsync,
   createKnowledgeTools,
 } from './built-in/knowledge';
+
+// Guardrails
+export { GuardrailError } from './lib/errors';
