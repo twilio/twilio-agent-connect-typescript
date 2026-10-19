@@ -6,6 +6,7 @@ import {
   VoiceChannel,
   TAC,
   CallOptionsSchema,
+  conversationMetadata,
   VoiceTwiMLOptionsSchema,
   VoiceTwiMLOptionsConversationRelaySchema,
 } from '@twilio/tac-core';
@@ -118,16 +119,26 @@ describe('Outbound Conversations', () => {
       expect(result.session.authorInfo?.address).toBe('+15559876543');
     });
 
-    it('should create a local session that tracks the conversation', async () => {
+    it('returns a session ready to reply with, without storing it', async () => {
+      // The channel stores nothing — the caller holds the session and hands it
+      // back to sendResponse, which then needs no lookup.
       mockSmsOutbound(mockAdapter, 'CHoutbound456');
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
       const result = await channel.initiateOutboundConversation({
         to: '+15559876543',
         message: 'Hi there',
       });
 
-      expect(channel.isConversationActive('CHoutbound456')).toBe(true);
-      expect(channel.getConversationSession('CHoutbound456')).toBe(result.session);
+      expect(result.session.conversationId).toBe('CHoutbound456');
+      expect(result.session.authorInfo?.participantId).toBe('PAcust');
+      expect(result.session.aiAgentInfo?.participantId).toBe('PAagent');
+      expect(channel.getConversationSession('CHoutbound456')).toBeUndefined();
+      expect(channel.isConversationActive('CHoutbound456')).toBe(false);
+
+      const listsBefore = mockAdapter.history.get.length;
+      await channel.sendResponse(result.session, 'Follow-up');
+      expect(mockAdapter.history.get.length).toBe(listsBefore);
     });
 
     it('should include custom metadata in session', async () => {
@@ -284,6 +295,254 @@ describe('Outbound Conversations', () => {
 
       expect(result.conversationId).toBe('conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf');
       expect(result.session.metadata?.direction).toBe('outbound');
+    });
+  });
+
+  describe('SMSChannel outbound conversation metadata', () => {
+    let tac: TAC;
+    let channel: SMSChannel;
+    let mockAdapter: MockAdapter;
+
+    const REUSED_ID = 'conv_conversation_01kpzdadp0eh0a6sg7rhe8vdpf';
+
+    const bodyOf = (data: unknown): Record<string, unknown> =>
+      (typeof data === 'string' ? JSON.parse(data) : data) as Record<string, unknown>;
+
+    /** createConversation 409s onto REUSED_ID; participants and send succeed. */
+    const mockReuse = () => {
+      mockAdapter
+        .onPost(/\/v2\/Conversations$/)
+        .replyOnce(
+          409,
+          { code: 400, message: 'Address mapping already exists', status: 409 },
+          { 'x-conflicting-resource-id': REUSED_ID }
+        );
+      mockAdapter.onGet(new RegExp(`/${REUSED_ID}/Participants$`)).reply(200, {
+        participants: [
+          {
+            id: 'PAcust_reuse',
+            conversationId: REUSED_ID,
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            addresses: [{ channel: 'SMS', address: '+15559876543' }],
+          },
+          {
+            id: 'PAagent_reuse',
+            conversationId: REUSED_ID,
+            accountId: 'ACtest123456789',
+            type: 'AI_AGENT',
+            addresses: [{ channel: 'SMS', address: '+15551234567' }],
+          },
+        ],
+      });
+      mockAdapter.onPost(/\/Actions$/).reply(202, {
+        id: 'ACT_reuse',
+        type: 'SEND_MESSAGE',
+        status: 'PENDING',
+        conversationId: REUSED_ID,
+        createdAt: '2024-01-01T00:00:00Z',
+      });
+    };
+
+    beforeEach(async () => {
+      tac = await createTestTAC(getTestConfig());
+      channel = new SMSChannel(tac);
+      mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+    });
+
+    afterEach(() => {
+      mockAdapter?.restore();
+    });
+
+    it('stores fitting metadata on the conversation at creation', async () => {
+      mockSmsOutbound(mockAdapter, 'CHmeta1');
+
+      const result = await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        message: 'Hi',
+        metadata: { appointment_id: 'apt-42', 'bad key': 'x', count: 3 },
+      });
+
+      const createBody = bodyOf(mockAdapter.history.post[0]!.data);
+      expect(createBody.metadata).toEqual({ appointment_id: 'apt-42' });
+      // The rest stay on the session only.
+      expect(result.session.metadata?.['bad key']).toBe('x');
+      expect(result.session.metadata?.count).toBe(3);
+    });
+
+    it('warns about metadata that cannot be stored', async () => {
+      mockSmsOutbound(mockAdapter, 'CHmeta2');
+      const warn = vi.spyOn((channel as any).logger, 'warn');
+
+      await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        message: 'Hi',
+        metadata: { 'bad key': 'x' },
+      });
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ skipped_keys: ['bad key'] }),
+        expect.stringContaining('not stored on the conversation')
+      );
+    });
+
+    it('omits metadata from the create request when none is given', async () => {
+      mockSmsOutbound(mockAdapter, 'CHmeta3');
+
+      await channel.initiateOutboundConversation({ to: '+15559876543', message: 'Hi' });
+
+      expect(bodyOf(mockAdapter.history.post[0]!.data)).not.toHaveProperty('metadata');
+    });
+
+    it('answers conversationMetadata() from what it wrote, with no lookup', async () => {
+      mockSmsOutbound(mockAdapter, 'CHmeta4');
+
+      const result = await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        message: 'Hi',
+        metadata: { appointment_id: 'apt-42' },
+      });
+
+      const getsBefore = mockAdapter.history.get.length;
+      expect(await conversationMetadata(result.session)).toEqual({ appointment_id: 'apt-42' });
+      expect(mockAdapter.history.get.length).toBe(getsBefore);
+    });
+
+    it('merges metadata into a reused conversation with a PATCH', async () => {
+      mockReuse();
+      mockAdapter.onPatch(new RegExp(`/v2/Conversations/${REUSED_ID}$`)).reply(200, {
+        id: REUSED_ID,
+        accountId: 'ACtest123456789',
+        status: 'ACTIVE',
+        metadata: { earlier: 'kept', appointment_id: 'apt-42' },
+      });
+
+      const result = await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        message: 'Hi again',
+        metadata: { appointment_id: 'apt-42' },
+      });
+
+      expect(mockAdapter.history.patch).toHaveLength(1);
+      expect(bodyOf(mockAdapter.history.patch[0]!.data)).toEqual({
+        metadata: { appointment_id: 'apt-42' },
+      });
+      // CO's merged result, including keys set earlier.
+      expect(await conversationMetadata(result.session)).toEqual({
+        earlier: 'kept',
+        appointment_id: 'apt-42',
+      });
+    });
+
+    it('still sends when the PATCH fails, reading metadata from CO on demand', async () => {
+      mockReuse();
+      mockAdapter.onPatch(new RegExp(`/v2/Conversations/${REUSED_ID}$`)).reply(400, {});
+      mockAdapter.onGet(new RegExp(`/v2/Conversations/${REUSED_ID}$`)).reply(200, {
+        id: REUSED_ID,
+        accountId: 'ACtest123456789',
+        status: 'ACTIVE',
+        metadata: { earlier: 'kept' },
+      });
+
+      const result = await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        message: 'Hi again',
+        metadata: { appointment_id: 'apt-42' },
+      });
+
+      expect(result.conversationId).toBe(REUSED_ID);
+      expect(mockAdapter.history.post.filter(r => /Actions$/.test(r.url ?? ''))).toHaveLength(1);
+      expect(await conversationMetadata(result.session)).toEqual({ earlier: 'kept' });
+    });
+
+    it('does not PATCH a reused conversation when there is no metadata to merge', async () => {
+      mockReuse();
+
+      await channel.initiateOutboundConversation({ to: '+15559876543', message: 'Hi again' });
+
+      expect(mockAdapter.history.patch).toHaveLength(0);
+    });
+
+    it('names the metadata as a possible cause when CO rejects the create', async () => {
+      mockAdapter.onPost(/\/v2\/Conversations$/).reply(400, { error: 'Bad Request' });
+      const warn = vi.spyOn((channel as any).logger, 'warn');
+
+      await expect(
+        channel.initiateOutboundConversation({
+          to: '+15559876543',
+          message: 'Hi',
+          metadata: { appointment_id: 'apt-42' },
+        })
+      ).rejects.toThrow();
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 400, metadata_keys: ['appointment_id'] }),
+        expect.stringContaining('may be the cause')
+      );
+    });
+  });
+
+  describe('SMSChannel own-message detection', () => {
+    let tac: TAC;
+    let channel: SMSChannel;
+    let mockAdapter: MockAdapter;
+
+    const participant = (id: string, type: string, address: string) => ({
+      id,
+      conversationId: 'CHtest',
+      accountId: 'ACtest123456789',
+      type,
+      addresses: [{ channel: 'SMS', address }],
+    });
+
+    const isOwnMessage = (
+      authorParticipantId: string | undefined,
+      participants: unknown[]
+    ): boolean => (channel as any).isOwnMessage(authorParticipantId, participants, 'CHtest');
+
+    beforeEach(async () => {
+      tac = await createTestTAC(getTestConfig());
+      channel = new SMSChannel(tac);
+      mockAdapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+    });
+
+    afterEach(() => {
+      mockAdapter?.restore();
+    });
+
+    it('short-circuits on the default agent address before any API call', async () => {
+      const received = vi.fn();
+      channel.on('messageReceived', received);
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          id: 'comms_communication_01own',
+          conversationId: 'CHtest',
+          content: { type: 'TEXT', text: 'echo' },
+          author: { address: '+15551234567', channel: 'SMS', participantId: 'PAme' },
+        },
+      });
+
+      expect(received).not.toHaveBeenCalled();
+      expect(mockAdapter.history.get).toHaveLength(0);
+    });
+
+    it('treats an agent-typed participant at another address as us', () => {
+      expect(
+        isOwnMessage('PAagent_custom', [participant('PAagent_custom', 'AI_AGENT', '+15550009999')])
+      ).toBe(true);
+    });
+
+    it('does not treat a customer as us', () => {
+      expect(isOwnMessage('PAcust', [participant('PAcust', 'CUSTOMER', '+15559876543')])).toBe(
+        false
+      );
+    });
+
+    it('does not treat an unknown author as us', () => {
+      expect(isOwnMessage('PAmissing', [])).toBe(false);
+      expect(isOwnMessage(undefined, [])).toBe(false);
     });
   });
 

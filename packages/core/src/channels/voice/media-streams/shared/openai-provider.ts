@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type { TACTool } from '@twilio/tac-tools';
 import packageJson from '../../../../../../../package.json' with { type: 'json' };
@@ -11,6 +12,7 @@ import {
   type VoiceTwiMLOptions,
   type VoiceTwiMLOptionsMediaStreams,
 } from '../../../../types/index';
+import { ExpiringMap } from '../../../../util/expiring-map';
 import type { VoiceChannel } from '../../channel';
 import { VoiceProvider } from '../../provider';
 import { TwiMLBuilderMediaStreams } from '../twiml';
@@ -27,16 +29,15 @@ import type { MediaStreamsOpenAICallState } from './state';
 export const OPENAI_USER_AGENT = `twilio-agent-connect/TypeScript ${packageJson.version}`;
 
 /**
- * How long an inbound session-config override may sit unclaimed before it is
- * purged.
+ * Reserved `<Stream>` `customParameters` key correlating a call's
+ * `sessionConfig` override to its WebSocket `start` event. The call SID can't
+ * be the key: outbound, `calls.create()` returning it doesn't happen-before
+ * Twilio connecting the stream; inbound, the TwiML request and the stream can
+ * reach different replicas, so the config has to travel on the TwiML.
  *
- * Twilio can answer the TwiML webhook — which stashes the override under the
- * call SID — and then never open the Media Stream, when a call fails or is
- * abandoned after the webhook responds. Without this the stash would sit in
- * {@link MediaStreamsOpenAIProvider.pendingSessionConfigs} until process
- * shutdown. Mirrors the outbound token expiry in the GPT-Live provider.
+ * @internal
  */
-const INBOUND_SESSION_CONFIG_TTL_MS = 120_000;
+export const SESSION_CONFIG_TOKEN_PARAM = '_tac_session_config_token';
 
 /**
  * Render Zod validation issues as a compact `path: message` list, so a thrown
@@ -87,22 +88,16 @@ export abstract class MediaStreamsOpenAIProvider<
   protected readonly twimlBuilder: TwiMLBuilderMediaStreams;
 
   /**
-   * Session config overrides awaiting the call they belong to.
+   * Per-call session config overrides, minted by one Twilio request and
+   * consumed when the call's WebSocket connects.
    *
-   * Inbound entries are keyed by call SID (known when the TwiML webhook is
-   * answered); a subclass keys its outbound entries by whatever token it round
-   * trips through the stream's custom parameters.
+   * Keyed by a token that rides the TwiML's custom parameters, rekeyed to the
+   * call's conversation id on connect ({@link claimSessionConfig}). Set in
+   * `handleIncomingCall` or `initiateOutboundConversation`, consumed when the
+   * model connects. Bounded and expiring, so a call that never connects
+   * doesn't leave its entry here forever.
    */
-  protected readonly pendingSessionConfigs: Map<string, Record<string, unknown>>;
-
-  /**
-   * Expiry timers for the inbound {@link pendingSessionConfigs} entries, keyed
-   * by the same call SID. Each fires once to purge a stash whose Media Stream
-   * never connected; a normal connect cancels it in the subclass's
-   * `registerCall`. Outbound entries are keyed by token instead and are not
-   * tracked here.
-   */
-  private readonly pendingInboundExpiries: Map<string, ReturnType<typeof setTimeout>>;
+  protected readonly pendingSessionConfigs: ExpiringMap<Record<string, unknown>>;
 
   constructor(
     channel: VoiceChannel,
@@ -116,8 +111,7 @@ export abstract class MediaStreamsOpenAIProvider<
     this.toolsByName = new Map(config.tools.map(tool => [tool.name, tool as TACTool]));
     this.calls = new Map();
     this.twimlBuilder = new TwiMLBuilderMediaStreams(tacConfig, config, this.logger);
-    this.pendingSessionConfigs = new Map();
-    this.pendingInboundExpiries = new Map();
+    this.pendingSessionConfigs = new ExpiringMap();
   }
 
   /** The Twilio-facing WebSocket for a conversation, if one is tracked. */
@@ -160,8 +154,9 @@ export abstract class MediaStreamsOpenAIProvider<
    * The transcript captured so far for an in-progress call.
    *
    * It lives on `ConversationSession.metadata.transcript`, so once the call
-   * ends and the session is dropped it is no longer reachable here — read it
-   * from the session an `onConversationEnded` handler receives instead.
+   * ends (and the session is released at WebSocket teardown) it is no longer
+   * reachable here — read it from the session a `VoiceChannel.onCallEnded`
+   * handler receives instead.
    */
   public getTranscript(conversationId: ConversationId): Record<string, string>[] {
     const transcript = this.channel.getConversationSession(conversationId)?.metadata.transcript;
@@ -169,8 +164,8 @@ export abstract class MediaStreamsOpenAIProvider<
   }
 
   /**
-   * The session config stashed for `key` — a call SID for inbound calls, a
-   * token for outbound ones.
+   * The session config stashed for `key` — a session-config token before the
+   * call connects, its conversation id after.
    *
    * @internal
    */
@@ -188,38 +183,63 @@ export abstract class MediaStreamsOpenAIProvider<
   }
 
   /**
-   * Start the clock on an inbound stash, so a call whose Media Stream never
-   * connects cannot strand its override in {@link pendingSessionConfigs} until
-   * shutdown.
-   *
-   * Unref'd: a two-minute timer must not be what keeps the process alive after
-   * the call it belongs to is long over. Re-arming replaces any prior timer for
-   * the same call SID, so a duplicate inbound webhook can't orphan one.
-   */
-  private armInboundConfigExpiry(callSid: string): void {
-    this.cancelInboundConfigExpiry(callSid);
-    const timer = setTimeout(() => {
-      this.pendingInboundExpiries.delete(callSid);
-      this.pendingSessionConfigs.delete(callSid);
-    }, INBOUND_SESSION_CONFIG_TTL_MS);
-    timer.unref();
-    this.pendingInboundExpiries.set(callSid, timer);
-  }
-
-  /**
-   * Stop the clock on an inbound stash, once the call it belongs to has
-   * connected and is about to consume the entry. A no-op for outbound calls,
-   * which key their stash by token and never arm one — the subclass calls this
-   * with the call SID for every `start`, inbound or not.
+   * Mint a fresh session-config token.
    *
    * @internal
    */
-  protected cancelInboundConfigExpiry(callSid: string): void {
-    const timer = this.pendingInboundExpiries.get(callSid);
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      this.pendingInboundExpiries.delete(callSid);
+  protected static newSessionConfigToken(): string {
+    return randomUUID().replace(/-/g, '');
+  }
+
+  /**
+   * `perCall` with the session-config token added to the stream's custom
+   * parameters.
+   *
+   * The builder replaces whole fields, so the token is added to the parameters
+   * the call would otherwise get — from `perCall`, `defaultTwimlOptions` or
+   * `host`, by the builder's precedence — rather than to `perCall`'s alone,
+   * which would drop inherited ones.
+   *
+   * @internal
+   */
+  protected withSessionConfigToken(
+    host: VoiceTwiMLOptionsMediaStreams | undefined,
+    perCall: VoiceTwiMLOptionsMediaStreams | undefined,
+    token: string
+  ): VoiceTwiMLOptionsMediaStreams {
+    const effective = this.twimlBuilder.buildTwimlOptions(host, perCall).customParameters ?? {};
+    return {
+      ...perCall,
+      customParameters: { ...effective, [SESSION_CONFIG_TOKEN_PARAM]: token },
+    };
+  }
+
+  /**
+   * Move the session config stashed under `token` to this call's id.
+   *
+   * A token this instance doesn't hold means the config was stashed on another
+   * instance — the TwiML webhook or `initiateOutboundConversation` ran
+   * somewhere other than where the stream connected — or it expired. The call
+   * then falls back to `defaultSessionConfig`, so this warns: with multiple
+   * instances, per-call session configs need `TACConfig.instancePublicDomain`.
+   *
+   * @internal
+   */
+  protected claimSessionConfig(token: string | undefined, conversationId: ConversationId): void {
+    if (token === undefined) {
+      return;
     }
+    const sessionConfig = this.pendingSessionConfigs.take(token);
+    if (sessionConfig === undefined) {
+      this.logger.warn(
+        { conversation_id: conversationId },
+        'Per-call sessionConfig not found on this instance; using defaultSessionConfig. ' +
+          'With multiple instances, set TACConfig.instancePublicDomain so the stream ' +
+          'connects to the instance that stashed it.'
+      );
+      return;
+    }
+    this.pendingSessionConfigs.set(conversationId, sessionConfig);
   }
 
   /**
@@ -248,12 +268,14 @@ export abstract class MediaStreamsOpenAIProvider<
    *   3. `options.hostTwimlOptions` — per-call transport facts supplied by the
    *      host
    *   4. TAC defaults: the WebSocket URL derived from
-   *      `TACConfig.voicePublicDomain` + `voiceWebsocketPath`
+   *      `TACConfig.voiceCallbackDomain` + `voiceWebsocketPath`
    *
    * Also runs `MediaStreamsOpenAIProviderConfig.onInboundCallSessionConfig`, if
-   * set, and stashes its result for the call to pick up once it connects. The
-   * hook runs only after the TwiML builds, so a call that never connects
-   * leaves nothing stashed behind it.
+   * set, and stashes its result for the call to pick up once it connects,
+   * under a token carried on the stream's custom parameters — so the config is
+   * found by the stream it belongs to rather than keyed to a call SID. The
+   * stash is written only after the TwiML builds, so a webhook that fails
+   * leaves nothing behind it.
    *
    * @param twimlRequest - Parsed Twilio webhook fields for the inbound call.
    * @param options - Additional per-call inputs.
@@ -284,17 +306,27 @@ export abstract class MediaStreamsOpenAIProvider<
       );
     }
 
+    let sessionConfig: Record<string, unknown> | null = null;
+    if (this.config.onInboundCallSessionConfig && twimlRequest) {
+      sessionConfig = await this.config.onInboundCallSessionConfig(twimlRequest);
+    }
+
+    let token: string | undefined;
+    if (sessionConfig !== null) {
+      // Ride a token for the config out on the TwiML, as outbound does, so the
+      // config can be found when the call's stream connects instead of being
+      // keyed to a call SID.
+      token = MediaStreamsOpenAIProvider.newSessionConfigToken();
+      customized = this.withSessionConfigToken(host, customized, token);
+    }
+
     // Built before the stash, not after: build() throws when no WebSocket URL
     // can be resolved, and a throw here 500s the webhook so the call never
-    // connects to drain the entry. Nothing would ever remove it.
+    // connects to drain the entry.
     const twiml = this.twimlBuilder.build('handleIncomingCall', { host, perCall: customized });
 
-    if (this.config.onInboundCallSessionConfig && twimlRequest?.callSid) {
-      const sessionConfig = await this.config.onInboundCallSessionConfig(twimlRequest);
-      if (sessionConfig !== null) {
-        this.pendingSessionConfigs.set(twimlRequest.callSid, sessionConfig);
-        this.armInboundConfigExpiry(twimlRequest.callSid);
-      }
+    if (token !== undefined && sessionConfig !== null) {
+      this.pendingSessionConfigs.set(token, sessionConfig);
     }
 
     return twiml;
@@ -456,10 +488,6 @@ export abstract class MediaStreamsOpenAIProvider<
    */
   public override shutdown(): void {
     super.shutdown();
-    for (const timer of this.pendingInboundExpiries.values()) {
-      clearTimeout(timer);
-    }
-    this.pendingInboundExpiries.clear();
     this.calls.clear();
     this.pendingSessionConfigs.clear();
   }

@@ -6,6 +6,7 @@ import {
   ProfileResponse,
   ChannelType,
   OperatorProcessingResult,
+  ConversationParticipant,
 } from '../types';
 import { TACMemoryResponse } from './tac-memory-response';
 import { TACConfig } from './config';
@@ -17,6 +18,14 @@ import { Logger, createLogger } from './logger';
 import { shutdownAnalytics } from './analytics';
 import { maskAddress } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
+import { ExpiringMap } from '../util/expiring-map';
+
+/**
+ * How long a participant lookup is shared between the channels handling one CO
+ * webhook. Long enough to span a fan-out and its retries, short enough that
+ * participants can't drift meaningfully.
+ */
+const SHARED_PARTICIPANTS_TTL_MS = 60_000;
 
 export interface TACOptions {
   config?: TACConfig | TACConfigInput;
@@ -85,6 +94,12 @@ export class TAC {
   private messageReadyCallback?: MessageReadyCallback;
   private interruptCallback?: InterruptCallback;
   private conversationEndedCallback?: ConversationEndedCallback;
+
+  // In-flight or recent participant lookups, keyed by conversation id — see
+  // listParticipantsShared.
+  private readonly participantLookups = new ExpiringMap<Promise<ConversationParticipant[]>>({
+    ttlMs: SHARED_PARTICIPANTS_TTL_MS,
+  });
 
   private constructor(token: symbol, options: TACOptions = {}) {
     if (token !== TAC.FACTORY_TOKEN) {
@@ -216,6 +231,7 @@ export class TAC {
         message: string;
         author: string;
         userMemory: TACMemoryResponse | undefined;
+        session?: ConversationSession;
       }): Promise<void> => {
         await this.handleMessageReady({ ...data, channelType: channel.channelType });
       }
@@ -248,6 +264,7 @@ export class TAC {
             author: 'user',
             userMemory,
             channelType: channel.channelType,
+            session: eventSession,
             abortSignal,
           });
         }
@@ -315,6 +332,11 @@ export class TAC {
     author: string;
     userMemory: TACMemoryResponse | undefined;
     channelType: ChannelType;
+    /**
+     * The turn's session. Messaging channels keep no session store, so they
+     * hand it over with the event; voice passes its live session.
+     */
+    session?: ConversationSession;
     abortSignal?: AbortSignal;
   }): Promise<void> {
     this.logger.debug(
@@ -347,7 +369,7 @@ export class TAC {
         'Using channel for message'
       );
 
-      const session = channel.getConversationSession(data.conversationId);
+      const session = data.session ?? channel.getConversationSession(data.conversationId);
       if (!session) {
         throw new Error(`No session found for conversation ${data.conversationId}`);
       }
@@ -385,7 +407,8 @@ export class TAC {
             );
           } else {
             try {
-              await channel.sendResponse(data.conversationId, response);
+              // Hand back the session so messaging channels needn't rebuild it.
+              await channel.sendResponse(session, response);
             } catch (sendError) {
               this.logger.error(
                 { err: sendError, conversation_id: data.conversationId },
@@ -445,13 +468,65 @@ export class TAC {
   /**
    * Register callback for when a conversation ends.
    *
-   * The callback is triggered by channels when a conversation is closed
-   * (e.g., SMS conversation status changed to CLOSED, or voice WebSocket
-   * disconnected). The callback receives the full ConversationSession before
-   * it is cleaned up.
+   * Fires when Conversation Orchestrator closes a conversation, on whichever
+   * replica receives the CLOSED webhook — so the session it receives is
+   * rebuilt from Conversation Orchestrator's participant list (identity only:
+   * `conversationId`, `profileId`, participants; read the conversation's stored
+   * metadata with `conversationMetadata(session)`). Relay-only and Media
+   * Streams voice calls have no CO conversation, so they fire it at WebSocket
+   * teardown with the live session instead. For an orchestrated call's live
+   * state (transcript, `metadata`), use `VoiceChannel.onCallEnded`.
+   *
+   * At-least-once across webhook retries and replicas, like `onMessageReady`.
    */
   public onConversationEnded(callback: ConversationEndedCallback): void {
     this.conversationEndedCallback = callback;
+  }
+
+  /**
+   * Whether an `onConversationEnded` handler is registered. Channels check this
+   * before rebuilding a session from Conversation Orchestrator: with no
+   * handler, there is nothing to hand it to.
+   *
+   * @internal
+   */
+  public hasConversationEndedCallback(): boolean {
+    return this.conversationEndedCallback !== undefined;
+  }
+
+  /**
+   * List a conversation's participants, shared across channels briefly.
+   *
+   * A CO webhook is handed to every channel, and several may need the same
+   * conversation's participants — to rebuild a closed conversation's session,
+   * or to report it ended. Concurrent callers share one in-flight request, and
+   * later callers reuse its result until a minute after the request started. A
+   * failure isn't cached. Not for paths that need fresh participants, like
+   * reconciliation or resolving a session by CallSid.
+   *
+   * @throws If Conversation Orchestrator isn't configured, or whatever
+   *   `listParticipants` throws.
+   * @internal
+   */
+  public listParticipantsShared(conversationId: string): Promise<ConversationParticipant[]> {
+    const client = this.conversationClient;
+    if (client === null) {
+      return Promise.reject(new Error('Conversation Orchestrator is not configured'));
+    }
+    const existing = this.participantLookups.get(conversationId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const lookup = client.listParticipants(conversationId);
+    this.participantLookups.set(conversationId, lookup);
+    // Drop a failed lookup so it isn't served from the cache; the original
+    // promise still rejects for its callers.
+    lookup.catch(() => {
+      if (this.participantLookups.get(conversationId) === lookup) {
+        this.participantLookups.delete(conversationId);
+      }
+    });
+    return lookup;
   }
 
   /**

@@ -86,28 +86,33 @@ export abstract class TwiMLBuilderBase<TChannelConfig = unknown> {
   }
 
   /**
-   * The WebSocket URL derived from `TACConfig.voicePublicDomain` +
-   * `TACConfig.voiceWebsocketPath`, or undefined when `voicePublicDomain` is
-   * unset.
+   * The WebSocket URL derived from `TACConfig.voiceCallbackDomain` +
+   * `TACConfig.voiceWebsocketPath`, or undefined when no public domain is set.
+   *
+   * Uses `voiceCallbackDomain`, so a deployment that sets
+   * `instancePublicDomain` pins the call to this process from its very first
+   * connection.
    */
   protected defaultWebsocketUrl(): string | undefined {
-    if (!this.tacConfig.voicePublicDomain) {
+    const domain = this.tacConfig.voiceCallbackDomain;
+    if (!domain) {
       return undefined;
     }
-    return `wss://${this.tacConfig.voicePublicDomain}${this.tacConfig.voiceWebsocketPath}`;
+    return `wss://${domain}${this.tacConfig.voiceWebsocketPath}`;
   }
 
   /**
    * Resolve the default `<Connect action=...>` cleanup URL from
-   * `TACConfig.voicePublicDomain` + `TACConfig.voiceActionPath`.
+   * `TACConfig.voiceCallbackDomain` + `TACConfig.voiceActionPath`.
    *
-   * Returns undefined if `voicePublicDomain` isn't set; that's fine because
+   * Returns undefined if no public domain is set; that's fine because
    * actionUrl has higher-priority layers (customizer, twimlOptions, Studio
    * handoff) above this fallback.
    */
   protected defaultActionUrl(): string | undefined {
-    if (this.tacConfig.voicePublicDomain) {
-      return `https://${this.tacConfig.voicePublicDomain}${this.tacConfig.voiceActionPath}`;
+    const domain = this.tacConfig.voiceCallbackDomain;
+    if (domain) {
+      return `https://${domain}${this.tacConfig.voiceActionPath}`;
     }
     return undefined;
   }

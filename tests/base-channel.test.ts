@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BaseChannel, ConversationWebhookPayload } from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
-import type { ChannelType, ConversationId, ProfileId } from '@twilio/tac-core';
+import type { ChannelType, ConversationId, ConversationSession, ProfileId } from '@twilio/tac-core';
 
 /**
  * Concrete test implementation of BaseChannel for testing
@@ -34,6 +34,14 @@ class TestChannel extends BaseChannel {
 
   public testIsEventForThisChannel(webhookData: ConversationWebhookPayload): boolean {
     return this.isEventForThisChannel(webhookData);
+  }
+
+  public testHasConversationEndedHandler(): boolean {
+    return this.hasConversationEndedHandler();
+  }
+
+  public async testTriggerConversationEnded(session: ConversationSession): Promise<void> {
+    return this.triggerConversationEnded(session);
   }
 }
 
@@ -226,22 +234,10 @@ describe('BaseChannel', () => {
       expect(channel.testIsEventForThisChannel(webhook)).toBe(false);
     });
 
-    it('should accept CONVERSATION_UPDATED for tracked conversation', () => {
-      // Start a conversation to track it
-      channel['startConversation']('CHtest123' as ConversationId);
-
-      const webhook: ConversationWebhookPayload = {
-        eventType: 'CONVERSATION_UPDATED',
-        data: {
-          id: 'CHtest123',
-          status: 'CLOSED',
-        },
-      };
-
-      expect(channel.testIsEventForThisChannel(webhook)).toBe(true);
-    });
-
-    it('should reject CONVERSATION_UPDATED for untracked conversation', () => {
+    it('should accept CONVERSATION_UPDATED without any local tracking', () => {
+      // Channels keep no session store to filter by: any replica may receive
+      // the CLOSED webhook, so it is accepted and the channel decides from the
+      // payload (and CO's participants) whether it applies.
       const webhook: ConversationWebhookPayload = {
         eventType: 'CONVERSATION_UPDATED',
         data: {
@@ -250,7 +246,7 @@ describe('BaseChannel', () => {
         },
       };
 
-      expect(channel.testIsEventForThisChannel(webhook)).toBe(false);
+      expect(channel.testIsEventForThisChannel(webhook)).toBe(true);
     });
 
     it('should accept other event types', () => {
@@ -262,6 +258,66 @@ describe('BaseChannel', () => {
       };
 
       expect(channel.testIsEventForThisChannel(webhook)).toBe(true);
+    });
+  });
+
+  describe('Session accessors and lifecycle helpers', () => {
+    const tacConfig = {
+      accountSid: 'ACtest',
+      authToken: 'test_token',
+      apiKey: 'test_key',
+      apiSecret: 'test_secret',
+      phoneNumber: '+15551234567',
+      conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    };
+    const session: ConversationSession = {
+      conversationId: 'CHtest123',
+      channel: 'sms',
+      startedAt: new Date(),
+      metadata: {},
+    };
+
+    it('keeps no sessions by default', async () => {
+      const channel = new TestChannel(await createTestTAC(tacConfig));
+
+      expect(channel.getConversationSession('CHtest123' as ConversationId)).toBeUndefined();
+      expect(channel.isConversationActive('CHtest123' as ConversationId)).toBe(false);
+    });
+
+    it('reports no conversation-ended handler when none is registered', async () => {
+      const channel = new TestChannel(await createTestTAC(tacConfig));
+
+      expect(channel.testHasConversationEndedHandler()).toBe(false);
+    });
+
+    it('reports a handler registered directly on an unregistered channel', async () => {
+      const channel = new TestChannel(await createTestTAC(tacConfig));
+      channel.on('conversationEnded', () => undefined);
+
+      expect(channel.testHasConversationEndedHandler()).toBe(true);
+    });
+
+    it('asks TAC for a channel registered with it', async () => {
+      const tac = await createTestTAC(tacConfig);
+      const channel = new TestChannel(tac);
+      tac.registerChannel(channel);
+
+      // Registration fills the channel's own slot to route to TAC, so the
+      // answer is whether TAC has a handler.
+      expect(channel.testHasConversationEndedHandler()).toBe(false);
+      tac.onConversationEnded(() => undefined);
+      expect(channel.testHasConversationEndedHandler()).toBe(true);
+    });
+
+    it('swallows errors thrown by the conversation-ended handler', async () => {
+      const channel = new TestChannel(await createTestTAC(tacConfig));
+      const handler = vi.fn(() => {
+        throw new Error('boom');
+      });
+      channel.on('conversationEnded', handler);
+
+      await expect(channel.testTriggerConversationEnded(session)).resolves.toBeUndefined();
+      expect(handler).toHaveBeenCalledWith({ session });
     });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestTAC } from './helpers/tac';
+import { assertNoResidualState } from './helpers/voice-invariants';
 import {
   VoiceChannel,
   TAC,
@@ -762,15 +763,29 @@ describe('VoiceChannel', () => {
       return mockWs;
     };
 
-    it('keeps the conversation tracked on WebSocket disconnect in orchestrated mode', async () => {
-      // Teardown is owned by the CLOSED webhook, so a follow-up call can reuse it.
+    const closedWebhook = {
+      eventType: 'CONVERSATION_UPDATED',
+      data: {
+        id: 'CHcb_test12345',
+        status: 'CLOSED',
+        configurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      },
+    };
+
+    it('releases the session on WebSocket disconnect in orchestrated mode', async () => {
+      // The call is over once its socket is gone; the *conversation* isn't —
+      // CO's CLOSED webhook owns onConversationEnded — but nothing local waits.
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
       const captured: ConversationSession[] = [];
+      const callEnded: ConversationSession[] = [];
       tac.onConversationEnded(({ session }) => {
         captured.push(session);
       });
       tac.registerChannel(voiceChannel);
+      voiceChannel.onCallEnded(session => {
+        callEnded.push(session);
+      });
 
       const mockWs = await initConversation(tac, voiceChannel);
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
@@ -778,14 +793,13 @@ describe('VoiceChannel', () => {
       mockWs._emit('close');
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      // Conversation is still tracked and the callback did NOT fire on disconnect.
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
       expect(captured).toHaveLength(0);
-      // The WebSocket connection itself is torn down.
-      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
+      expect(callEnded).toHaveLength(1);
+      expect(callEnded[0].callSid).toBe('CA_cb_test');
+      assertNoResidualState(voiceChannel, 'CHcb_test12345');
     });
 
-    it('fires onConversationEnded when the CLOSED webhook arrives', async () => {
+    it('fires onConversationEnded from a rebuilt session when the CLOSED webhook arrives', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
       const captured: ConversationSession[] = [];
@@ -798,11 +812,7 @@ describe('VoiceChannel', () => {
       mockWs._emit('close');
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      // CLOSED webhook is the mechanism that ends the conversation.
-      await voiceChannel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHcb_test12345', status: 'CLOSED' },
-      });
+      await voiceChannel.processWebhook(closedWebhook);
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHcb_test12345');
@@ -810,7 +820,28 @@ describe('VoiceChannel', () => {
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
     });
 
-    it('should still clean up session if callback throws', async () => {
+    it('ignores a CLOSED webhook for another conversation configuration', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(voiceChannel);
+
+      const mockWs = await initConversation(tac, voiceChannel);
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      await voiceChannel.processWebhook({
+        ...closedWebhook,
+        data: { ...closedWebhook.data, configurationId: 'conv_configuration_other' },
+      });
+
+      expect(captured).toHaveLength(0);
+    });
+
+    it('swallows a throwing callback on a CLOSED for a live call', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
@@ -819,19 +850,19 @@ describe('VoiceChannel', () => {
       });
       tac.registerChannel(voiceChannel);
 
-      await initConversation(tac, voiceChannel);
+      const mockWs = await initConversation(tac, voiceChannel);
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
-      // A throwing callback must not prevent the CLOSED webhook from cleaning up.
-      await voiceChannel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHcb_test12345', status: 'CLOSED' },
-      });
+      await expect(voiceChannel.processWebhook(closedWebhook)).resolves.toBeUndefined();
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      // The call is still live, so the session stays for its own teardown.
+      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assertNoResidualState(voiceChannel, 'CHcb_test12345');
     });
 
-    it('should support async callback', async () => {
+    it('fires an async callback on a CLOSED for a live call', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
       const captured: ConversationSession[] = [];
@@ -841,30 +872,68 @@ describe('VoiceChannel', () => {
       });
       tac.registerChannel(voiceChannel);
 
-      await initConversation(tac, voiceChannel);
+      const mockWs = await initConversation(tac, voiceChannel);
 
-      await voiceChannel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHcb_test12345', status: 'CLOSED' },
-      });
+      await voiceChannel.processWebhook(closedWebhook);
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHcb_test12345');
+
+      // Teardown after a mid-call CLOSED doesn't fire it a second time.
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(captured).toHaveLength(1);
     });
 
-    it('should clean up silently when no callback is registered', async () => {
+    it('releases the session silently when no callback is registered', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
-      await initConversation(tac, voiceChannel);
+      const mockWs = await initConversation(tac, voiceChannel);
       expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
 
-      await voiceChannel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHcb_test12345', status: 'CLOSED' },
+      await voiceChannel.processWebhook(closedWebhook);
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assertNoResidualState(voiceChannel, 'CHcb_test12345');
+    });
+
+    it('fires onCallEnded with the live session, and swallows its errors', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const seen: ConversationSession[] = [];
+      voiceChannel.onCallEnded(session => {
+        seen.push(session);
+        throw new Error('handler exploded');
       });
 
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(false);
+      const mockWs = await initConversation(tac, voiceChannel);
+      const live = voiceChannel.getConversationSession('CHcb_test12345' as any)!;
+      live.metadata.transcript = [{ role: 'user', text: 'hi' }];
+
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toBe(live);
+      expect(seen[0].metadata.transcript).toEqual([{ role: 'user', text: 'hi' }]);
+      assertNoResidualState(voiceChannel, 'CHcb_test12345');
+    });
+
+    it('tears down only once when the socket closes twice', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const voiceChannel = new VoiceChannel(tac);
+      const onCallEnded = vi.fn();
+      voiceChannel.onCallEnded(onCallEnded);
+
+      const mockWs = await initConversation(tac, voiceChannel);
+      mockWs._emit('close');
+      mockWs._emit('close');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(onCallEnded).toHaveBeenCalledTimes(1);
+      assertNoResidualState(voiceChannel, 'CHcb_test12345');
     });
 
     it('ends the conversation on WebSocket disconnect in voice-only mode', async () => {
@@ -978,10 +1047,8 @@ describe('VoiceChannel', () => {
       releaseLookup([{ id: 'CHcb_test12345', status: 'ACTIVE' }]);
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      // The WebSocket registration is adopted and torn down, not leaked, while
-      // the conversation stays tracked until the CLOSED webhook.
-      expect(voiceChannel.getWebsocket('CHcb_test12345' as any)).toBeNull();
-      expect(voiceChannel.isConversationActive('CHcb_test12345')).toBe(true);
+      // Everything the lookup registered is adopted and torn down, not leaked.
+      assertNoResidualState(voiceChannel, 'CHcb_test12345');
     });
 
     it('cleans up when the call ends while the first prompt awaits the lookup', async () => {
@@ -1364,7 +1431,7 @@ describe('VoiceChannel', () => {
     it('returns 403 on AccountSid mismatch without cleaning up', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const endSpy = vi.spyOn(voiceChannel as any, 'endConversation');
+      const endSpy = vi.spyOn(voiceChannel as any, 'releaseSession');
 
       const result = await voiceChannel.handleConversationRelayCallback({
         AccountSid: 'ACwrong999',
@@ -1383,7 +1450,7 @@ describe('VoiceChannel', () => {
       // conversationConfigurationId is set -> orchestrator enabled.
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
-      const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
+      const endSpy = vi.spyOn(voiceChannel as any, 'releaseSession').mockResolvedValue(undefined);
 
       // Simulate an established call mapping so the guard is what prevents cleanup.
       (voiceChannel as any).provider.callSidToConversationId.set('CA123', 'CH123');
@@ -1403,12 +1470,12 @@ describe('VoiceChannel', () => {
       expect((voiceChannel as any).provider.callSidToConversationId.has('CA123')).toBe(true);
     });
 
-    it('ends the conversation on completion in voice-only mode', async () => {
+    it('releases the session on completion in voice-only mode', async () => {
       // No conversationConfigurationId -> orchestrator disabled (voice-only).
       const { conversationConfigurationId: _omit, ...voiceOnlyConfig } = getTestConfig();
       const tac = await createTestTAC(voiceOnlyConfig);
       const voiceChannel = new VoiceChannel(tac);
-      const endSpy = vi.spyOn(voiceChannel as any, 'endConversation').mockResolvedValue(undefined);
+      const endSpy = vi.spyOn(voiceChannel as any, 'releaseSession').mockResolvedValue(undefined);
 
       (voiceChannel as any).provider.callSidToConversationId.set('CA123', 'CH123');
 
@@ -2565,7 +2632,9 @@ describe('VoiceChannel', () => {
   });
 
   describe('webhook processing', () => {
-    it('should clean up session when conversation is closed', async () => {
+    const CONFIGURATION_ID = getTestConfig().conversationConfigurationId;
+
+    it("keeps a live call's session when its conversation is closed", async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
 
@@ -2580,10 +2649,12 @@ describe('VoiceChannel', () => {
         data: {
           id: 'CHtest123456789',
           status: 'CLOSED',
+          configurationId: CONFIGURATION_ID,
         },
       });
 
-      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(false);
+      // The call is still live, so the session stays for its own teardown.
+      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
     });
 
     it('invalidates cached memory on INACTIVE for "once" mode, then re-fetches', async () => {
@@ -2603,7 +2674,7 @@ describe('VoiceChannel', () => {
       // Conversation goes INACTIVE -> cache cleared.
       await voiceChannel.processWebhook({
         eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHtest123456789', status: 'INACTIVE' },
+        data: { id: 'CHtest123456789', status: 'INACTIVE', configurationId: CONFIGURATION_ID },
       });
       expect(session?.cachedMemory).toBeUndefined();
 
@@ -2626,7 +2697,7 @@ describe('VoiceChannel', () => {
 
       await voiceChannel.processWebhook({
         eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHtest123456789', status: 'ACTIVE' },
+        data: { id: 'CHtest123456789', status: 'ACTIVE', configurationId: CONFIGURATION_ID },
       });
 
       expect(session?.cachedMemory).toBe(cachedBefore);
@@ -2648,7 +2719,7 @@ describe('VoiceChannel', () => {
       // Close conversation
       await voiceChannel.processWebhook({
         eventType: 'CONVERSATION_UPDATED',
-        data: { id: 'CHtest123456789', status: 'CLOSED' },
+        data: { id: 'CHtest123456789', status: 'CLOSED', configurationId: CONFIGURATION_ID },
       });
 
       expect(captured).toHaveLength(1);
@@ -2659,6 +2730,11 @@ describe('VoiceChannel', () => {
     it('should handle duplicate webhooks via idempotency token', async () => {
       const tac = await createTestTAC(getTestConfig());
       const voiceChannel = new VoiceChannel(tac);
+      const captured: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(voiceChannel);
 
       // Start conversation
       (voiceChannel as any).startConversation('CHtest123456789', undefined);
@@ -2669,28 +2745,24 @@ describe('VoiceChannel', () => {
       await voiceChannel.processWebhook(
         {
           eventType: 'CONVERSATION_UPDATED',
-          data: { id: 'CHtest123456789', status: 'CLOSED' },
+          data: { id: 'CHtest123456789', status: 'CLOSED', configurationId: CONFIGURATION_ID },
         },
         idempotencyToken
       );
 
-      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(false);
-
-      // Restart the same conversation to test duplicate webhook
-      (voiceChannel as any).startConversation('CHtest123456789', undefined);
-      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
+      expect(captured).toHaveLength(1);
 
       // Duplicate webhook should be ignored (same idempotency token)
       await voiceChannel.processWebhook(
         {
           eventType: 'CONVERSATION_UPDATED',
-          data: { id: 'CHtest123456789', status: 'CLOSED' },
+          data: { id: 'CHtest123456789', status: 'CLOSED', configurationId: CONFIGURATION_ID },
         },
         idempotencyToken
       );
 
-      // Conversation should still be active (duplicate was ignored)
-      expect(voiceChannel.isConversationActive('CHtest123456789' as any)).toBe(true);
+      // The duplicate was ignored, so the hook didn't fire again.
+      expect(captured).toHaveLength(1);
     });
 
     it('should ignore webhook for unknown conversation', async () => {

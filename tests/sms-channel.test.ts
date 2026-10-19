@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SMSChannel, TAC, ConversationSession } from '@twilio/tac-core';
+import {
+  SMSChannel,
+  TAC,
+  ConversationClient,
+  ConversationParticipant,
+  ConversationSession,
+} from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import { createTestTAC } from './helpers/tac';
 
@@ -20,12 +26,67 @@ describe('SMS Channel', () => {
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
+  const CONFIG_ID = 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd';
+
+  /** The agent + customer pair Conversation Orchestrator holds for a healthy conversation. */
+  const smsParticipants = (
+    conversationId = 'CHtest123456789',
+    profileId?: string
+  ): ConversationParticipant[] => [
+    {
+      id: 'PA111',
+      conversationId,
+      accountId: 'ACtest123456789',
+      type: 'AI_AGENT',
+      addresses: [{ channel: 'SMS', address: '+15551234567' }],
+    },
+    {
+      id: 'PA222',
+      conversationId,
+      accountId: 'ACtest123456789',
+      type: 'CUSTOMER',
+      ...(profileId ? { profileId } : {}),
+      addresses: [{ channel: 'SMS', address: '+15559876543' }],
+    },
+  ];
+
+  /** A session shaped the way an inbound webhook leaves it. */
+  const reconciledSession = (
+    conversationId = 'CHtest123456789',
+    overrides: Partial<ConversationSession> = {}
+  ): ConversationSession => ({
+    conversationId,
+    channel: 'sms',
+    startedAt: new Date(),
+    authorInfo: { address: '+15559876543', participantId: 'PA123' },
+    aiAgentInfo: { address: '+15551234567', participantId: 'PA111' },
+    metadata: {},
+    ...overrides,
+  });
+
+  const closedWebhook = (conversationId: string, configurationId: string = CONFIG_ID) => ({
+    eventType: 'CONVERSATION_UPDATED',
+    data: {
+      id: conversationId,
+      conversationId,
+      configurationId,
+      status: 'CLOSED',
+      createdAt: '2025-11-18T00:00:00.000Z',
+      updatedAt: '2025-11-18T00:10:00.000Z',
+    },
+  });
+
   let channel: SMSChannel;
   let tac: TAC;
+  let listParticipantsSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
     channel = new SMSChannel(tac);
+    // Every inbound message reads the conversation's participants once.
+    listParticipantsSpy = vi
+      .spyOn(ConversationClient.prototype, 'listParticipants')
+      .mockImplementation(async (conversationId: string) => smsParticipants(conversationId));
     // Short-circuit memory retrieval so webhook processing tests don't hit
     // real Twilio APIs with fake credentials and spam the logs with 401s.
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
@@ -58,8 +119,38 @@ describe('SMS Channel', () => {
       expect(channel.channelType).toBe('sms');
     });
 
-    it('should start with no active conversations', () => {
+    it('keeps no sessions: deprecated lookups return undefined/false even after a message', async () => {
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(channel.getConversationSession('CHtest123456789')).toBeUndefined();
+    });
+
+    it("on('conversationStarted') is a deprecated no-op", async () => {
+      const started = vi.fn();
+      expect(() => channel.on('conversationStarted', started)).not.toThrow();
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_CREATED',
+        data: { conversationId: 'CHtest123456789' },
+      });
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      expect(started).not.toHaveBeenCalled();
     });
 
     it('should reject zero dedupCapacity', () => {
@@ -103,7 +194,7 @@ describe('SMS Channel', () => {
   });
 
   describe('webhook processing', () => {
-    it('should process conversation.created event', async () => {
+    it('should ignore conversation.created event (no session to start)', async () => {
       const webhookPayload = {
         eventType: 'CONVERSATION_CREATED',
         data: {
@@ -114,8 +205,7 @@ describe('SMS Channel', () => {
 
       await expect(channel.processWebhook(webhookPayload)).resolves.not.toThrow();
 
-      // Should have started a conversation
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
     });
 
     it('should process communication.created event', async () => {
@@ -151,6 +241,17 @@ describe('SMS Channel', () => {
       expect(capturedMessage.conversationId).toBe('CHtest123456789');
       expect(capturedMessage.message).toBe('Hello world');
       expect(capturedMessage.author).toBe('+15559876543');
+      // This turn's session travels with the event
+      expect(capturedMessage.session.conversationId).toBe('CHtest123456789');
+      expect(capturedMessage.session.authorInfo).toMatchObject({
+        address: '+15559876543',
+        participantId: 'PA222',
+      });
+      expect(capturedMessage.session.aiAgentInfo).toMatchObject({
+        address: '+15551234567',
+        participantId: 'PA111',
+      });
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should skip events with unexpected eventType format', async () => {
@@ -170,26 +271,52 @@ describe('SMS Channel', () => {
     });
 
     it('should process conversation.updated event (close)', async () => {
-      // First add a conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
+      const ended = vi.fn();
+      channel.on('conversationEnded', ended);
+
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
+
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(ended.mock.calls[0]![0].session.conversationId).toBe('CHtest123456789');
+    });
+
+    it('should ignore CLOSED for a different conversation configuration', async () => {
+      const ended = vi.fn();
+      channel.on('conversationEnded', ended);
+
+      await channel.processWebhook(closedWebhook('CHtest123456789', 'conv_configuration_other'));
+
+      expect(ended).not.toHaveBeenCalled();
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
+    });
+
+    it('should ignore non-CLOSED conversation.updated events', async () => {
+      const ended = vi.fn();
+      channel.on('conversationEnded', ended);
+
+      const webhook = closedWebhook('CHtest123456789');
+      await channel.processWebhook({ ...webhook, data: { ...webhook.data, status: 'INACTIVE' } });
+
+      expect(ended).not.toHaveBeenCalled();
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not fire for a conversation with no participant on this channel', async () => {
+      const ended = vi.fn();
+      channel.on('conversationEnded', ended);
+      listParticipantsSpy.mockResolvedValue([
+        {
+          id: 'PA_chat',
+          conversationId: 'CHchat',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'CHAT', address: 'user-1' }],
         },
-      });
+      ]);
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
+      await channel.processWebhook(closedWebhook('CHchat'));
 
-      // Then close it
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          status: 'CLOSED',
-        },
-      });
-
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(ended).not.toHaveBeenCalled();
     });
 
     it('should ignore empty messages', async () => {
@@ -220,37 +347,80 @@ describe('SMS Channel', () => {
       expect(messageReceived).toBe(false);
     });
 
-    it('should auto-initialize conversation on first message', async () => {
-      let capturedMessage: any = null;
+    it('should build a fresh session per message, listing participants each time', async () => {
+      const captured: any[] = [];
 
       channel.on('messageReceived', data => {
-        capturedMessage = data;
+        captured.push(data);
       });
 
-      const webhookPayload = {
+      const webhookPayload = (text: string) => ({
         eventType: 'COMMUNICATION_CREATED',
         data: {
           conversationId: 'CHtest123456789',
-          content: {
-            type: 'TEXT',
-            text: 'First message',
-          },
-          author: {
-            address: '+15559876543',
-            channel: 'SMS',
-          },
+          content: { type: 'TEXT', text },
+          author: { address: '+15559876543', channel: 'SMS' },
         },
-      };
+      });
 
-      // Conversation not active initially
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      await channel.processWebhook(webhookPayload('First message'));
+      await channel.processWebhook(webhookPayload('Second message'));
 
-      await channel.processWebhook(webhookPayload);
+      expect(captured).toHaveLength(2);
+      expect(captured[0].message).toBe('First message');
+      expect(captured[1].message).toBe('Second message');
+      // Nothing carries over between turns
+      expect(captured[0].session).not.toBe(captured[1].session);
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(2);
+    });
 
-      // Should auto-initialize and process message
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
-      expect(capturedMessage).not.toBeNull();
-      expect(capturedMessage.message).toBe('First message');
+    it('should drop the message and surface onError when participants cannot be read', async () => {
+      const received = vi.fn();
+      const errors: { error: Error; context?: Record<string, unknown> }[] = [];
+      channel.on('messageReceived', received);
+      channel.on('error', data => errors.push(data));
+      listParticipantsSpy.mockRejectedValue(new Error('CO down'));
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'Hello' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      expect(received).not.toHaveBeenCalled();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.error.name).toBe('ParticipantLookupError');
+      expect(errors[0]!.context?.dropped_inbound).toBe(true);
+      expect(errors[0]!.context?.error_code).toBe('participant_lookup_failed');
+    });
+
+    it("should ignore TAC's own message identified by the author participant type", async () => {
+      const received = vi.fn();
+      channel.on('messageReceived', received);
+      listParticipantsSpy.mockResolvedValue([
+        ...smsParticipants(),
+        {
+          id: 'PA_other_agent',
+          conversationId: 'CHtest123456789',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+15550000000' }],
+        },
+      ]);
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          content: { type: 'TEXT', text: 'echo' },
+          author: { address: '+15550000000', channel: 'SMS', participantId: 'PA_other_agent' },
+        },
+      });
+
+      expect(received).not.toHaveBeenCalled();
     });
   });
 
@@ -264,71 +434,52 @@ describe('SMS Channel', () => {
   });
 
   describe('conversation management', () => {
-    it('should track multiple active conversations', async () => {
-      // Add multiple conversations
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-        },
+    it('closing one conversation does not affect another (nothing is stored)', async () => {
+      const ended: string[] = [];
+      tac.onConversationEnded(({ session }) => {
+        ended.push(session.conversationId);
       });
+      tac.registerChannel(channel);
 
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest987654321',
-        },
-      });
+      await channel.processWebhook(closedWebhook('CHtest111'));
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
-      expect(channel.isConversationActive('CHtest987654321')).toBe(true);
+      expect(ended).toEqual(['CHtest111']);
     });
   });
 
   describe('conversation ended callback', () => {
-    it('should fire onConversationEnded callback with full session on close', async () => {
+    it('should fire onConversationEnded callback with a session rebuilt from participants', async () => {
       const captured: ConversationSession[] = [];
+      listParticipantsSpy.mockResolvedValue(smsParticipants('CHtest123456789', 'prof_cb1'));
 
       tac.onConversationEnded(({ session }) => {
         captured.push(session);
       });
       tac.registerChannel(channel);
 
-      // Start conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789', profileId: 'test_profile_123' },
-      });
-
-      // Close conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
-      });
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHtest123456789');
       expect(captured[0].channel).toBe('sms');
+      expect(captured[0].profileId).toBe('prof_cb1');
+      expect(captured[0].authorInfo).toMatchObject({
+        address: '+15559876543',
+        participantId: 'PA222',
+      });
+      expect(captured[0].aiAgentInfo).toMatchObject({
+        address: '+15551234567',
+        participantId: 'PA111',
+      });
     });
 
-    it('should still clean up session if callback throws', async () => {
+    it('should not fail the webhook if the callback throws', async () => {
       tac.onConversationEnded(() => {
         throw new Error('boom');
       });
       tac.registerChannel(channel);
 
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
-      });
-
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      await expect(channel.processWebhook(closedWebhook('CHtest123456789'))).resolves.not.toThrow();
     });
 
     it('should support async callback', async () => {
@@ -339,31 +490,28 @@ describe('SMS Channel', () => {
       });
       tac.registerChannel(channel);
 
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
-      });
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHtest123456789');
     });
 
-    it('should clean up silently when no callback is registered', async () => {
-      // No callback registered — should not throw
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
-      });
+    it('should exit fast with no API call when no callback is registered', async () => {
+      tac.registerChannel(channel);
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      await expect(channel.processWebhook(closedWebhook('CHtest123456789'))).resolves.not.toThrow();
+
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not fire when the participant lookup fails', async () => {
+      const ended = vi.fn();
+      channel.on('conversationEnded', ended);
+      listParticipantsSpy.mockRejectedValue(new Error('CO down'));
+
+      await expect(channel.processWebhook(closedWebhook('CHtest123456789'))).resolves.not.toThrow();
+
+      expect(ended).not.toHaveBeenCalled();
     });
   });
 
@@ -543,32 +691,6 @@ describe('SMS Channel', () => {
   });
 
   describe('sendResponse', () => {
-    /**
-     * Pre-populate a fully-reconciled session. `sendResponse` now reads ids
-     * directly from `session.authorInfo` and `session.aiAgentInfo`; it no
-     * longer calls `listParticipants`/`addParticipant` at send time.
-     */
-    const seedReconciledSession = (conversationId: string, opts?: {
-      channelId?: string;
-      agentParticipantId?: string;
-      customerParticipantId?: string;
-    }) => {
-      (channel as any).activeConversations.set(conversationId, {
-        conversationId,
-        channel: 'sms',
-        startedAt: new Date(),
-        authorInfo: {
-          address: '+15559876543',
-          participantId: opts?.customerParticipantId ?? 'PA123',
-        },
-        aiAgentInfo: {
-          address: '+15551234567',
-          participantId: opts?.agentParticipantId ?? 'PA111',
-        },
-        metadata: opts?.channelId ? { channelId: opts.channelId } : {},
-      });
-    };
-
     beforeEach(() => {
       // Access the conversation client's axios instance through TAC
       const conversationClient = (tac as any).conversationClient;
@@ -576,8 +698,7 @@ describe('SMS Channel', () => {
       // Reset history to clear the getConfiguration call from TAC initialization
       mockAdapter.resetHistory();
 
-      // Mock createAction call (returns 202 Accepted). sendResponse no longer
-      // calls listParticipants — the session is pre-reconciled.
+      // Mock createAction call (returns 202 Accepted).
       mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
         id: 'conv_action_01abcdef',
         type: 'SEND_MESSAGE',
@@ -587,12 +708,11 @@ describe('SMS Channel', () => {
       });
     });
 
-    it('should send SMS via Actions API', async () => {
-      seedReconciledSession('CHtest123456789');
+    it('should send SMS via Actions API with a session (no participant lookup)', async () => {
+      await channel.sendResponse(reconciledSession(), 'Hello back!');
 
-      await channel.sendResponse('CHtest123456789', 'Hello back!');
-
-      // sendResponse no longer calls listParticipants — only createAction
+      // A session already carries both participants — only createAction
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
       const history = mockAdapter.history;
       expect(history.get.length).toBe(0);
 
@@ -616,46 +736,71 @@ describe('SMS Channel', () => {
     });
 
     it('should forward channelId as channelSettings.channelId when present', async () => {
-      seedReconciledSession('CHtest123456789', { channelId: 'SMabcdef' });
-
-      await channel.sendResponse('CHtest123456789', 'Reply');
+      await channel.sendResponse(
+        reconciledSession('CHtest123456789', { metadata: { channelId: 'SMabcdef' } }),
+        'Reply'
+      );
 
       const body = JSON.parse(mockAdapter.history.post[0]!.data);
       expect(body.payload.channelSettings.channelId).toBe('SMabcdef');
     });
 
-    it('should throw when no session exists', async () => {
+    it('should rebuild the session from participants when given a bare id', async () => {
+      await channel.sendResponse('CHtest123456789', 'Reply');
+
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
+      expect(listParticipantsSpy).toHaveBeenCalledWith('CHtest123456789');
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.from).toEqual({ channel: 'SMS', participantId: 'PA111' });
+      expect(body.payload.to).toEqual([{ channel: 'SMS', participantId: 'PA222' }]);
+    });
+
+    it('should fall back to addresses when the session has no participant ids', async () => {
+      await channel.sendResponse(
+        reconciledSession('CHtest123456789', {
+          authorInfo: { address: '+15559876543' },
+          aiAgentInfo: { address: '+15551234567' },
+        }),
+        'Reply'
+      );
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.from).toEqual({ channel: 'SMS', address: '+15551234567' });
+      expect(body.payload.to).toEqual([{ channel: 'SMS', address: '+15559876543' }]);
+    });
+
+    it('should throw when the bare id has no participants on SMS', async () => {
+      listParticipantsSpy.mockResolvedValue([]);
+
       await expect(channel.sendResponse('CHnonexistent', 'Test')).rejects.toThrow(
-        'without a reconciled session'
+        'no recipient resolved'
+      );
+    });
+
+    it('should throw when participants cannot be read for a bare id', async () => {
+      listParticipantsSpy.mockRejectedValue(new Error('CO down'));
+
+      await expect(channel.sendResponse('CHtest123456789', 'Test')).rejects.toThrow(
+        'could not read participants'
       );
     });
 
     it('should throw when session is missing authorInfo', async () => {
-      // Start conversation but don't populate authorInfo or aiAgentInfo
-      (channel as any).activeConversations.set('CHtest123456789', {
-        conversationId: 'CHtest123456789',
-        channel: 'sms',
-        startedAt: new Date(),
-        metadata: {},
-      });
+      const session = reconciledSession();
+      delete session.authorInfo;
 
-      await expect(channel.sendResponse('CHtest123456789', 'Test')).rejects.toThrow(
-        'without a reconciled session'
-      );
+      await expect(channel.sendResponse(session, 'Test')).rejects.toThrow('no recipient resolved');
+      expect(mockAdapter.history.post.length).toBe(0);
     });
 
-    it('should throw when session is missing aiAgentInfo', async () => {
-      (channel as any).activeConversations.set('CHtest123456789', {
-        conversationId: 'CHtest123456789',
-        channel: 'sms',
-        startedAt: new Date(),
-        authorInfo: { address: '+15559876543', participantId: 'PA123' },
-        metadata: {},
-      });
+    it('should send from the channel default when session is missing aiAgentInfo', async () => {
+      const session = reconciledSession();
+      delete session.aiAgentInfo;
 
-      await expect(channel.sendResponse('CHtest123456789', 'Reply')).rejects.toThrow(
-        'without a reconciled session'
-      );
+      await channel.sendResponse(session, 'Reply');
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.from).toEqual({ channel: 'SMS', address: '+15551234567' });
     });
   });
 
@@ -686,7 +831,10 @@ describe('SMS Channel', () => {
       });
 
       await vi.waitFor(() => {
-        expect(sendResponseSpy).toHaveBeenCalledWith('CHtest123456789', 'Auto-sent response');
+        expect(sendResponseSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId: 'CHtest123456789' }),
+          'Auto-sent response'
+        );
       });
     });
 
@@ -739,7 +887,10 @@ describe('SMS Channel', () => {
       });
 
       await vi.waitFor(() => {
-        expect(sendResponseSpy).toHaveBeenCalledWith('CHtest123456789', 'Async auto-sent response');
+        expect(sendResponseSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId: 'CHtest123456789' }),
+          'Async auto-sent response'
+        );
       });
     });
   });
@@ -892,8 +1043,6 @@ describe('SMS Channel', () => {
         id: `comms_${conversationId}`,
         conversationId,
         content: { type: 'TEXT', text: 'hello' },
-        // No author.participantId: keeps isOwnMessage on its stateless fast path
-        // (no listParticipants API call) so these tests stay hermetic.
         author: { address: CUSTOMER, channel: 'SMS' },
         ...(recipientAddress !== undefined
           ? { recipients: [{ channel: 'SMS', address: recipientAddress, participantId: 'PA_agent' }] }
@@ -959,6 +1108,7 @@ describe('SMS Channel', () => {
     it('inbound agent address is derived from the webhook recipient', async () => {
       const multiTac = await createTestTAC(multiConfig());
       const multiChannel = new SMSChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([agentParticipant(), customerParticipant()]);
       const reconcileSpy = vi
         .spyOn(multiChannel as any, 'reconcileParticipants')
         .mockResolvedValue([agentParticipant(), customerParticipant()]);
@@ -966,7 +1116,10 @@ describe('SMS Channel', () => {
       await multiChannel.processWebhook(inboundWebhook('conv1', AGENT_A));
 
       expect(reconcileSpy).toHaveBeenCalled();
-      expect(reconcileSpy.mock.calls[0]![1]).toMatchObject({ channel: 'SMS', address: AGENT_A });
+      const sessionArg = reconcileSpy.mock.calls[0]![0] as ConversationSession;
+      expect(sessionArg.aiAgentInfo?.address).toBe(AGENT_A);
+      // The participant list fetched once is handed to reconcile
+      expect(reconcileSpy.mock.calls[0]![1]).toEqual([agentParticipant(), customerParticipant()]);
     });
 
     it('drops an inbound message addressed to an unconfigured number', async () => {
@@ -980,20 +1133,26 @@ describe('SMS Channel', () => {
       expect(errors).toHaveLength(1);
       expect(errors[0]!.context?.dropped_inbound).toBe(true);
       expect(errors[0]!.context?.channel).toBe('SMS');
-      expect(channel.isConversationActive('conv2')).toBe(false);
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
     });
 
     it('inbound to the second number sets aiAgentInfo to that number end-to-end', async () => {
       const multiTac = await createTestTAC(multiConfig());
       const multiChannel = new SMSChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([
+        agentParticipant(AGENT_B, 'PA_agent2'),
+        customerParticipant(),
+      ]);
       vi.spyOn(multiChannel as any, 'reconcileParticipants').mockResolvedValue([
         agentParticipant(AGENT_B, 'PA_agent2'),
         customerParticipant(),
       ]);
+      const seen: ConversationSession[] = [];
+      multiChannel.on('messageReceived', data => seen.push(data.session));
 
       await multiChannel.processWebhook(inboundWebhook('conv_second', AGENT_B));
 
-      const session = multiChannel.getConversationSession('conv_second' as any);
+      const session = seen[0];
       expect(session?.aiAgentInfo?.address).toBe(AGENT_B);
       expect(session?.aiAgentInfo?.participantId).toBe('PA_agent2');
     });
@@ -1002,7 +1161,7 @@ describe('SMS Channel', () => {
       const multiTac = await createTestTAC(multiConfig());
       const multiChannel = new SMSChannel(multiTac);
       // Agent participant carries BOTH numbers, the default (AGENT_A) listed first.
-      vi.spyOn(multiChannel as any, 'reconcileParticipants').mockResolvedValue([
+      const participants = [
         {
           id: 'PA_agent_multi',
           conversationId: 'conv_x',
@@ -1014,25 +1173,33 @@ describe('SMS Channel', () => {
           ],
         },
         customerParticipant(),
-      ]);
+      ];
+      listParticipantsSpy.mockResolvedValue(participants);
+      vi.spyOn(multiChannel as any, 'reconcileParticipants').mockResolvedValue(participants);
+      const seen: ConversationSession[] = [];
+      multiChannel.on('messageReceived', data => seen.push(data.session));
 
       await multiChannel.processWebhook(inboundWebhook('conv_multi_addr', AGENT_B));
 
-      const session = multiChannel.getConversationSession('conv_multi_addr' as any);
+      const session = seen[0];
       // The number the customer contacted, not the participant's first-listed address.
       expect(session?.aiAgentInfo?.address).toBe(AGENT_B);
       expect(session?.aiAgentInfo?.participantId).toBe('PA_agent_multi');
     });
 
-    it('falls back (agentAddress undefined) when the webhook has no channel recipient', async () => {
+    it('falls back to the configured number the participants hold when the webhook has no channel recipient', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new SMSChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([agentParticipant(AGENT_B), customerParticipant()]);
       const reconcileSpy = vi
-        .spyOn(channel as any, 'reconcileParticipants')
-        .mockResolvedValue([agentParticipant(), customerParticipant()]);
+        .spyOn(multiChannel as any, 'reconcileParticipants')
+        .mockResolvedValue([agentParticipant(AGENT_B), customerParticipant()]);
 
-      await channel.processWebhook(inboundWebhook('conv3', undefined));
+      await multiChannel.processWebhook(inboundWebhook('conv3', undefined));
 
       expect(reconcileSpy).toHaveBeenCalled();
-      expect(reconcileSpy.mock.calls[0]![1]).toBeUndefined();
+      const sessionArg = reconcileSpy.mock.calls[0]![0] as ConversationSession;
+      expect(sessionArg.aiAgentInfo?.address).toBe(AGENT_B);
     });
   });
 });

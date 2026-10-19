@@ -47,6 +47,12 @@ export class TACConfig {
   public readonly memoryConfig: TACConfigData['memoryConfig'];
   public readonly conversationConfigurationId?: string;
   public readonly voicePublicDomain?: string;
+  /**
+   * This process's own directly-routable host. When set, the WebSocket and
+   * action URLs (and call-event callbacks on calls TAC places) point here
+   * instead of at {@link voicePublicDomain}. See {@link voiceCallbackDomain}.
+   */
+  public readonly instancePublicDomain?: string;
   /** Path the voice WebSocket is served at (default '/ws'). */
   public readonly voiceWebsocketPath: string;
   /** Path the ConversationRelay action callback is served at (default '/conversation-relay-callback'). */
@@ -92,6 +98,9 @@ export class TACConfig {
     if (validatedConfig.voicePublicDomain) {
       this.voicePublicDomain = validatedConfig.voicePublicDomain;
     }
+    if (validatedConfig.instancePublicDomain) {
+      this.instancePublicDomain = validatedConfig.instancePublicDomain;
+    }
     // voiceWebsocketPath / voiceActionPath / voiceCallEventPath always have schema defaults
     this.voiceWebsocketPath = validatedConfig.voiceWebsocketPath;
     this.voiceActionPath = validatedConfig.voiceActionPath;
@@ -127,6 +136,8 @@ export class TACConfig {
    * - TWILIO_RCS_SENDER_ID / TWILIO_RCS_SENDER_IDS: RCS Sender ID(s) for the RCS channel
    * - TWILIO_CONVERSATION_CONFIGURATION_ID: Conversation Orchestrator configuration ID (enables orchestrated mode)
    * - TWILIO_VOICE_PUBLIC_DOMAIN: Public domain for voice routes (required for voice; a port and/or base path are allowed, e.g., 'abc123.ngrok.app', 'example.ngrok.app:8080', or 'example.com/server1')
+   * - TWILIO_INSTANCE_PUBLIC_DOMAIN: This process's own directly-routable host, for pinning a
+   *   call's out-of-band webhooks to the instance holding its WebSocket (multi-replica voice only)
    * - TWILIO_VOICE_WEBSOCKET_PATH: Path for the voice WebSocket (default: /ws)
    * - TWILIO_VOICE_ACTION_PATH: Path for the ConversationRelay action callback (default: /conversation-relay-callback)
    * - TWILIO_VOICE_CALL_EVENT_PATH: Base path for the call-event callbacks — status, async AMD, recording (default: /twilio/call-events)
@@ -296,6 +307,7 @@ export class TACConfig {
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
       voicePublicDomain: process.env[EnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN],
+      instancePublicDomain: process.env[EnvironmentVariables.TWILIO_INSTANCE_PUBLIC_DOMAIN],
       voiceWebsocketPath:
         process.env[EnvironmentVariables.TWILIO_VOICE_WEBSOCKET_PATH] || undefined,
       voiceActionPath: process.env[EnvironmentVariables.TWILIO_VOICE_ACTION_PATH] || undefined,
@@ -322,13 +334,22 @@ export class TACConfig {
   }
 
   /**
+   * Host Twilio should reach for a call in progress: {@link instancePublicDomain}
+   * if set, else the shared {@link voicePublicDomain}.
+   */
+  public get voiceCallbackDomain(): string | undefined {
+    return this.instancePublicDomain ?? this.voicePublicDomain;
+  }
+
+  /**
    * Public URL for a call-event callback, or `undefined` without a public domain.
    */
   public callEventUrl(kind: CallEventKind): string | undefined {
-    if (!this.voicePublicDomain) {
+    const domain = this.voiceCallbackDomain;
+    if (!domain) {
       return undefined;
     }
-    return `https://${this.voicePublicDomain}${this.callEventPath(kind)}`;
+    return `https://${domain}${this.callEventPath(kind)}`;
   }
 
   /**

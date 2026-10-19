@@ -111,7 +111,7 @@ export class TwiMLBuilderMediaStreams extends TwiMLBuilderBase<MediaStreamsTwiML
    *   2. the provider config's `defaultTwimlOptions` — channel-wide defaults
    *   3. `host` — per-call transport facts supplied by the host
    *   4. TAC defaults: the WebSocket URL derived from
-   *      `TACConfig.voicePublicDomain` + `voiceWebsocketPath`
+   *      `TACConfig.voiceCallbackDomain` + `voiceWebsocketPath`
    *
    * @param caller - Name of the calling method, used in the "no WebSocket URL"
    *   error so it points at the API the developer actually called.
@@ -139,8 +139,10 @@ export class TwiMLBuilderMediaStreams extends TwiMLBuilderBase<MediaStreamsTwiML
    *
    * `customParameters` replaces wholesale when set at a higher-priority layer —
    * there's no per-key merging.
+   *
+   * @internal
    */
-  protected buildTwimlOptions(
+  public buildTwimlOptions(
     host: VoiceTwiMLOptionsMediaStreams | undefined,
     perCall: VoiceTwiMLOptionsMediaStreams | undefined
   ): VoiceTwiMLOptionsMediaStreams {
