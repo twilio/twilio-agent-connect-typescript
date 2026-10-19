@@ -65,8 +65,6 @@ const voiceChannel = new VoiceChannel(tac, {
 // Register the per-call inbound customizer.
 voiceChannel.onInboundCallTwiml(customizeTwiml);
 
-tac.registerChannel(voiceChannel);
-
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel });
 
 await server.start();

@@ -30,8 +30,6 @@ setTracingDisabled(true);
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const rcsChannel = new RCSChannel(tac);
 
-tac.registerChannel(rcsChannel);
-
 const SYSTEM_INSTRUCTIONS =
   'You are a customer service agent speaking with a user over RCS. ' +
   'Keep responses short and conversational — a sentence or two. ' +
@@ -71,9 +69,7 @@ async function handleMessageReady(params: {
 
 tac.onMessageReady(handleMessageReady);
 
-const server = new TACServer(tac, {
-  voice: { host: '0.0.0.0', port: 8000 },
-});
+const server = new TACServer(tac, { messagingChannels: [rcsChannel] });
 
 server
   .start()

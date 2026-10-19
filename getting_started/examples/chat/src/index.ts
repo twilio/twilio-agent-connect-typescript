@@ -68,9 +68,6 @@ if (!coConfig.conversationsV1Bridge?.serviceId) {
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const chatChannel = new ChatChannel(tac, { agentAddress: CHAT_IDENTITY });
 
-// Register channel
-tac.registerChannel(chatChannel);
-
 const conversationHistory: Record<string, AgentInputItem[]> = {};
 
 const BASE_SYSTEM_PROMPT =
@@ -122,7 +119,7 @@ tac.onConversationEnded(({ session }) => {
   delete conversationHistory[session.conversationId];
 });
 
-const server = new TACServer(tac);
+const server = new TACServer(tac, { messagingChannels: [chatChannel] });
 
 // Layer the chat UI routes onto the same Fastify instance TAC provides.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

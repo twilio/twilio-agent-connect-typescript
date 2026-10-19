@@ -32,9 +32,6 @@ const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
 const smsChannel = new SMSChannel(tac);
 
-tac.registerChannel(voiceChannel);
-tac.registerChannel(smsChannel);
-
 const conversationHistory: Record<string, AgentInputItem[]> = {};
 
 tac.onMessageReady(async ({ conversationId, message, memory, session, channel, abortSignal }) => {
@@ -124,7 +121,7 @@ tac.onInterrupt(({ conversationId, utteranceUntilInterrupt }) => {
   }
 });
 
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel, messagingChannels: [smsChannel] });
 
 server
   .start()
