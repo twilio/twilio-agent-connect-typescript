@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TAC, TACConfig } from '@twilio/tac-core';
+import { TAC, TACConfig, SMSChannel } from '@twilio/tac-core';
 import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
 
 describe('TAC Core', () => {
@@ -114,6 +114,47 @@ describe('TAC Core', () => {
       }).not.toThrow();
     });
 
+  });
+
+  describe('channel registration', () => {
+    it('should not shut down a channel when the same instance is registered again', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const channel = new SMSChannel(tac);
+      const shutdownSpy = vi.spyOn(channel, 'shutdown');
+
+      tac.registerChannel(channel);
+      tac.registerChannel(channel);
+
+      expect(shutdownSpy).not.toHaveBeenCalled();
+      expect(tac.getChannel('sms')).toBe(channel);
+    });
+
+    it('should keep callbacks set between two registrations of the same instance', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const channel = new SMSChannel(tac);
+      const onError = vi.fn();
+
+      tac.registerChannel(channel);
+      channel.on('error', onError);
+      tac.registerChannel(channel);
+
+      (channel as any).handleError(new Error('boom'));
+
+      expect(onError).toHaveBeenCalledWith({ error: expect.any(Error) });
+    });
+
+    it('should shut down the previous channel when a different instance replaces it', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const first = new SMSChannel(tac);
+      const second = new SMSChannel(tac);
+      const shutdownSpy = vi.spyOn(first, 'shutdown');
+
+      tac.registerChannel(first);
+      tac.registerChannel(second);
+
+      expect(shutdownSpy).toHaveBeenCalledOnce();
+      expect(tac.getChannel('sms')).toBe(second);
+    });
   });
 
   describe('lifecycle', () => {

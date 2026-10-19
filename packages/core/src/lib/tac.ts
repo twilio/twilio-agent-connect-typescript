@@ -144,13 +144,29 @@ export class TAC {
   }
 
   /**
-   * Register a channel with the framework
+   * Register a channel with the framework, routing its inbound messages to the
+   * {@link TAC.onMessageReady} callback and shutting it down with {@link TAC.shutdown}.
+   *
+   * `TACServer` registers the channels passed to it (`voiceChannel` /
+   * `messagingChannels`), so you only need this when wiring channels into your
+   * own web framework instead of `TACServer`.
+   *
+   * Only one channel per type is registered: registering a different instance
+   * of the same type shuts down and replaces the existing one. Registering the
+   * same instance again is a no-op.
    */
   public registerChannel(channel: BaseChannel): void {
+    const existingChannel = this.channels.get(channel.channelType);
+    if (existingChannel === channel) {
+      // Re-running the setup would overwrite callbacks set since the first
+      // registration, and the replace path below would shut this channel down.
+      this.logger.debug({ channel: channel.channelType }, 'Channel already registered');
+      return;
+    }
+
     this.logger.info({ channel: channel.channelType }, 'Registering channel');
 
     // Remove existing channel of same type
-    const existingChannel = this.channels.get(channel.channelType);
     if (existingChannel) {
       this.logger.info({ channel: channel.channelType }, 'Replacing existing channel registration');
       existingChannel.shutdown();

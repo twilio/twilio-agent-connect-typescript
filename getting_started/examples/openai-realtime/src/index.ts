@@ -122,8 +122,6 @@ const voiceChannel = new VoiceChannel(
   })
 );
 
-tac.registerChannel(voiceChannel);
-
 // Print the full transcript once the Media Stream WebSocket closes. Read it
 // from the session handed to this callback: the session is dropped as soon as
 // this callback completes, so it is the last point the transcript is reachable.
@@ -137,7 +135,7 @@ tac.onConversationEnded(({ session }) => {
   }
 });
 
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel });
 
 await server.start();
 

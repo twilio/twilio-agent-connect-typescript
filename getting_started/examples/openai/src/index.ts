@@ -33,10 +33,6 @@ const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
 const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
 
-// Register channels
-tac.registerChannel(voiceChannel);
-tac.registerChannel(smsChannel);
-
 // Store conversation history per conversation
 const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
 
@@ -97,7 +93,7 @@ async function handleMessageReady(params: {
 tac.onMessageReady(handleMessageReady);
 
 // Create and start server
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel, messagingChannels: [smsChannel] });
 
 server
   .start()

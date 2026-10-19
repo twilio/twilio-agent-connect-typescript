@@ -32,9 +32,6 @@ const tac = await TAC.create({ config: TACConfig.fromEnv() });
 const voiceChannel = new VoiceChannel(tac);
 const smsChannel = new SMSChannel(tac);
 
-tac.registerChannel(voiceChannel);
-tac.registerChannel(smsChannel);
-
 const SYSTEM_INSTRUCTIONS =
   'You are a customer service agent speaking with a user over voice or SMS. ' +
   'Keep responses short and conversational — a sentence or two. ' +
@@ -87,7 +84,7 @@ async function handleMessageReady(params: {
 
 tac.onMessageReady(handleMessageReady);
 
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel, messagingChannels: [smsChannel] });
 
 server
   .start()

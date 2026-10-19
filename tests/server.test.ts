@@ -562,6 +562,196 @@ describe('TACServer messaging channel auto-discovery', () => {
   });
 });
 
+describe('TACServer registers channels passed to it', () => {
+  const getRelayOnlyConfig = () => ({
+    accountSid: 'ACtest123456789',
+    authToken: 'test_token_123',
+    apiKey: 'test_api_key',
+    apiSecret: 'test_api_token',
+    phoneNumber: '+15551234567',
+    voicePublicDomain: 'test.ngrok.io',
+  });
+  const getTestConfig = () => ({
+    ...getRelayOnlyConfig(),
+    conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+  });
+
+  const createMockWebSocket = () => {
+    const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+    return {
+      on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+        if (!handlers[event]) handlers[event] = [];
+        handlers[event].push(handler);
+      }),
+      send: vi.fn(),
+      close: vi.fn(),
+      readyState: 1,
+      _emit(event: string, ...args: any[]) {
+        for (const h of handlers[event] || []) {
+          h(...args);
+        }
+      },
+    };
+  };
+
+  const setupMessage = JSON.stringify({
+    type: 'setup',
+    sessionId: 'sess_CA_server_reg',
+    callSid: 'CA_server_reg',
+    from: '+15551112222',
+    to: '+15551234567',
+    direction: 'inbound',
+    callType: 'call',
+    callStatus: 'ringing',
+    accountSid: 'ACtest123456789',
+  });
+
+  const mockSmsParticipants = (channel: SMSChannel) =>
+    vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
+      {
+        id: 'PA111',
+        conversationId: 'CHserverreg',
+        accountId: 'ACtest123456789',
+        type: 'AI_AGENT',
+        addresses: [{ channel: 'SMS', address: '+15551234567' }],
+      },
+      {
+        id: 'PA222',
+        conversationId: 'CHserverreg',
+        accountId: 'ACtest123456789',
+        type: 'CUSTOMER',
+        addresses: [{ channel: 'SMS', address: '+15559876543' }],
+      },
+    ]);
+
+  const postWebhook = (port: number, body: unknown) =>
+    fetch(`http://localhost:${port}/webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  let tac: TAC;
+  let server: TACServer | undefined;
+  let currentPort: number;
+
+  beforeEach(async () => {
+    mockValidateRequest.mockReset();
+    mockValidateRequestWithBody.mockReset();
+    mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
+    currentPort = getNextPort();
+    server = undefined;
+
+    tac = await createTestTAC(new TACConfig(getTestConfig()));
+  });
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop().catch(() => {});
+    }
+    tac.shutdown();
+  });
+
+  it('fires onMessageReady for an SMS webhook without tac.registerChannel()', async () => {
+    const smsChannel = new SMSChannel(tac);
+    mockSmsParticipants(smsChannel);
+    const onMessageReady = vi.fn().mockReturnValue(null);
+    tac.onMessageReady(onMessageReady);
+
+    server = new TACServer(tac, {
+      development: true,
+      port: currentPort,
+      messagingChannels: [smsChannel],
+    });
+    await server.start();
+
+    await postWebhook(currentPort, {
+      eventType: 'CONVERSATION_CREATED',
+      data: { conversationId: 'CHserverreg' },
+    });
+    await postWebhook(currentPort, {
+      eventType: 'COMMUNICATION_CREATED',
+      data: {
+        conversationId: 'CHserverreg',
+        content: { type: 'TEXT', text: 'hello over sms' },
+        author: { address: '+15559876543', channel: 'SMS' },
+        recipients: [{ address: '+15551234567', channel: 'SMS' }],
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(onMessageReady).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'hello over sms', channel: 'sms' })
+      );
+    });
+  });
+
+  it('fires onMessageReady for a voice prompt without tac.registerChannel()', async () => {
+    // Relay-only TAC (no conversationConfigurationId): the first prompt uses the
+    // callSid as the conversation ID, so no Conversation Orchestrator mock is needed.
+    tac.shutdown();
+    tac = await createTestTAC(new TACConfig(getRelayOnlyConfig()));
+    const voiceChannel = new VoiceChannel(tac);
+    const onMessageReady = vi.fn().mockReturnValue(null);
+    tac.onMessageReady(onMessageReady);
+
+    server = new TACServer(tac, { voiceChannel });
+
+    const mockWs = createMockWebSocket();
+    voiceChannel.handleWebSocketConnection(mockWs as any);
+    mockWs._emit('message', Buffer.from(setupMessage));
+    mockWs._emit('message', Buffer.from(JSON.stringify({ type: 'prompt', voicePrompt: 'Hi' })));
+
+    await vi.waitFor(() => {
+      expect(onMessageReady).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Hi', channel: 'voice' })
+      );
+    });
+  });
+
+  it('does not shut down a channel that was also registered with tac.registerChannel()', async () => {
+    const smsChannel = new SMSChannel(tac);
+    const voiceChannel = new VoiceChannel(tac);
+    tac.registerChannel(smsChannel);
+    tac.registerChannel(voiceChannel);
+    const smsShutdown = vi.spyOn(smsChannel, 'shutdown');
+    const voiceShutdown = vi.spyOn(voiceChannel, 'shutdown');
+
+    server = new TACServer(tac, { voiceChannel, messagingChannels: [smsChannel] });
+
+    expect(smsShutdown).not.toHaveBeenCalled();
+    expect(voiceShutdown).not.toHaveBeenCalled();
+    expect(tac.getChannel('sms')).toBe(smsChannel);
+    expect(tac.getChannel('voice')).toBe(voiceChannel);
+  });
+
+  it('routes to the channel passed to TACServer over a different one registered on TAC', async () => {
+    const registered = new SMSChannel(tac);
+    const passed = new SMSChannel(tac);
+    tac.registerChannel(registered);
+    const registeredShutdown = vi.spyOn(registered, 'shutdown');
+
+    server = new TACServer(tac, { messagingChannels: [passed] });
+
+    expect(tac.getChannel('sms')).toBe(passed);
+    expect(registeredShutdown).toHaveBeenCalledOnce();
+  });
+
+  it('shuts down channels passed only to TACServer on tac.shutdown()', async () => {
+    const smsChannel = new SMSChannel(tac);
+    const voiceChannel = new VoiceChannel(tac);
+    const smsShutdown = vi.spyOn(smsChannel, 'shutdown');
+    const voiceShutdown = vi.spyOn(voiceChannel, 'shutdown');
+
+    server = new TACServer(tac, { voiceChannel, messagingChannels: [smsChannel] });
+    tac.shutdown();
+
+    expect(smsShutdown).toHaveBeenCalledOnce();
+    expect(voiceShutdown).toHaveBeenCalledOnce();
+  });
+});
+
 describe('TACServer voice TwiML', () => {
   const getTestConfig = () => ({
     accountSid: 'ACtest123456789',

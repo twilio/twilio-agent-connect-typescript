@@ -54,10 +54,19 @@ export interface TACServerConfig {
     cintel?: string;
   };
 
-  /** Voice channel instance (alternative to registering on TAC) */
+  /**
+   * Voice channel to serve. The server registers it on TAC (see
+   * {@link TAC.registerChannel}), so it doesn't need registering separately.
+   * Defaults to the voice channel already registered on TAC, if any.
+   */
   voiceChannel?: VoiceChannel;
 
-  /** Messaging channel instances — webhooks are fanned out to all (alternative to registering on TAC) */
+  /**
+   * Messaging channels to serve; conversation webhooks are fanned out to all of
+   * them. The server registers each on TAC (see {@link TAC.registerChannel}), so
+   * they don't need registering separately. Defaults to the SMS, RCS, Chat and
+   * WhatsApp channels already registered on TAC.
+   */
   messagingChannels?: MessagingChannel[];
 }
 
@@ -178,9 +187,16 @@ export class TACServer {
     }
     this.webhookChannels.push(...this.messagingChannels);
 
+    // Register explicitly passed channels so their messages reach onMessageReady
+    // and tac.shutdown() stops them. Channels resolved from tac.getChannel() are
+    // already registered, which makes this a no-op for them.
+    for (const channel of this.webhookChannels) {
+      tac.registerChannel(channel);
+    }
+
     if (this.webhookChannels.length === 0) {
       console.warn(
-        'TACServer: No channels configured for webhook processing. Register channels with TAC to enable webhooks.'
+        'TACServer: No channels configured for webhook processing. Pass `voiceChannel` / `messagingChannels` to enable webhooks.'
       );
     }
     // Use the user-supplied Fastify instance if provided; otherwise create

@@ -90,8 +90,6 @@ tac.onConversationEnded(({ session }) => {
   accountNumbers.delete(session.conversationId);
 });
 
-tac.registerChannel(voiceChannel);
-
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel });
 
 await server.start();

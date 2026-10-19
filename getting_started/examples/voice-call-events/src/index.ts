@@ -65,9 +65,7 @@ voiceChannel.onRecording(event => {
   console.log(`[RECORDING] ${event.callSid}: ${event.recordingStatus} ${event.recordingUrl}`);
 });
 
-tac.registerChannel(voiceChannel);
-
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel });
 await server.start();
 
 const result = await voiceChannel.initiateOutboundConversation({

@@ -36,9 +36,6 @@ const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
 const whatsappChannel = new WhatsAppChannel(tac);
 
-// Register channel
-tac.registerChannel(whatsappChannel);
-
 const conversationHistory: Record<string, AgentInputItem[]> = {};
 
 const SYSTEM_INSTRUCTIONS =
@@ -83,7 +80,7 @@ async function handleMessageReady(params: {
 tac.onMessageReady(handleMessageReady);
 
 // Create and start server (auto-discovers WhatsApp channel)
-const server = new TACServer(tac);
+const server = new TACServer(tac, { messagingChannels: [whatsappChannel] });
 
 server
   .start()
