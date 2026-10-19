@@ -38,6 +38,10 @@ Create services manually through the [Twilio Console](https://1console.twilio.co
 
 TAC includes examples for different integration approaches. Each one is a self-contained npm project under `examples/`.
 
+### Framework-Agnostic Example
+
+- **[`overview/`](examples/overview/)** — The core TAC pattern with no LLM SDK: memory injected into the system prompt with `MemoryPromptBuilder`, and a placeholder where any LLM call goes
+
 ### Partner SDK Examples
 
 - **[`openai/`](examples/openai/)** — OpenAI Chat Completions across Voice and SMS with conversation memory and user context. **Start here.**
