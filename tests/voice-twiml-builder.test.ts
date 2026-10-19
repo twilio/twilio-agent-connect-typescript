@@ -39,7 +39,12 @@ const noopLogger = {
 } as unknown as Logger;
 
 function makeBuilder(config: Partial<TACConfig>): TestBuilder {
-  return new TestBuilder(config as TACConfig, undefined, noopLogger);
+  // A plain object has no getters, so mirror TACConfig.voiceCallbackDomain.
+  const withDomain = {
+    voiceCallbackDomain: config.instancePublicDomain ?? config.voicePublicDomain,
+    ...config,
+  };
+  return new TestBuilder(withDomain as TACConfig, undefined, noopLogger);
 }
 
 describe('TwiMLBuilderBase', () => {
@@ -67,6 +72,25 @@ describe('TwiMLBuilderBase', () => {
   it('returns undefined for the action URL when voicePublicDomain is unset', () => {
     const builder = makeBuilder({ voicePublicDomain: undefined, voiceActionPath: '/voice/action' });
     expect(builder.actionUrl()).toBeUndefined();
+  });
+
+  it('prefers instancePublicDomain for the websocket and action URLs', () => {
+    const builder = makeBuilder({
+      voicePublicDomain: 'shared.example.com',
+      instancePublicDomain: 'replica-1.example.com',
+      voiceWebsocketPath: '/ws',
+      voiceActionPath: '/voice/action',
+    });
+    expect(builder.websocketUrl()).toBe('wss://replica-1.example.com/ws');
+    expect(builder.actionUrl()).toBe('https://replica-1.example.com/voice/action');
+  });
+
+  it('derives the URLs from instancePublicDomain alone', () => {
+    const builder = makeBuilder({
+      instancePublicDomain: 'replica-1.example.com',
+      voiceWebsocketPath: '/ws',
+    });
+    expect(builder.websocketUrl()).toBe('wss://replica-1.example.com/ws');
   });
 
   it('overlays only explicitly-set source fields, honouring skip', () => {

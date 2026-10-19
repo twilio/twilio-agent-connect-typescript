@@ -10,18 +10,20 @@ import {
   GPT_LIVE_SESSION_ID_METADATA_KEY,
   TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE,
 } from '../packages/core/src/channels/voice/media-streams/gpt-live/provider';
+import { DEFAULT_EXPIRING_MAP_TTL_MS } from '../packages/core/src/util/expiring-map';
 
 const validSessionConfig = {
   model: 'gpt-live-1',
   audio: { format: TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE },
 };
 
-/** Spelled out here because the provider keeps the constant module-private. */
+/** Spelled out here so a rename of the wire key fails these tests. */
 const SESSION_CONFIG_TOKEN_PARAM_LITERAL = '_tac_session_config_token';
 
 function makeTacConfigStub() {
   return {
     voicePublicDomain: 'example.ngrok.io',
+    voiceCallbackDomain: 'example.ngrok.io',
     voiceWebsocketPath: '/voice-stream',
     isOrchestratorEnabled: () => false,
   } as never;
@@ -51,8 +53,11 @@ function makeChannelStub() {
       sessions.set(id, session);
       return session;
     },
-    endConversationInternal: async (id: string) => {
+    isConversationActive: (id: string) => sessions.has(id),
+    releaseSessionInternal: async (id: string) => {
+      const session = sessions.get(id);
       sessions.delete(id);
+      return session;
     },
     // The inherited `handleModelMessage` looks the session up through this
     // before it calls `dispatchModelEvent`; without it every model event is
@@ -347,8 +352,10 @@ describe('GPTLiveProvider outbound', () => {
 
       const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
       expect(provider.peekPendingSessionConfig(token)).toBeDefined();
+      // Expiry is lazy: nothing is armed to keep the process alive.
+      expect(vi.getTimerCount()).toBe(0);
 
-      vi.advanceTimersByTime(120_000);
+      vi.advanceTimersByTime(DEFAULT_EXPIRING_MAP_TTL_MS);
       expect(provider.peekPendingSessionConfig(token)).toBeUndefined();
       expect(provider.pendingSessionConfigCount()).toBe(0);
     } finally {
@@ -362,46 +369,56 @@ describe('GPTLiveProvider inbound', () => {
     vi.useFakeTimers();
     try {
       const { provider } = makeProvider({
-        onInboundCallSessionConfig: async () => ({ ...validSessionConfig, instructions: 'inbound' }),
+        onInboundCallSessionConfig: async () => ({
+          ...validSessionConfig,
+          instructions: 'inbound',
+        }),
       });
       // Twilio answered the webhook — the override is stashed — but never opened
       // the Media Stream, so nothing will ever drain it on the connect path.
-      await provider.handleIncomingCall({ callSid: 'CA1', extra: {} } as never);
-      expect(provider.peekPendingSessionConfig('CA1')).toBeDefined();
-
-      vi.advanceTimersByTime(120_000);
+      const twiml = await provider.handleIncomingCall({ callSid: 'CA1', extra: {} } as never);
+      const token = tokenFromTwiml(twiml);
+      expect(provider.peekPendingSessionConfig(token)).toBeDefined();
+      // Keyed by the token on the TwiML, never by the call SID.
       expect(provider.peekPendingSessionConfig('CA1')).toBeUndefined();
+
+      vi.advanceTimersByTime(DEFAULT_EXPIRING_MAP_TTL_MS);
+      expect(provider.peekPendingSessionConfig(token)).toBeUndefined();
       expect(provider.pendingSessionConfigCount()).toBe(0);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('cancels the inbound expiry once the stream connects and consumes the stash', async () => {
-    vi.useFakeTimers();
-    try {
-      const { provider } = makeProvider({
-        onInboundCallSessionConfig: async () => ({ ...validSessionConfig, instructions: 'inbound' }),
-      });
-      await provider.handleIncomingCall({ callSid: 'CA1', extra: {} } as never);
-      expect(provider.peekPendingSessionConfig('CA1')).toBeDefined();
+  it('claims the inbound stash by the token the stream carries back', async () => {
+    const { provider } = makeProvider({
+      onInboundCallSessionConfig: async () => ({ ...validSessionConfig, instructions: 'inbound' }),
+    });
+    const twiml = await provider.handleIncomingCall({ callSid: 'CA1', extra: {} } as never);
+    const token = tokenFromTwiml(twiml);
 
-      const modelWs = new FakeSocket();
-      startCall(provider, modelWs); // connects call sid CA1
-      await vi.advanceTimersByTimeAsync(0);
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs, { [SESSION_CONFIG_TOKEN_PARAM_LITERAL]: token });
+    await vi.waitFor(() => expect(modelWs.json().some(m => m.type === 'session.start')).toBe(true));
 
-      // The connect path drained the stash into session.start and cancelled its
-      // expiry timer.
-      const start = modelWs.json().find(m => m.type === 'session.start');
-      expect((start!.session as Record<string, string>).instructions).toBe('inbound');
-      expect(provider.pendingSessionConfigCount()).toBe(0);
+    // The connect path drained the stash into session.start.
+    const start = modelWs.json().find(m => m.type === 'session.start');
+    expect((start!.session as Record<string, string>).instructions).toBe('inbound');
+    expect(provider.pendingSessionConfigCount()).toBe(0);
+  });
 
-      // The cancelled timer never fires later to churn state that is already gone.
-      vi.advanceTimersByTime(120_000);
-      expect(provider.pendingSessionConfigCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+  it('falls back to the default and warns when the stash is on another instance', async () => {
+    const { provider, channel } = makeProvider();
+    const modelWs = new FakeSocket();
+    startCall(provider, modelWs, { [SESSION_CONFIG_TOKEN_PARAM_LITERAL]: 'tok_elsewhere' });
+    await vi.waitFor(() => expect(modelWs.json().some(m => m.type === 'session.start')).toBe(true));
+
+    const start = modelWs.json().find(m => m.type === 'session.start');
+    expect((start!.session as Record<string, string>).model).toBe('gpt-live-1');
+    expect(channel.logger.warn).toHaveBeenCalledWith(
+      { conversation_id: 'CA1' },
+      expect.stringContaining('instancePublicDomain')
+    );
   });
 });
 
@@ -1065,26 +1082,17 @@ describe('GPTLiveProvider teardown', () => {
     expect(channel.getActiveConversations().has('CA1')).toBe(false);
   });
 
-  it('clears its pending token expiries on shutdown', async () => {
-    vi.useFakeTimers();
-    try {
-      const { provider, createCall } = makeProvider();
-      await provider.initiateOutboundConversation({
-        to: '+15551112222',
-        sessionConfig: { ...validSessionConfig },
-      } as never);
-      const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
-      expect(provider.peekPendingSessionConfig(token)).toBeDefined();
-      expect(vi.getTimerCount()).toBe(1);
+  it('clears its pending session configs on shutdown', async () => {
+    const { provider, createCall } = makeProvider();
+    await provider.initiateOutboundConversation({
+      to: '+15551112222',
+      sessionConfig: { ...validSessionConfig },
+    } as never);
+    const token = tokenFromTwiml(createCall.mock.calls[0][0].twiml);
+    expect(provider.peekPendingSessionConfig(token)).toBeDefined();
 
-      provider.shutdown();
+    provider.shutdown();
 
-      // The base class clears the stash; the expiry timer that would have
-      // cleared it later is this provider's own to cancel.
-      expect(provider.pendingSessionConfigCount()).toBe(0);
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(provider.pendingSessionConfigCount()).toBe(0);
   });
 });

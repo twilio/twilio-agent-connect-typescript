@@ -115,6 +115,105 @@ describe('ConversationClient', () => {
     });
   });
 
+  describe('conversation metadata', () => {
+    const conversation = (metadata?: unknown) => ({
+      id: 'CH125',
+      accountId: 'AC123456',
+      configurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      status: 'ACTIVE',
+      ...(metadata !== undefined ? { metadata } : {}),
+    });
+
+    it('createConversation sends metadata when given', async () => {
+      mockAdapter.onPost('/v2/Conversations').reply(200, conversation({ appointment_id: 'apt-1' }));
+
+      const result = await conversationClient.createConversation({
+        metadata: { appointment_id: 'apt-1' },
+      });
+
+      expect(JSON.parse(mockAdapter.history.post[0]!.data).metadata).toEqual({
+        appointment_id: 'apt-1',
+      });
+      expect(result.metadata).toEqual({ appointment_id: 'apt-1' });
+    });
+
+    it('createConversation omits metadata when not given', async () => {
+      mockAdapter.onPost('/v2/Conversations').reply(200, conversation());
+
+      await conversationClient.createConversation();
+
+      expect(JSON.parse(mockAdapter.history.post[0]!.data)).not.toHaveProperty('metadata');
+    });
+
+    it('createOrReuseConversation passes metadata to the create', async () => {
+      mockAdapter.onPost('/v2/Conversations').reply(200, conversation());
+
+      await conversationClient.createOrReuseConversation(
+        [{ type: 'CUSTOMER', addresses: [{ channel: 'SMS', address: '+15559876543' }] }],
+        { campaign: 'welcome' }
+      );
+
+      expect(JSON.parse(mockAdapter.history.post[0]!.data).metadata).toEqual({
+        campaign: 'welcome',
+      });
+    });
+
+    it('getConversation fetches a conversation with its metadata', async () => {
+      mockAdapter.onGet('/v2/Conversations/CH125').reply(200, conversation({ a: '1' }));
+
+      const result = await conversationClient.getConversation('CH125');
+
+      expect(result.id).toBe('CH125');
+      expect(result.metadata).toEqual({ a: '1' });
+    });
+
+    it('getConversation surfaces HTTP errors', async () => {
+      mockAdapter.onGet('/v2/Conversations/CH125').reply(404, { message: 'not found' });
+
+      await expect(conversationClient.getConversation('CH125')).rejects.toThrow(
+        'Failed to fetch conversation'
+      );
+    });
+
+    it('patchConversationMetadata PATCHes only the metadata', async () => {
+      mockAdapter
+        .onPatch('/v2/Conversations/CH125')
+        .reply(200, conversation({ earlier: 'kept', a: '1' }));
+
+      const result = await conversationClient.patchConversationMetadata('CH125', { a: '1' });
+
+      expect(mockAdapter.history.patch).toHaveLength(1);
+      expect(JSON.parse(mockAdapter.history.patch[0]!.data)).toEqual({ metadata: { a: '1' } });
+      expect(result.metadata).toEqual({ earlier: 'kept', a: '1' });
+    });
+
+    it('patchConversationMetadata surfaces HTTP errors', async () => {
+      mockAdapter.onPatch('/v2/Conversations/CH125').reply(400, { message: 'closed' });
+
+      await expect(conversationClient.patchConversationMetadata('CH125', { a: '1' })).rejects.toThrow(
+        'Failed to update conversation metadata'
+      );
+    });
+
+    it('keeps only string metadata values from the response', async () => {
+      mockAdapter
+        .onGet('/v2/Conversations/CH125')
+        .reply(200, conversation({ a: '1', n: 2, nested: { x: 'y' }, nil: null }));
+
+      const result = await conversationClient.getConversation('CH125');
+
+      expect(result.metadata).toEqual({ a: '1' });
+    });
+
+    it.each([null, 'text', ['a']])('treats non-object metadata %j as absent', async metadata => {
+      mockAdapter.onGet('/v2/Conversations/CH125').reply(200, conversation(metadata));
+
+      const result = await conversationClient.getConversation('CH125');
+
+      expect(result.metadata).toBeUndefined();
+    });
+  });
+
   describe('addParticipant()', () => {
     it('should add a participant successfully', async () => {
       const mockResponse = {

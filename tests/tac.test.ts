@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TAC, TACConfig } from '@twilio/tac-core';
+import { SMSChannel, TAC, TACConfig } from '@twilio/tac-core';
+import type { ConversationSession } from '@twilio/tac-core';
 import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
 
 describe('TAC Core', () => {
@@ -11,6 +12,25 @@ describe('TAC Core', () => {
     phoneNumber: '+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
   });
+
+  /** Stub the one participant lookup each inbound message makes. */
+  const stubParticipants = (tac: TAC) =>
+    vi.spyOn(tac.getConversationClient()!, 'listParticipants').mockResolvedValue([
+      {
+        id: 'PA111',
+        conversationId: 'CHtest',
+        accountId: 'ACtest123456789',
+        type: 'AI_AGENT',
+        addresses: [{ channel: 'SMS', address: '+15551234567' }],
+      },
+      {
+        id: 'PA222',
+        conversationId: 'CHtest',
+        accountId: 'ACtest123456789',
+        type: 'CUSTOMER',
+        addresses: [{ channel: 'SMS', address: '+15559876543' }],
+      },
+    ]);
 
   describe('initialization', () => {
     it('should prevent direct construction with clear error message', () => {
@@ -134,32 +154,11 @@ describe('TAC Core', () => {
       tac.registerChannel(channel);
 
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
-      // Short-circuit reconcile so the message-ready callback fires.
-      vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
-        {
-          id: 'PA111',
-          conversationId: 'CHtest',
-          accountId: 'ACtest123456789',
-          type: 'AI_AGENT',
-          addresses: [{ channel: 'SMS', address: '+15551234567' }],
-        },
-        {
-          id: 'PA222',
-          conversationId: 'CHtest',
-          accountId: 'ACtest123456789',
-          type: 'CUSTOMER',
-          addresses: [{ channel: 'SMS', address: '+15559876543' }],
-        },
-      ]);
+      stubParticipants(tac);
       const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
       const warnSpy = vi.spyOn(tac.logger, 'warn');
 
       tac.onMessageReady(() => '');
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest' },
-      });
 
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
@@ -187,14 +186,11 @@ describe('TAC Core', () => {
       tac.registerChannel(channel);
 
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      stubParticipants(tac);
       const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+      const callback = vi.fn(() => null);
 
-      tac.onMessageReady(() => null);
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest' },
-      });
+      tac.onMessageReady(callback);
 
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
@@ -205,7 +201,7 @@ describe('TAC Core', () => {
         },
       });
 
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.waitFor(() => expect(callback).toHaveBeenCalled());
 
       expect(sendSpy).not.toHaveBeenCalled();
     });
@@ -217,14 +213,11 @@ describe('TAC Core', () => {
       tac.registerChannel(channel);
 
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      stubParticipants(tac);
       const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+      const callback = vi.fn(() => 123 as any);
 
-      tac.onMessageReady(() => 123 as any);
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest' },
-      });
+      tac.onMessageReady(callback);
 
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
@@ -235,7 +228,7 @@ describe('TAC Core', () => {
         },
       });
 
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.waitFor(() => expect(callback).toHaveBeenCalled());
 
       expect(sendSpy).not.toHaveBeenCalled();
     });
@@ -247,14 +240,11 @@ describe('TAC Core', () => {
       tac.registerChannel(channel);
 
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as any);
+      stubParticipants(tac);
       const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+      const callback = vi.fn(() => ({ message: 'test' }) as any);
 
-      tac.onMessageReady(() => ({ message: 'test' }) as any);
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest' },
-      });
+      tac.onMessageReady(callback);
 
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
@@ -265,9 +255,108 @@ describe('TAC Core', () => {
         },
       });
 
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await vi.waitFor(() => expect(callback).toHaveBeenCalled());
 
       expect(sendSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('messaging session hand-off', () => {
+    it("passes the channel's per-turn session to onMessageReady and back to sendResponse", async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const channel = new SMSChannel(tac);
+      tac.registerChannel(channel);
+      stubParticipants(tac);
+      const sendSpy = vi.spyOn(channel, 'sendResponse').mockResolvedValue();
+      const callback = vi.fn((_: { session: ConversationSession }) => 'reply');
+      tac.onMessageReady(callback);
+
+      await channel.processWebhook({
+        eventType: 'COMMUNICATION_CREATED',
+        data: {
+          conversationId: 'CHtest',
+          content: { type: 'TEXT', text: 'test' },
+          author: { address: '+15559876543', channel: 'SMS' },
+        },
+      });
+
+      await vi.waitFor(() => expect(sendSpy).toHaveBeenCalled());
+      const { session } = callback.mock.calls[0]![0];
+      expect(session.conversationId).toBe('CHtest');
+      expect(session.authorInfo?.participantId).toBe('PA222');
+      expect(session.aiAgentInfo?.participantId).toBe('PA111');
+      // The same session object goes back, so the send needs no lookup.
+      expect(sendSpy).toHaveBeenCalledWith(session, 'reply');
+    });
+  });
+
+  describe('listParticipantsShared', () => {
+    const participants = [
+      {
+        id: 'PA222',
+        conversationId: 'CHshared',
+        accountId: 'ACtest123456789',
+        type: 'CUSTOMER' as const,
+        addresses: [{ channel: 'SMS' as const, address: '+15559876543' }],
+      },
+    ];
+
+    it('shares one in-flight lookup between concurrent callers', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const lookup = vi
+        .spyOn(tac.getConversationClient()!, 'listParticipants')
+        .mockResolvedValue(participants);
+
+      const [a, b] = await Promise.all([
+        tac.listParticipantsShared('CHshared'),
+        tac.listParticipantsShared('CHshared'),
+      ]);
+
+      expect(a).toBe(participants);
+      expect(b).toBe(participants);
+      expect(lookup).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the result for a minute, then looks up again', async () => {
+      vi.useFakeTimers();
+      try {
+        const tac = await createTestTAC(getTestConfig());
+        const lookup = vi
+          .spyOn(tac.getConversationClient()!, 'listParticipants')
+          .mockResolvedValue(participants);
+
+        await tac.listParticipantsShared('CHshared');
+        vi.advanceTimersByTime(59_000);
+        await tac.listParticipantsShared('CHshared');
+        expect(lookup).toHaveBeenCalledTimes(1);
+
+        vi.advanceTimersByTime(2_000);
+        await tac.listParticipantsShared('CHshared');
+        expect(lookup).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not cache a failed lookup', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const lookup = vi
+        .spyOn(tac.getConversationClient()!, 'listParticipants')
+        .mockRejectedValueOnce(new Error('CO down'))
+        .mockResolvedValueOnce(participants);
+
+      await expect(tac.listParticipantsShared('CHshared')).rejects.toThrow('CO down');
+      await expect(tac.listParticipantsShared('CHshared')).resolves.toBe(participants);
+      expect(lookup).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects without Conversation Orchestrator', async () => {
+      const { conversationConfigurationId: _omitted, ...relayOnly } = getTestConfig();
+      const tac = await createTestTAC(relayOnly);
+
+      await expect(tac.listParticipantsShared('CHshared')).rejects.toThrow(
+        'Conversation Orchestrator is not configured'
+      );
     });
   });
 });

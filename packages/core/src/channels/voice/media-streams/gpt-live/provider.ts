@@ -2,6 +2,7 @@ import type { WebSocket } from 'ws';
 import {
   MediaStreamsOpenAIProvider,
   OPENAI_USER_AGENT,
+  SESSION_CONFIG_TOKEN_PARAM,
   describeIssues,
 } from '../shared/openai-provider';
 import {
@@ -42,19 +43,6 @@ export const TWILIO_AUDIO_FORMAT_FOR_GPT_LIVE = { type: 'audio/pcmu', rate: 8000
  * so never parse it, validate it, or branch on it.
  */
 export const GPT_LIVE_SESSION_ID_METADATA_KEY = 'gpt_live_session_id';
-
-/**
- * Reserved <Stream> customParameters key correlating an outbound call's
- * sessionConfig override to its WebSocket start event.
- */
-const SESSION_CONFIG_TOKEN_PARAM = '_tac_session_config_token';
-
-/**
- * How long a pending sessionConfig entry may outlive its outbound call before
- * it is purged — covers no-answer, busy, and every other outcome where Twilio
- * never connects the media stream to consume it via `registerCall`.
- */
-const SESSION_CONFIG_TOKEN_TTL_MS = 120_000;
 
 /**
  * The GPT-Live endpoint. Unlike Realtime's, it carries no `?model=` query
@@ -127,8 +115,6 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
    */
   declare protected readonly config: GPTLiveProviderConfig;
 
-  private readonly pendingTokenExpiries = new Map<string, ReturnType<typeof setTimeout>>();
-
   /** Calls whose teardown has begun but is still awaiting `session.closed`. */
   private readonly closingCalls = new Set<ConversationId>();
 
@@ -191,17 +177,10 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     const sessionConfig = validated.sessionConfig ?? null;
     let sessionConfigToken: string | null = null;
     if (sessionConfig !== null) {
-      sessionConfigToken = crypto.randomUUID().replace(/-/g, '');
-      // Rebuilt rather than mutated because `twimlOptions` is absent whenever
-      // the caller omitted it — there is no object to assign the token into,
-      // and the caller's own object is never written through.
-      twimlOptions = {
-        ...twimlOptions,
-        customParameters: {
-          ...twimlOptions?.customParameters,
-          [SESSION_CONFIG_TOKEN_PARAM]: sessionConfigToken,
-        },
-      };
+      sessionConfigToken = GPTLiveProvider.newSessionConfigToken();
+      // Rebuilt rather than mutated: the caller's own object is never written
+      // through.
+      twimlOptions = this.withSessionConfigToken(undefined, twimlOptions, sessionConfigToken);
     }
 
     const fromNumber = this.resolveFromNumber(validated.from);
@@ -250,10 +229,6 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         'Outbound voice call placed'
       );
 
-      if (sessionConfigToken !== null) {
-        this.armTokenExpiry(sessionConfigToken);
-      }
-
       return { callSid: call.sid };
     } catch (error) {
       if (sessionConfigToken !== null) {
@@ -268,36 +243,6 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       // outbound failure is the caller's to handle and is surfaced only by the
       // rethrow below.
       throw error;
-    }
-  }
-
-  /**
-   * Start the clock on a stashed token, so a call that never connects cannot
-   * strand its override in {@link pendingSessionConfigs} forever.
-   *
-   * Unref'd: a two-minute timer must not be what keeps the process alive after
-   * the call it belongs to is long over.
-   */
-  private armTokenExpiry(token: string): void {
-    const timer = setTimeout(() => {
-      this.pendingTokenExpiries.delete(token);
-      this.pendingSessionConfigs.delete(token);
-    }, SESSION_CONFIG_TOKEN_TTL_MS);
-    timer.unref();
-    this.pendingTokenExpiries.set(token, timer);
-  }
-
-  /**
-   * Stop the clock on a token, once the call it belongs to has claimed it.
-   *
-   * Without this a two-minute timer outlives every call that connected
-   * normally, waiting to purge an entry that is already gone.
-   */
-  private cancelTokenExpiry(token: string): void {
-    const timer = this.pendingTokenExpiries.get(token);
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      this.pendingTokenExpiries.delete(token);
     }
   }
 
@@ -427,23 +372,10 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
     const message = StreamStartMessageSchema.parse(start ?? {});
     const conversationId = message.callSid as ConversationId;
 
-    // This call's Media Stream connected, so an inbound override stashed when
-    // the TwiML was answered is about to be consumed — stop its expiry timer.
-    // A no-op for outbound calls, which arm no such timer.
-    this.cancelInboundConfigExpiry(conversationId);
-
-    // An outbound override was stashed under a token before the call was
-    // placed, because its SID wasn't known yet. Twilio hands the token back
-    // here, which is the first point the two can be joined up.
-    const token = message.customParameters[SESSION_CONFIG_TOKEN_PARAM];
-    if (token !== undefined) {
-      const pending = this.pendingSessionConfigs.get(token);
-      if (pending !== undefined) {
-        this.pendingSessionConfigs.delete(token);
-        this.pendingSessionConfigs.set(conversationId, pending);
-      }
-      this.cancelTokenExpiry(token);
-    }
+    // A per-call override was stashed under a token carried on the TwiML.
+    // Twilio hands the token back here, which is the first point the two can
+    // be joined up.
+    this.claimSessionConfig(message.customParameters[SESSION_CONFIG_TOKEN_PARAM], conversationId);
 
     const call = new CallState();
     call.twilioWs = ws;
@@ -473,7 +405,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
       // pending config just re-keyed under this id, and the started session.
       this.calls.delete(conversationId);
       this.pendingSessionConfigs.delete(conversationId);
-      void this.channel.endConversationInternal(conversationId).catch(() => undefined);
+      void this.channel.releaseSessionInternal(conversationId).catch(() => undefined);
       throw err;
     }
 
@@ -605,6 +537,10 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
   private async cleanupCall(conversationId: ConversationId): Promise<void> {
     const call = this.calls.get(conversationId);
     if (call === undefined || this.closingCalls.has(conversationId)) {
+      if (call === undefined) {
+        // Already torn down; drop anything stashed for a call that never ran.
+        this.pendingSessionConfigs.delete(conversationId);
+      }
       return;
     }
     // The call stays in `this.calls` across the wait below, unlike the sibling
@@ -653,6 +589,9 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
 
     this.calls.delete(conversationId);
     this.closingCalls.delete(conversationId);
+    // Drop any session config that was stashed for this call but never
+    // consumed (connectModel threw, or the stream stopped before it ran).
+    this.pendingSessionConfigs.delete(conversationId);
 
     if (modelWs !== null) {
       try {
@@ -661,22 +600,14 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         this.logger.debug({ err, conversation_id: conversationId }, 'Error closing model socket');
       }
     }
-    await this.channel.endConversationInternal(conversationId);
+    await this.channel.releaseSessionInternal(conversationId);
   }
 
   /**
    * Drop this provider's transport state on channel shutdown, including the
    * bookkeeping it keeps beyond the base class's.
-   *
-   * The token expiry timers are unref'd and delete themselves, so nothing hangs
-   * without this — but a shut-down provider must not still be holding entries
-   * for calls that can no longer arrive.
    */
   public override shutdown(): void {
-    for (const timer of this.pendingTokenExpiries.values()) {
-      clearTimeout(timer);
-    }
-    this.pendingTokenExpiries.clear();
     this.closingCalls.clear();
     super.shutdown();
   }

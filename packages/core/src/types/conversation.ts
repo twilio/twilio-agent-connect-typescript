@@ -219,7 +219,8 @@ export const ConversationSessionSchema = z.object({
    * Twilio Call SID on the Voice channel, unset on messaging. The correlation
    * key for call events (`VoiceChannel.onCallStatus` / `onAmd` / `onRecording`)
    * and `endCall`. Equals `conversationId` in relay-only mode; look the session
-   * up the other way with `VoiceChannel.getConversationSessionByCallSid`.
+   * up the other way with `VoiceChannel.getConversationSessionByCallSid`, or,
+   * from another instance, `VoiceChannel.resolveConversationSessionByCallSid`.
    */
   callSid: z.string().optional(),
   profileId: z.string().optional(),
@@ -234,6 +235,13 @@ export const ConversationSessionSchema = z.object({
    */
   aiAgentInfo: AuthorInfoSchema.optional(),
   profile: z.custom<Profile>().optional(),
+  /**
+   * Generic metadata storage for session-specific data. On messaging channels
+   * a session lasts one turn, so nothing here carries over to the next
+   * message; keep cross-turn state in your own store, keyed by
+   * `conversationId`. To read metadata stored on the conversation itself (from
+   * any instance), use `conversationMetadata(session)`.
+   */
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
   /**
    * Pending handoff payload set by the handoff tool. Voice channel sends
@@ -271,6 +279,13 @@ export function isParticipantId(value: string): value is ParticipantId {
   return value.length > 0;
 }
 
+/** Keep only the string-valued entries of an object. */
+function stringEntries(value: object): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  );
+}
+
 /**
  * Conversation response from Conversations Service API
  */
@@ -282,6 +297,16 @@ export const ConversationResponseSchema = z.object({
   configurationId: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  /**
+   * Customer-managed key-value data stored on the conversation. Only string
+   * entries are kept: a conversation can carry metadata written by other tools,
+   * and a non-string entry is dropped rather than failing the whole parse.
+   * Metadata that isn't an object becomes `undefined`.
+   */
+  metadata: z.preprocess(
+    v => (v !== null && typeof v === 'object' && !Array.isArray(v) ? stringEntries(v) : undefined),
+    z.record(z.string(), z.string()).optional()
+  ),
 });
 
 export type ConversationResponse = z.infer<typeof ConversationResponseSchema>;
@@ -434,6 +459,12 @@ export type ConversationConfiguration = z.infer<typeof ConversationConfiguration
 export const InitiateMessagingConversationOptionsSchema = z.object({
   to: z.string().min(1, 'Recipient address is required'),
   message: z.string().min(1, 'Initial message is required'),
+  /**
+   * Attached to the returned session. Entries with string values that fit
+   * Conversation Orchestrator's limits (8 keys of letters, digits, `.`, `_` or
+   * `-` up to 128 characters; values up to 512 characters) are also stored on
+   * the conversation, for `conversationMetadata(session)` on any replica.
+   */
   metadata: z.record(z.string(), z.unknown()).optional(),
   /**
    * Sender address to send from. Must be one of the channel's configured

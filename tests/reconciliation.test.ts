@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SMSChannel, TAC } from '@twilio/tac-core';
-import type { ConversationParticipant } from '@twilio/tac-core';
+import type { ConversationParticipant, ConversationSession } from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import axios, { AxiosError } from 'axios';
 import { createTestTAC } from './helpers/tac';
@@ -69,19 +69,46 @@ describe('Reconcile participants', () => {
     vi.restoreAllMocks();
   });
 
+  const session = (): ConversationSession => ({
+    conversationId: CONV_ID,
+    channel: 'sms',
+    startedAt: new Date(),
+    metadata: {},
+  });
+
+  // The caller fetches the participant list now (one call shared by the
+  // self-message check, reconciliation and profile resolution), so reconcile
+  // is handed it rather than fetching it itself.
+  let listed: ConversationParticipant[] = [];
+
   const callReconcile = async (): Promise<
     [ConversationParticipant, ConversationParticipant | null] | null
   > =>
     await (
       channel as unknown as {
         reconcileParticipants: (
-          id: string
+          session: ConversationSession,
+          participants: ConversationParticipant[]
         ) => Promise<[ConversationParticipant, ConversationParticipant | null] | null>;
       }
-    ).reconcileParticipants(CONV_ID);
+    ).reconcileParticipants(session(), listed);
 
-  const mockListParticipants = (participants: ConversationParticipant[]) =>
-    mockAdapter.onGet(`/v2/Conversations/${CONV_ID}/Participants`).reply(200, { participants });
+  const mockListParticipants = (participants: ConversationParticipant[]) => {
+    listed = participants;
+    return mockAdapter
+      .onGet(`/v2/Conversations/${CONV_ID}/Participants`)
+      .reply(200, { participants });
+  };
+
+  const inboundWebhook = (text = 'hello') => ({
+    eventType: 'COMMUNICATION_CREATED',
+    data: {
+      id: 'comms_communication_01test',
+      conversationId: CONV_ID,
+      content: { type: 'TEXT', text },
+      author: { address: CUSTOMER_ADDR, channel: 'SMS', participantId: 'PA_C' },
+    },
+  });
 
   it('happy path: both sides correctly typed → no PUTs', async () => {
     const agent = participant('PA_A', 'AI_AGENT', AGENT_ADDR);
@@ -227,13 +254,26 @@ describe('Reconcile participants', () => {
     expect(result).toBeNull();
   });
 
-  it('listParticipants failure → null (skips the webhook)', async () => {
+  it('listParticipants failure drops the inbound message', async () => {
+    // The fetch lives in the inbound handler now (one call shared by the
+    // self-message check, reconciliation, and profile resolution), so this
+    // exercises the whole inbound path rather than reconcile alone.
     mockAdapter.onGet(`/v2/Conversations/${CONV_ID}/Participants`).networkError();
 
-    const result = await callReconcile();
+    const errors: { error: Error; context?: Record<string, unknown> }[] = [];
+    channel.on('error', data => errors.push(data));
+    const messageCallback = vi.fn();
+    channel.on('messageReceived', messageCallback);
 
-    expect(result).toBeNull();
+    await channel.processWebhook(inboundWebhook());
+
+    expect(messageCallback).not.toHaveBeenCalled();
     expect(mockAdapter.history.put.length).toBe(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error.name).toBe('ParticipantLookupError');
+    expect(errors[0]!.context?.error_code).toBe('participant_lookup_failed');
+    expect(errors[0]!.context?.dropped_inbound).toBe(true);
+    expect(errors[0]!.context?.conversation_id).toBe(CONV_ID);
   });
 
   it('customer promotion: lookup miss creates a profile with configured trait group/field', async () => {
@@ -282,11 +322,14 @@ describe('Reconcile participants', () => {
   });
 
   it('surfaces reconcile failure via onError instead of silently dropping the inbound', async () => {
-    // Reconcile fails (listParticipants unreachable) so the inbound can't be
-    // matched to sendable participants. The message is intentionally not
+    // Reconcile fails (a HUMAN_AGENT owns TAC's address) so the inbound can't
+    // be matched to sendable participants. The message is intentionally not
     // delivered to the LLM (any reply would fail too), but the drop must be
     // observable by the app via the error callback — not swallowed.
-    mockAdapter.onGet(`/v2/Conversations/${CONV_ID}/Participants`).networkError();
+    mockListParticipants([
+      participant('PA_A', 'HUMAN_AGENT', AGENT_ADDR),
+      participant('PA_C', 'CUSTOMER', CUSTOMER_ADDR),
+    ]);
 
     const errors: { error: Error; context?: Record<string, unknown> }[] = [];
     channel.on('error', data => errors.push(data));
@@ -294,15 +337,7 @@ describe('Reconcile participants', () => {
     const messageCallback = vi.fn();
     channel.on('messageReceived', messageCallback);
 
-    await channel.processWebhook({
-      eventType: 'COMMUNICATION_CREATED',
-      data: {
-        id: 'comms_communication_01test',
-        conversationId: CONV_ID,
-        content: { type: 'TEXT', text: 'hello' },
-        author: { address: CUSTOMER_ADDR, channel: 'SMS', participantId: 'PA_C' },
-      },
-    });
+    await channel.processWebhook(inboundWebhook());
 
     expect(messageCallback).not.toHaveBeenCalled();
     expect(errors).toHaveLength(1);
@@ -328,29 +363,20 @@ describe('Reconcile participants', () => {
     };
     mockListParticipants([agent, customerWithProfile]);
 
-    const webhookEvent = {
-      eventType: 'COMMUNICATION_CREATED',
-      data: {
-        id: 'comms_communication_01test',
-        conversationId: CONV_ID,
-        content: { type: 'TEXT', text: 'hi' },
-        author: {
-          address: CUSTOMER_ADDR,
-          channel: 'SMS',
-          participantId: 'PA_C',
-        },
-      },
-    };
-
     // Short-circuit memory retrieval so we focus on the profileId lift.
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
+    const messageCallback = vi.fn();
+    channel.on('messageReceived', messageCallback);
 
-    await channel.processWebhook(webhookEvent);
+    await channel.processWebhook(inboundWebhook('hi'));
 
-    const session = (
-      channel as unknown as { activeConversations: Map<string, { profileId?: string }> }
-    ).activeConversations.get(CONV_ID);
-    expect(session).toBeDefined();
-    expect(session!.profileId).toBe('mem_profile_01abc');
+    // The session is per-turn and handed to the callback, not kept by the channel.
+    expect(messageCallback).toHaveBeenCalledTimes(1);
+    const { session: turnSession } = messageCallback.mock.calls[0]![0] as {
+      session: ConversationSession;
+    };
+    expect(turnSession.profileId).toBe('mem_profile_01abc');
+    expect(turnSession.aiAgentInfo?.participantId).toBe('PA_A');
+    expect(turnSession.authorInfo?.participantId).toBe('PA_C');
   });
 });

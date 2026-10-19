@@ -59,6 +59,21 @@ export class VoiceProvider {
   }
 
   /**
+   * Whether a Conversation Orchestrator `CLOSED` webhook will end this
+   * provider's conversations.
+   *
+   * Decides who owns `onConversationEnded`. `false` (the default): no CO
+   * conversation exists, so `VoiceChannel` fires it itself at teardown.
+   * `true`: only `onCallEnded` fires at teardown and the CLOSED webhook — which
+   * may reach another instance — does the rest.
+   *
+   * @internal
+   */
+  public get conversationClosedByOrchestrator(): boolean {
+    return false;
+  }
+
+  /**
    * Build the response for an inbound call. Default: not supported.
    *
    * @param _twimlRequest - Parsed Twilio webhook fields for the inbound call.

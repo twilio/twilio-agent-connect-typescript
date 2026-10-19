@@ -102,6 +102,17 @@ export class ConversationRelayProvider extends VoiceProvider {
   }
 
   /**
+   * ConversationRelay asks Conversation Orchestrator to create the
+   * conversation whenever TAC is orchestrated; in relay-only mode there is no
+   * CO conversation and nothing will ever close it for us.
+   *
+   * @internal
+   */
+  public override get conversationClosedByOrchestrator(): boolean {
+    return this.channel.isOrchestratorEnabledInternal();
+  }
+
+  /**
    * Get active WebSocket connection for a conversation
    */
   public override getWebSocket(conversationId: ConversationId): WebSocket | null {
@@ -156,7 +167,11 @@ export class ConversationRelayProvider extends VoiceProvider {
 
     const participants = await conversationClient.listParticipants(conversationId);
 
-    const customerParticipant = participants.find(p => p.type === 'CUSTOMER');
+    // A conversation grouped across channels may list another channel's
+    // customer first; the caller is the CUSTOMER on VOICE.
+    const customerParticipant = participants.find(
+      p => p.type === 'CUSTOMER' && p.addresses?.some(a => a.channel === 'VOICE')
+    );
     const customerAddress =
       customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
       fromNumber ??
@@ -417,7 +432,7 @@ export class ConversationRelayProvider extends VoiceProvider {
     ws.on('close', () => {
       // Call ended before any prompt claimed the lookup. A promise can't be
       // cancelled, so adopt what it registers and tear that down, or the
-      // WebSocket registration leaks. The conversation stays tracked (CLOSED).
+      // WebSocket registration leaks and the session is never released.
       const pendingInit = initPromise;
       initPromise = null;
       if (pendingInit && !conversationId) {
@@ -576,11 +591,25 @@ export class ConversationRelayProvider extends VoiceProvider {
   }
 
   /**
-   * Handle WebSocket disconnection. In orchestrated mode the conversation stays
-   * tracked until the CLOSED webhook (so a follow-up call can reuse it); in
-   * voice-only mode there is no such webhook, so it ends here.
+   * Clean up WebSocket and session resources when the connection closes.
+   *
+   * Runs unconditionally — the call is over in every mode once its socket is
+   * gone, so nothing local is kept waiting for a Conversation Orchestrator
+   * webhook that may land on a different instance. Releasing the session fires
+   * `onCallEnded` here and defers `onConversationEnded` to CO's CLOSED webhook
+   * when orchestrated.
+   *
+   * Idempotent: a second run for a call already torn down does nothing.
    */
   private async handleWebSocketDisconnect(conversationId: ConversationId): Promise<void> {
+    if (
+      !this.webSocketConnections.has(conversationId) &&
+      !this.promptQueues.has(conversationId) &&
+      !this.channel.isConversationActive(conversationId)
+    ) {
+      return;
+    }
+
     this.cancelStreamTask(conversationId);
     this.webSocketConnections.delete(conversationId);
     this.promptQueues.delete(conversationId);
@@ -598,9 +627,9 @@ export class ConversationRelayProvider extends VoiceProvider {
       orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
     });
 
-    if (!this.channel.isOrchestratorEnabledInternal()) {
-      await this.channel.endConversationInternal(conversationId);
-    }
+    // After Websocket Disconnected above, so it always precedes any
+    // Conversation Ended that teardown reports (relay-only).
+    await this.channel.releaseSessionInternal(conversationId);
   }
 
   /**
@@ -1067,11 +1096,12 @@ export class ConversationRelayProvider extends VoiceProvider {
     }
 
     if (payload.CallStatus === 'completed' && !this.channel.isOrchestratorEnabledInternal()) {
-      const conversationId = this.callSidToConversationId.get(payload.CallSid);
-      if (conversationId) {
-        this.callSidToConversationId.delete(payload.CallSid);
-        await this.channel.endConversationInternal(conversationId);
-      }
+      // Relay-only: conversationId == CallSid. No-ops when the WebSocket
+      // teardown already released the session, which is the usual case.
+      const conversationId =
+        this.callSidToConversationId.get(payload.CallSid) ?? (payload.CallSid as ConversationId);
+      this.callSidToConversationId.delete(payload.CallSid);
+      await this.channel.releaseSessionInternal(conversationId);
     }
 
     return { status: 200, content: 'OK', contentType: 'text/plain' };

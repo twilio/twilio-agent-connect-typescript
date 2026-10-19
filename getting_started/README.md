@@ -124,6 +124,7 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 ### Optional (Voice Channel)
 
 - `TWILIO_VOICE_PUBLIC_DOMAIN`: Public host for voice routes (required for voice, e.g., `abc123.ngrok.app`). May include a port and/or base path (e.g., `example.ngrok.app:8080` or `example.com/server1`). Schemes like `https://` and trailing slashes are stripped automatically.
+- `TWILIO_INSTANCE_PUBLIC_DOMAIN`: This process's own public hostname, only when running voice on more than one replica; leave unset for a single instance
 
 ### Optional (OpenAI Examples)
 

@@ -24,6 +24,7 @@ describe('TACConfig', () => {
       TWILIO_PHONE_NUMBERS: process.env.TWILIO_PHONE_NUMBERS,
       TWILIO_CONVERSATION_CONFIGURATION_ID: process.env.TWILIO_CONVERSATION_CONFIGURATION_ID,
       TWILIO_VOICE_PUBLIC_DOMAIN: process.env.TWILIO_VOICE_PUBLIC_DOMAIN,
+      TWILIO_INSTANCE_PUBLIC_DOMAIN: process.env.TWILIO_INSTANCE_PUBLIC_DOMAIN,
       TWILIO_REGION: process.env.TWILIO_REGION,
       TWILIO_STUDIO_HANDOFF_FLOW_SID: process.env.TWILIO_STUDIO_HANDOFF_FLOW_SID,
       TWILIO_RCS_SENDER_ID: process.env.TWILIO_RCS_SENDER_ID,
@@ -286,6 +287,25 @@ describe('TACConfig', () => {
       const config = TACConfig.fromEnv();
 
       expect(config.voicePublicDomain).toBe('192.168.1.100');
+    });
+
+    it('should read instancePublicDomain from TWILIO_INSTANCE_PUBLIC_DOMAIN', () => {
+      setRequiredEnvVars();
+      process.env.TWILIO_INSTANCE_PUBLIC_DOMAIN = 'https://pod-1.internal.example.com/';
+
+      const config = TACConfig.fromEnv();
+
+      // Normalized the same way as voicePublicDomain.
+      expect(config.instancePublicDomain).toBe('pod-1.internal.example.com');
+    });
+
+    it('should leave instancePublicDomain undefined when not set', () => {
+      setRequiredEnvVars();
+      delete process.env.TWILIO_INSTANCE_PUBLIC_DOMAIN;
+
+      const config = TACConfig.fromEnv();
+
+      expect(config.instancePublicDomain).toBeUndefined();
     });
 
     it('should allow voicePublicDomain to be undefined when not set', () => {
@@ -805,6 +825,58 @@ describe('TACConfig', () => {
       expect(cfg.rcsSenderIds).toEqual([]);
       expect(cfg.whatsappNumber).toBeUndefined();
       expect(cfg.whatsappNumbers).toEqual([]);
+    });
+  });
+
+  describe('voiceCallbackDomain', () => {
+    it('prefers instancePublicDomain over voicePublicDomain', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        voicePublicDomain: 'shared.example.com',
+        instancePublicDomain: 'pod-1.example.com',
+      });
+
+      expect(config.voiceCallbackDomain).toBe('pod-1.example.com');
+      expect(config.callEventUrl('status')).toBe(
+        'https://pod-1.example.com/twilio/call-events/status'
+      );
+    });
+
+    it('falls back to voicePublicDomain', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        voicePublicDomain: 'shared.example.com',
+      });
+
+      expect(config.instancePublicDomain).toBeUndefined();
+      expect(config.voiceCallbackDomain).toBe('shared.example.com');
+    });
+
+    it('is undefined with neither domain', () => {
+      const config = new TACConfig(getTestConfigData());
+
+      expect(config.voiceCallbackDomain).toBeUndefined();
+      expect(config.callEventUrl('status')).toBeUndefined();
+    });
+
+    it('normalizes instancePublicDomain like voicePublicDomain', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        instancePublicDomain: '  wss://pod-1.example.com:8443/  ',
+      });
+
+      expect(config.instancePublicDomain).toBe('pod-1.example.com:8443');
+    });
+
+    it('treats a blank instancePublicDomain as unset', () => {
+      const config = new TACConfig({
+        ...getTestConfigData(),
+        voicePublicDomain: 'shared.example.com',
+        instancePublicDomain: '   ',
+      });
+
+      expect(config.instancePublicDomain).toBeUndefined();
+      expect(config.voiceCallbackDomain).toBe('shared.example.com');
     });
   });
 });

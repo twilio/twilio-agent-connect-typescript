@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WhatsAppChannel, TAC } from '@twilio/tac-core';
+import {
+  WhatsAppChannel,
+  TAC,
+  ConversationClient,
+  ConversationParticipant,
+  ConversationSession,
+} from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
 
 describe('WhatsApp Channel', () => {
@@ -17,12 +23,49 @@ describe('WhatsApp Channel', () => {
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
+  const agentParticipant = (
+    address = 'whatsapp:+15551234567',
+    id = 'PA111'
+  ): ConversationParticipant => ({
+    id,
+    conversationId: 'CHtest123456789',
+    accountId: 'ACtest123456789',
+    type: 'AI_AGENT',
+    addresses: [{ channel: 'WHATSAPP', address }],
+  });
+  const customerParticipant = (profileId?: string): ConversationParticipant => ({
+    id: 'PA222',
+    conversationId: 'CHtest123456789',
+    accountId: 'ACtest123456789',
+    type: 'CUSTOMER',
+    ...(profileId ? { profileId } : {}),
+    addresses: [{ channel: 'WHATSAPP', address: 'whatsapp:+15559876543' }],
+  });
+
+  const inboundWebhook = (recipientAddress?: string) => ({
+    eventType: 'COMMUNICATION_CREATED',
+    data: {
+      conversationId: 'CHtest123456789',
+      content: { type: 'TEXT', text: 'hello' },
+      author: { address: 'whatsapp:+15559876543', channel: 'WHATSAPP' },
+      recipients:
+        recipientAddress !== undefined
+          ? [{ channel: 'WHATSAPP', address: recipientAddress }]
+          : [],
+    },
+  });
+
   let channel: WhatsAppChannel;
   let tac: TAC;
+  let listParticipantsSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
     channel = new WhatsAppChannel(tac);
+    // Every inbound message reads the conversation's participants once.
+    listParticipantsSpy = vi
+      .spyOn(ConversationClient.prototype, 'listParticipants')
+      .mockResolvedValue([agentParticipant(), customerParticipant()]);
     // Short-circuit memory retrieval
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
     // Short-circuit reconcileParticipants
@@ -50,8 +93,9 @@ describe('WhatsApp Channel', () => {
       expect(channel.channelType).toBe('whatsapp');
     });
 
-    it('should start with no active conversations', () => {
+    it('keeps no sessions (deprecated lookups return undefined/false)', () => {
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(channel.getConversationSession('CHtest123456789')).toBeUndefined();
     });
 
     it('should throw error if whatsappNumber is not configured', async () => {
@@ -124,7 +168,47 @@ describe('WhatsApp Channel', () => {
         message: 'Hello via WhatsApp',
         author: 'whatsapp:+15559876543',
         userMemory: undefined,
+        session: expect.objectContaining({
+          conversationId: 'CHtest123456789',
+          channel: 'whatsapp',
+          authorInfo: expect.objectContaining({ participantId: 'PA222' }),
+          aiAgentInfo: expect.objectContaining({ participantId: 'PA111' }),
+        }),
       });
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should ignore CONVERSATION_CREATED (nothing to start)', async () => {
+      await expect(
+        channel.processWebhook({
+          eventType: 'CONVERSATION_CREATED',
+          data: { conversationId: 'CHtest123456789' },
+        })
+      ).resolves.not.toThrow();
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
+    });
+
+    it('should fire onConversationEnded on CLOSED with a session rebuilt from participants', async () => {
+      const captured: ConversationSession[] = [];
+      listParticipantsSpy.mockResolvedValue([agentParticipant(), customerParticipant('prof_wa')]);
+      tac.onConversationEnded(({ session }) => {
+        captured.push(session);
+      });
+      tac.registerChannel(channel);
+
+      await channel.processWebhook({
+        eventType: 'CONVERSATION_UPDATED',
+        data: {
+          conversationId: 'CHtest123456789',
+          configurationId: getTestConfig().conversationConfigurationId,
+          status: 'CLOSED',
+        },
+      });
+
+      expect(captured).toHaveLength(1);
+      expect(captured[0].conversationId).toBe('CHtest123456789');
+      expect(captured[0].channel).toBe('whatsapp');
+      expect(captured[0].profileId).toBe('prof_wa');
     });
 
     it('should ignore messages from agent itself', async () => {
@@ -177,31 +261,47 @@ describe('WhatsApp Channel', () => {
   });
 
   describe('sendResponse', () => {
-    it('should throw error without reconciled session', async () => {
-      await expect(
-        channel.sendResponse('CHtest123456789', 'Hello')
-      ).rejects.toThrow(
-        'Unable to send WhatsApp: sendResponse called without a reconciled session'
+    it('should throw when no recipient resolves for a bare id', async () => {
+      listParticipantsSpy.mockResolvedValue([]);
+      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
+        'Unable to send WHATSAPP message: no recipient resolved'
       );
     });
 
+    it('should rebuild the session from participants for a bare id', async () => {
+      const createActionSpy = vi
+        .spyOn(tac.getConversationClient()!, 'createAction')
+        .mockResolvedValue(undefined as never);
+
+      await channel.sendResponse('CHtest123456789', 'Hi');
+
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
+      expect(createActionSpy).toHaveBeenCalledWith('CHtest123456789', {
+        type: 'SEND_MESSAGE',
+        payload: {
+          from: { channel: 'WHATSAPP', participantId: 'PA111' },
+          to: [{ channel: 'WHATSAPP', participantId: 'PA222' }],
+          content: { text: 'Hi' },
+        },
+      });
+    });
+
     it('should send WhatsApp message with reconciled session', async () => {
-      // Setup session with reconciled participants
-      const session = (channel as any).startConversation('CHtest123456789');
-      session.authorInfo = {
-        address: 'whatsapp:+15559876543',
-        participantId: 'PA222',
-      };
-      session.aiAgentInfo = {
-        address: 'whatsapp:+15551234567',
-        participantId: 'PA111',
+      const session: ConversationSession = {
+        conversationId: 'CHtest123456789',
+        channel: 'whatsapp',
+        startedAt: new Date(),
+        metadata: {},
+        authorInfo: { address: 'whatsapp:+15559876543', participantId: 'PA222' },
+        aiAgentInfo: { address: 'whatsapp:+15551234567', participantId: 'PA111' },
       };
 
       const conversationClient = tac.getConversationClient();
       const createActionSpy = vi.spyOn(conversationClient!, 'createAction').mockResolvedValue(undefined as never);
 
-      await channel.sendResponse('CHtest123456789', 'Hello from WhatsApp');
+      await channel.sendResponse(session, 'Hello from WhatsApp');
 
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
       expect(createActionSpy).toHaveBeenCalledWith('CHtest123456789', {
         type: 'SEND_MESSAGE',
         payload: {
@@ -441,6 +541,56 @@ describe('WhatsApp Channel', () => {
       });
 
       expect(initSpy.mock.calls[0]![0].from).toBe('whatsapp:+14440000000');
+    });
+
+    it('inbound agent address is derived from the webhook recipient', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new WhatsAppChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([
+        agentParticipant('whatsapp:+14440000000', 'PA_AGENT2'),
+        customerParticipant(),
+      ]);
+      const reconcileSpy = vi
+        .spyOn(multiChannel as any, 'reconcileParticipants')
+        .mockResolvedValue([
+          agentParticipant('whatsapp:+14440000000', 'PA_AGENT2'),
+          customerParticipant(),
+        ]);
+
+      await multiChannel.processWebhook(inboundWebhook('whatsapp:+14440000000'));
+
+      const sessionArg = reconcileSpy.mock.calls[0]![0] as ConversationSession;
+      expect(sessionArg.aiAgentInfo?.address).toBe('whatsapp:+14440000000');
+    });
+
+    it('drops an inbound message addressed to an unconfigured number without a lookup', async () => {
+      const reconcileSpy = vi.spyOn(channel as any, 'reconcileParticipants');
+      const errors: { error: Error; context?: Record<string, unknown> }[] = [];
+      channel.on('error', data => errors.push(data));
+
+      await channel.processWebhook(inboundWebhook('whatsapp:+19998887777'));
+
+      expect(reconcileSpy).not.toHaveBeenCalled();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.context?.dropped_inbound).toBe(true);
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the configured number the participants hold when the webhook has no recipient', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new WhatsAppChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([
+        agentParticipant('whatsapp:+14440000000'),
+        customerParticipant(),
+      ]);
+      const reconcileSpy = vi
+        .spyOn(multiChannel as any, 'reconcileParticipants')
+        .mockResolvedValue([agentParticipant('whatsapp:+14440000000'), customerParticipant()]);
+
+      await multiChannel.processWebhook(inboundWebhook(undefined));
+
+      const sessionArg = reconcileSpy.mock.calls[0]![0] as ConversationSession;
+      expect(sessionArg.aiAgentInfo?.address).toBe('whatsapp:+14440000000');
     });
   });
 });
