@@ -17,6 +17,7 @@ import type {
   ConversationResponse,
   SendMessageActionRequest,
 } from '@twilio/tac-core';
+import { createSendMessageTool } from '@twilio/tac-tools';
 import { createTestTAC } from './helpers/tac';
 import { _resetAnalytics } from '../packages/core/src/lib/analytics';
 
@@ -116,7 +117,11 @@ const inbound = (
 });
 
 const closed = (
-  opts: { convId?: string; metadata?: Record<string, unknown>; extra?: Record<string, unknown> } = {}
+  opts: {
+    convId?: string;
+    metadata?: Record<string, unknown>;
+    extra?: Record<string, unknown>;
+  } = {}
 ) => ({
   eventType: 'CONVERSATION_UPDATED',
   data: {
@@ -375,7 +380,8 @@ describe('Messaging horizontal scaling', () => {
 
       expect(counter.calls).toEqual(['listParticipants', 'createAction', 'createAction']);
       // The id-rebuilt session addresses the same participants.
-      const byId = counter.mocks.createAction!.mock.calls[0]![1] as unknown as SendMessageActionRequest;
+      const byId = counter.mocks.createAction!.mock
+        .calls[0]![1] as unknown as SendMessageActionRequest;
       expect(byId.payload.from.participantId).toBe('PA_AGENT');
       expect(byId.payload.to[0]!.participantId).toBe('PA_CUSTOMER');
     });
@@ -442,7 +448,11 @@ describe('Messaging horizontal scaling', () => {
     it.each([
       ['SMSChannel', SMSChannel, { channel: 'SMS', address: AGENT_NUMBER }],
       ['RCSChannel', RCSChannel, { channel: 'RCS', address: 'rcs:rcs_sender' }],
-      ['WhatsAppChannel', WhatsAppChannel, { channel: 'WHATSAPP', address: 'whatsapp:+15559876543' }],
+      [
+        'WhatsAppChannel',
+        WhatsAppChannel,
+        { channel: 'WHATSAPP', address: 'whatsapp:+15559876543' },
+      ],
       ['ChatChannel', ChatChannel, { channel: 'CHAT', address: 'ai-assistant' }],
     ] as const)('%s answers by conversation id', async (_name, ChannelType, expected) => {
       const tac = await createTestTAC(
@@ -611,6 +621,88 @@ describe('Messaging horizontal scaling', () => {
     });
   });
 
+  describe('send-message tool', () => {
+    // The tool sends with whatever it was built from, like Python's auto-send:
+    // a session goes straight through, an id is rebuilt from participants.
+
+    /** A chat the customer started: CO leaves the customer UNKNOWN on chat. */
+    const unknownCustomerChat = async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const channel = new ChatChannel(tac);
+      tac.registerChannel(channel);
+      const counter = new CallCounter(tac);
+      counter.install(coOf(tac), 'listParticipants', () => [
+        participant('PA_AGENT', 'AI_AGENT', 'ai-assistant', {
+          channel: 'CHAT',
+          channelId: 'CH_CHAT_SID',
+        }),
+        participant('PA_USER', 'UNKNOWN', 'user@example.com', {
+          channel: 'CHAT',
+          channelId: 'CH_CHAT_SID',
+        }),
+      ]);
+      const sessions: ConversationSession[] = [];
+      tac.onMessageReady(({ session }) => {
+        sessions.push(session);
+      });
+      await deliver(
+        channel,
+        inbound({
+          authorAddress: 'user@example.com',
+          authorParticipantId: 'PA_USER',
+          channel: 'CHAT',
+          channelId: 'CH_CHAT_SID',
+        })
+      );
+      expect(sessions).toHaveLength(1);
+      counter.clear();
+      return { channel, counter, session: sessions[0]! };
+    };
+
+    it('built from the session, it replies to an UNKNOWN chat customer without a lookup', async () => {
+      const { channel, counter, session } = await unknownCustomerChat();
+
+      const result = await createSendMessageTool(channel, session).implementation({
+        message: 'hi',
+      });
+
+      expect(result.success).toBe(true);
+      expect(counter.calls).toEqual(['createAction']);
+      const request = lastActionRequest(counter);
+      expect(request.payload.to[0]!.participantId).toBe('PA_USER');
+      expect(request.payload.channelSettings?.channelId).toBe('CH_CHAT_SID');
+    });
+
+    it('built from a bare id, it resolves no UNKNOWN chat customer', async () => {
+      const { channel, counter } = await unknownCustomerChat();
+
+      const result = await createSendMessageTool(channel, CONV_ID).implementation({
+        message: 'hi',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/no recipient/i);
+      expect(counter.count('createAction')).toBe(0);
+    });
+
+    it('built from the session it costs no lookup; from an id, one', async () => {
+      const { tac, channel, counter } = await makeSmsChannel();
+      const sessions: ConversationSession[] = [];
+      tac.onMessageReady(({ session }) => {
+        sessions.push(session);
+      });
+      await deliver(channel, inbound());
+      counter.clear();
+
+      await createSendMessageTool(channel, sessions[0]!).implementation({ message: 'a' });
+      expect(counter.calls).toEqual(['createAction']);
+
+      counter.clear();
+      await createSendMessageTool(channel, CONV_ID).implementation({ message: 'b' });
+      expect(counter.calls).toEqual(['listParticipants', 'createAction']);
+    });
+  });
+
   describe('API call budget', () => {
     // Statelessness must not be paid for with extra API calls. These counts
     // are the contract. If one moves, either the budget genuinely changed and
@@ -643,7 +735,10 @@ describe('Messaging horizontal scaling', () => {
         return 'reply';
       });
 
-      await deliver(channel, inbound({ authorAddress: '+15550000000', authorParticipantId: 'PA_AGENT' }));
+      await deliver(
+        channel,
+        inbound({ authorAddress: '+15550000000', authorParticipantId: 'PA_AGENT' })
+      );
 
       expect(handled).toEqual([]);
       expect(counter.calls).toEqual(['listParticipants']);
@@ -845,13 +940,19 @@ describe('Messaging horizontal scaling', () => {
     });
 
     const rejection = (): AxiosError =>
-      new AxiosError('Request failed with status code 400', 'ERR_BAD_REQUEST', undefined, undefined, {
-        status: 400,
-        statusText: 'Bad Request',
-        headers: {},
-        config: { headers: new AxiosHeaders() },
-        data: {},
-      });
+      new AxiosError(
+        'Request failed with status code 400',
+        'ERR_BAD_REQUEST',
+        undefined,
+        undefined,
+        {
+          status: 400,
+          statusText: 'Bad Request',
+          headers: {},
+          config: { headers: new AxiosHeaders() },
+          data: {},
+        }
+      );
 
     it('a rejected creation names the metadata as a possible cause', async () => {
       const { tac, channel, counter } = await makeSmsChannel();
