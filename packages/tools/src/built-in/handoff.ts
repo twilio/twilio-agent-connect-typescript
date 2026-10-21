@@ -12,6 +12,7 @@ import {
   HandoffPayload,
   PendingHandoffData,
   TAC,
+  createDistrustingHttpsAgent,
   studioExecutionsUrl,
   studioVoiceHandoffUrl,
 } from '@twilio/tac-core';
@@ -67,6 +68,7 @@ export async function postStudioHandoff(
 
   await axios.post(handoffUrl, form.toString(), {
     timeout: 10_000,
+    httpsAgent: createDistrustingHttpsAgent(),
     auth: { username: apiKey, password: apiSecret },
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });

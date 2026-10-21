@@ -3,6 +3,7 @@ import { TACConfig } from '../lib/config';
 import packageJson from '../../../../package.json' with { type: 'json' };
 import axios, { AxiosInstance } from 'axios';
 import axiosRetry from 'axios-retry';
+import { createDistrustingHttpsAgent } from '../util/distrusted-intermediates';
 
 function buildUserAgent(): string {
   return `twilio-agent-connect-typescript/${packageJson.version}`;
@@ -40,6 +41,7 @@ export abstract class BaseClient {
       baseURL: baseUrl,
       timeout: 30000,
       maxRedirects: 5,
+      httpsAgent: createDistrustingHttpsAgent(),
       headers: {
         'User-Agent': buildUserAgent(),
         Authorization: authHeader,
