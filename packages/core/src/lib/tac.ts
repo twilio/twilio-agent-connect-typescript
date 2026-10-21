@@ -471,8 +471,9 @@ export class TAC {
    * Fires when Conversation Orchestrator closes a conversation, on whichever
    * replica receives the CLOSED webhook — so the session it receives is
    * rebuilt from Conversation Orchestrator's participant list (identity only:
-   * `conversationId`, `profileId`, participants; read the conversation's stored
-   * metadata with `conversationMetadata(session)`). Relay-only and Media
+   * `conversationId`, `profileId`, participants). On messaging, read the
+   * conversation's stored metadata with `conversationMetadata(session)`.
+   * Relay-only and Media
    * Streams voice calls have no CO conversation, so they fire it at WebSocket
    * teardown with the live session instead. For an orchestrated call's live
    * state (transcript, `metadata`), use `VoiceChannel.onCallEnded`.
