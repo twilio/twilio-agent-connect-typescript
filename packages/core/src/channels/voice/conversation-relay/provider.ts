@@ -614,22 +614,33 @@ export class ConversationRelayProvider extends VoiceProvider {
     this.webSocketConnections.delete(conversationId);
     this.promptQueues.delete(conversationId);
 
-    const voiceCallbacks = this.channel.getVoiceCallbacks();
-    if (voiceCallbacks.onWebSocketDisconnected) {
-      voiceCallbacks.onWebSocketDisconnected({ conversationId });
+    try {
+      const voiceCallbacks = this.channel.getVoiceCallbacks();
+      if (voiceCallbacks.onWebSocketDisconnected) {
+        // A throwing app callback must not skip teardown: the socket and queue
+        // are already gone, so a session left behind would never be released.
+        try {
+          voiceCallbacks.onWebSocketDisconnected({ conversationId });
+        } catch (error) {
+          this.logger.error(
+            { err: error, conversation_id: conversationId },
+            'Error in WebSocket disconnected callback'
+          );
+        }
+      }
+
+      trackEvent('Websocket Disconnected', {
+        account_sid: this.tacConfig.accountSid,
+        channel: 'voice',
+        conversation_id: conversationId,
+        provider: this.providerId,
+        orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
+      });
+    } finally {
+      // After Websocket Disconnected above, so it always precedes any
+      // Conversation Ended that teardown reports (relay-only).
+      await this.channel.releaseSessionInternal(conversationId);
     }
-
-    trackEvent('Websocket Disconnected', {
-      account_sid: this.tacConfig.accountSid,
-      channel: 'voice',
-      conversation_id: conversationId,
-      provider: this.providerId,
-      orchestrator_enabled: this.tacConfig.isOrchestratorEnabled(),
-    });
-
-    // After Websocket Disconnected above, so it always precedes any
-    // Conversation Ended that teardown reports (relay-only).
-    await this.channel.releaseSessionInternal(conversationId);
   }
 
   /**
