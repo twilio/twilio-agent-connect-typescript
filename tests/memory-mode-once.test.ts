@@ -1,10 +1,27 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SMSChannel, TAC } from '@twilio/tac-core';
+import MockAdapter from 'axios-mock-adapter';
+import type axios from 'axios';
+import {
+  ChatChannel,
+  RCSChannel,
+  SMSChannel,
+  TAC,
+  VoiceChannel,
+  WhatsAppChannel,
+} from '@twilio/tac-core';
+import type { ConversationSession } from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
 
 /**
- * Tests for "once" memory mode: fetch once with an empty query, cache it on the
- * session, and invalidate the cache when the conversation becomes INACTIVE.
+ * Tests for `memoryMode: "once"`.
+ *
+ * On voice, "once" primes a recall with no query and caches it on the session
+ * for the rest of the call. It needs a session that outlives a single request,
+ * which only voice has: a call is pinned to the instance holding its
+ * WebSocket. The messaging channels hold nothing between webhooks, so on
+ * messaging the mode is deprecated: it warns and runs as "always" rather than
+ * degrading to a cacheless, query-less recall.
+ *
  * Mirrors the Python SDK's test_memory_mode_once.py.
  */
 describe('Memory mode "once"', () => {
@@ -14,115 +31,154 @@ describe('Memory mode "once"', () => {
     apiKey: 'test_api_key',
     apiSecret: 'test_api_token',
     phoneNumber: '+15551234567',
+    rcsSenderId: 'rcs:test_sender',
+    whatsappNumber: 'whatsapp:+15551234567',
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
-  let tac: TAC;
-  let channel: SMSChannel;
-
   const conversationId = 'CHtest123456789';
 
-  const communicationWebhook = (text: string, commId: string) => ({
-    eventType: 'COMMUNICATION_CREATED',
-    data: {
-      id: commId,
-      conversationId,
-      content: { type: 'TEXT', text },
-      author: { address: '+15559876543', channel: 'SMS' },
-    },
-  });
+  let tac: TAC;
 
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
-    channel = new SMSChannel(tac, { memoryMode: 'once' });
-
-    // Short-circuit reconcileParticipants so webhook processing doesn't need to
-    // mock listParticipants. Spy on the prototype so it applies to any instance.
-    vi.spyOn(SMSChannel.prototype as any, 'reconcileParticipants').mockResolvedValue([
-      {
-        id: 'PA111',
-        conversationId,
-        accountId: 'ACtest123456789',
-        type: 'AI_AGENT',
-        addresses: [{ channel: 'SMS', address: '+15551234567' }],
-      },
-      {
-        id: 'PA222',
-        conversationId,
-        accountId: 'ACtest123456789',
-        type: 'CUSTOMER',
-        profileId: 'mem_profile_00000000000000000000000000',
-        addresses: [{ channel: 'SMS', address: '+15559876543' }],
-      },
-    ]);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('fetches memory once and reuses the cache on subsequent messages', async () => {
-    const memory = { fake: 'memory' };
-    const spy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(memory as never);
+  const memoryModeOf = (channel: unknown): string => (channel as { memoryMode: string }).memoryMode;
 
-    await channel.processWebhook(communicationWebhook('First', 'comm1'));
-    await channel.processWebhook(communicationWebhook('Second', 'comm2'));
-    await channel.processWebhook(communicationWebhook('Third', 'comm3'));
+  describe('messaging channels deprecate "once"', () => {
+    it.each([
+      ['SMSChannel', SMSChannel],
+      ['RCSChannel', RCSChannel],
+      ['WhatsAppChannel', WhatsAppChannel],
+      ['ChatChannel', ChatChannel],
+    ] as const)('%s warns and runs as "always"', (name, ChannelClass) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    // Only the first message triggers a retrieval; the rest use the cache.
-    expect(spy).toHaveBeenCalledTimes(1);
+      const channel = new ChannelClass(tac, { memoryMode: 'once' });
 
-    const session = channel.getConversationSession(conversationId as never);
-    expect(session?.cachedMemory).toBe(memory);
-  });
-
-  it('retrieves with an empty query (no message passed as query)', async () => {
-    const spy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({} as never);
-
-    await channel.processWebhook(communicationWebhook('Hello there', 'comm1'));
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    // "once" mode must not forward the inbound message as the query.
-    expect(spy.mock.calls[0]?.[1]).toBeUndefined();
-    // ...nor the conversation id, which would trigger query expansion.
-    expect(spy.mock.calls[0]?.[2]).toBeUndefined();
-  });
-
-  it('invalidates the cache on INACTIVE, then re-fetches on the next message', async () => {
-    const spy = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
-
-    await channel.processWebhook(communicationWebhook('First', 'comm1'));
-    expect(spy).toHaveBeenCalledTimes(1);
-
-    const session = channel.getConversationSession(conversationId as never);
-    expect(session?.cachedMemory).toBeDefined();
-
-    // Conversation goes INACTIVE -> cache cleared.
-    await channel.processWebhook({
-      eventType: 'CONVERSATION_UPDATED',
-      data: { conversationId, status: 'INACTIVE' },
-    });
-    expect(session?.cachedMemory).toBeUndefined();
-
-    // Next message re-fetches.
-    await channel.processWebhook(communicationWebhook('Second', 'comm2'));
-    expect(spy).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not invalidate the cache on non-INACTIVE status updates', async () => {
-    vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
-
-    await channel.processWebhook(communicationWebhook('First', 'comm1'));
-    const session = channel.getConversationSession(conversationId as never);
-    const cachedBefore = session?.cachedMemory;
-    expect(cachedBefore).toBeDefined();
-
-    await channel.processWebhook({
-      eventType: 'CONVERSATION_UPDATED',
-      data: { conversationId, status: 'ACTIVE' },
+      expect(memoryModeOf(channel)).toBe('always');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`memoryMode "once" on ${name} is deprecated`)
+      );
     });
 
-    expect(session?.cachedMemory).toBe(cachedBefore);
+    it('leaves other modes untouched', () => {
+      expect(memoryModeOf(new SMSChannel(tac, { memoryMode: 'never' }))).toBe('never');
+      expect(memoryModeOf(new SMSChannel(tac, { memoryMode: 'always' }))).toBe('always');
+      expect(memoryModeOf(new SMSChannel(tac))).toBe('never');
+    });
+
+    it('recalls on every message with the message as the query', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const channel = new SMSChannel(tac, { memoryMode: 'once' });
+      const mockAdapter = new MockAdapter(
+        (tac.getConversationClient() as unknown as { axiosInstance: typeof axios }).axiosInstance
+      );
+      mockAdapter.onGet(`/v2/Conversations/${conversationId}/Participants`).reply(200, {
+        participants: [
+          {
+            id: 'PA111',
+            conversationId,
+            accountId: 'ACtest123456789',
+            type: 'AI_AGENT',
+            addresses: [{ channel: 'SMS', address: '+15551234567' }],
+          },
+          {
+            id: 'PA222',
+            conversationId,
+            accountId: 'ACtest123456789',
+            type: 'CUSTOMER',
+            profileId: 'mem_profile_00000000000000000000000000',
+            addresses: [{ channel: 'SMS', address: '+15559876543' }],
+          },
+        ],
+      });
+      const recall = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({} as never);
+
+      for (const [text, id] of [
+        ['First', 'comm1'],
+        ['Second', 'comm2'],
+      ] as const) {
+        await channel.processWebhook({
+          eventType: 'COMMUNICATION_CREATED',
+          data: {
+            id,
+            conversationId,
+            content: { type: 'TEXT', text },
+            author: { address: '+15559876543', channel: 'SMS', participantId: 'PA222' },
+          },
+        });
+      }
+
+      // No cache: every message recalls, with its own query.
+      expect(recall).toHaveBeenCalledTimes(2);
+      expect(recall.mock.calls[0]?.[1]).toBe('First');
+      expect(recall.mock.calls[0]?.[2]).toBe(conversationId);
+      expect(recall.mock.calls[1]?.[1]).toBe('Second');
+      mockAdapter.restore();
+    });
   });
 
+  describe('voice keeps "once"', () => {
+    const newSession = (): ConversationSession => ({
+      conversationId,
+      channel: 'voice',
+      startedAt: new Date(),
+      metadata: {},
+    });
+
+    const retrieve = (
+      channel: VoiceChannel,
+      session: ConversationSession,
+      query: string
+    ): Promise<unknown> =>
+      (
+        channel as unknown as {
+          retrieveMemoryIfEnabled: (s: ConversationSession, q?: string) => Promise<unknown>;
+        }
+      ).retrieveMemoryIfEnabled(session, query);
+
+    it('does not warn or change the mode', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      const channel = new VoiceChannel(tac, { memoryMode: 'once' });
+
+      expect(memoryModeOf(channel)).toBe('once');
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('memoryMode "once"'));
+    });
+
+    it('fetches once with an empty query and reuses the cache', async () => {
+      const channel = new VoiceChannel(tac, { memoryMode: 'once' });
+      const memory = { fake: 'memory' };
+      const recall = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(memory as never);
+      const session = newSession();
+
+      expect(await retrieve(channel, session, 'first')).toBe(memory);
+      expect(await retrieve(channel, session, 'second')).toBe(memory);
+
+      expect(recall).toHaveBeenCalledTimes(1);
+      // "once" must not forward the utterance as the query...
+      expect(recall.mock.calls[0]?.[1]).toBeUndefined();
+      // ...nor the conversation id, which would trigger query expansion.
+      expect(recall.mock.calls[0]?.[2]).toBeUndefined();
+      expect(session.cachedMemory).toBe(memory);
+    });
+
+    it('re-fetches once the cache is cleared', async () => {
+      const channel = new VoiceChannel(tac, { memoryMode: 'once' });
+      const recall = vi.spyOn(tac, 'retrieveMemory').mockResolvedValue({ v: 1 } as never);
+      const session = newSession();
+
+      await retrieve(channel, session, 'first');
+      session.cachedMemory = undefined;
+      await retrieve(channel, session, 'second');
+
+      expect(recall).toHaveBeenCalledTimes(2);
+    });
+  });
 });

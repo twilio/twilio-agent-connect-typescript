@@ -16,22 +16,11 @@ import { trackEvent } from '../../../../lib/analytics';
 import {
   MediaStreamsOpenAIProvider,
   OPENAI_USER_AGENT,
+  SESSION_CONFIG_TOKEN_PARAM,
   describeIssues,
 } from '../shared/openai-provider';
 import type { OpenAIRealtimeProviderConfig } from './config';
 import { CallState } from './state';
-
-/**
- * Reserved `<Stream>` custom parameter used to correlate an outbound call's
- * `sessionConfig` override to its WebSocket `start` event.
- *
- * Why a token instead of the call SID: `calls.create()` returning `call.sid`
- * does not happen-before Twilio connecting the media stream, so the SID is not
- * yet a usable correlation key when the `start` event may already be arriving.
- * The token is embedded in the TwiML before the call is placed, so it always
- * is.
- */
-const SESSION_CONFIG_TOKEN_PARAM = '_tac_session_config_token';
 
 /**
  * The audio format both directions of a call must use.
@@ -166,16 +155,10 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
     const sessionConfig = validated.sessionConfig ?? null;
     let sessionConfigToken: string | null = null;
     if (sessionConfig !== null) {
-      sessionConfigToken = crypto.randomUUID().replace(/-/g, '');
-      // Rebuilt rather than mutated because `twimlOptions` is absent whenever
-      // the caller omitted it — there is no object to assign the token into.
-      twimlOptions = {
-        ...twimlOptions,
-        customParameters: {
-          ...twimlOptions?.customParameters,
-          [SESSION_CONFIG_TOKEN_PARAM]: sessionConfigToken,
-        },
-      };
+      sessionConfigToken = OpenAIRealtimeProvider.newSessionConfigToken();
+      // Rebuilt rather than mutated: the caller's own object is never written
+      // through.
+      twimlOptions = this.withSessionConfigToken(undefined, twimlOptions, sessionConfigToken);
     }
 
     const fromNumber = this.resolveFromNumber(validated.from);
@@ -376,22 +359,10 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
     const message = StreamStartMessageSchema.parse(start ?? {});
     const conversationId = message.callSid as ConversationId;
 
-    // This call's Media Stream connected, so an inbound override stashed when
-    // the TwiML was answered is about to be consumed — stop its expiry timer.
-    // A no-op for outbound calls, which arm no such timer.
-    this.cancelInboundConfigExpiry(conversationId);
-
-    // An outbound override was stashed under a token before the call was
-    // placed, because its SID wasn't known yet. Twilio hands the token back
-    // here, which is the first point the two can be joined up.
-    const token = message.customParameters[SESSION_CONFIG_TOKEN_PARAM];
-    if (token !== undefined) {
-      const pending = this.pendingSessionConfigs.get(token);
-      if (pending !== undefined) {
-        this.pendingSessionConfigs.delete(token);
-        this.pendingSessionConfigs.set(conversationId, pending);
-      }
-    }
+    // A per-call override was stashed under a token carried on the TwiML.
+    // Twilio hands the token back here, which is the first point the two can
+    // be joined up.
+    this.claimSessionConfig(message.customParameters[SESSION_CONFIG_TOKEN_PARAM], conversationId);
 
     try {
       // No profile id: this provider's session lifecycle is independent of
@@ -417,7 +388,7 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
       // The `calls` entry is tracked below, after this point, so there is
       // nothing to remove there yet.
       this.pendingSessionConfigs.delete(conversationId);
-      void this.channel.endConversationInternal(conversationId).catch(() => undefined);
+      void this.channel.releaseSessionInternal(conversationId).catch(() => undefined);
       throw err;
     }
 
@@ -820,16 +791,21 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
   }
 
   /**
-   * Drop this call's transport state, close the model socket, and end the
-   * session.
+   * Drop this call's transport state and any stashed session config, close
+   * the model socket, and release the session.
    *
    * Both legs can report the call ending, and the first one to arrive tears
    * down the other, so this runs at most once per call: a second invocation
    * finds nothing tracked and returns.
    */
   private async cleanupCall(conversationId: ConversationId): Promise<void> {
+    // Drop any session config that was stashed for this call but never
+    // consumed (connectModel threw, or the stream stopped before it ran).
+    this.pendingSessionConfigs.delete(conversationId);
     const call = this.calls.get(conversationId);
     if (call === undefined) {
+      // Already torn down. Closing the model socket below re-enters here
+      // synchronously, which this guard also absorbs.
       return;
     }
     this.calls.delete(conversationId);
@@ -841,6 +817,6 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
         this.logger.debug({ err, conversation_id: conversationId }, 'Error closing model socket');
       }
     }
-    await this.channel.endConversationInternal(conversationId);
+    await this.channel.releaseSessionInternal(conversationId);
   }
 }

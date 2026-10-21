@@ -444,9 +444,8 @@ describe('PII masking', () => {
     it('should mask author in handle_message_ready logs', async () => {
       const loggerDebugSpy = vi.spyOn(tac.logger, 'debug');
 
-      // Short-circuit reconcile so the webhook reaches handle_message_ready.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
+      // Stub the participant lookup so the webhook reaches handle_message_ready.
+      vi.spyOn(tac.getConversationClient()!, 'listParticipants').mockResolvedValue([
         {
           id: 'PA_AGENT',
           accountId: 'ACtest123456789',
@@ -464,11 +463,6 @@ describe('PII masking', () => {
       ]);
 
       tac.onMessageReady(async () => {});
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest_hmr' },
-      });
 
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',

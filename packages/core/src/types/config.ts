@@ -43,6 +43,28 @@ const voicePathSchema = (defaultPath: string): z.ZodPreprocess<z.ZodDefault<z.Zo
     return trimmed.length === 0 ? undefined : trimmed;
   }, z.string().startsWith('/', 'Path must start with "/"').default(defaultPath));
 
+/**
+ * Schema for a public host (`voicePublicDomain`, `instancePublicDomain`).
+ * Whitespace, schemes (https://, wss://), and trailing slashes are stripped;
+ * anything else is passed through as given.
+ */
+const publicDomainSchema = (): z.ZodOptional<z.ZodPreprocess<z.ZodOptional<z.ZodString>>> =>
+  z
+    .preprocess(v => {
+      if (typeof v !== 'string') return v;
+      let s = v.trim();
+      if (s.length === 0) return undefined;
+      for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
+        if (s.toLowerCase().startsWith(scheme)) {
+          s = s.slice(scheme.length);
+          break;
+        }
+      }
+      s = s.replace(/\/+$/, '');
+      return s.length === 0 ? undefined : s;
+    }, z.string().optional())
+    .optional();
+
 /** The three Twilio call callbacks TAC serves, one route per kind. */
 export const CallEventKindSchema = z.enum(['status', 'amd', 'recording']);
 
@@ -159,21 +181,22 @@ export const TACConfigSchema = z
      * automatically; anything else is passed through as given. Mirrors the Python
      * SDK's `_normalize_voice_public_domain` — keep the two in step.
      */
-    voicePublicDomain: z
-      .preprocess(v => {
-        if (typeof v !== 'string') return v;
-        let s = v.trim();
-        if (s.length === 0) return undefined;
-        for (const scheme of ['https://', 'http://', 'wss://', 'ws://']) {
-          if (s.toLowerCase().startsWith(scheme)) {
-            s = s.slice(scheme.length);
-            break;
-          }
-        }
-        s = s.replace(/\/+$/, '');
-        return s.length === 0 ? undefined : s;
-      }, z.string().optional())
-      .optional(),
+    voicePublicDomain: publicDomainSchema(),
+
+    /**
+     * Directly-routable host for *this process* (e.g. a Kubernetes pod's own
+     * address). When set, the URLs TAC hands Twilio for a call point here
+     * instead of at `voicePublicDomain`: the WebSocket and action callback
+     * always, and the status/AMD/recording callbacks on calls TAC places. So
+     * those webhooks return to the process holding the call's socket. An
+     * inbound call's status/AMD/recording webhooks come from the phone
+     * number's own configuration and still reach `voicePublicDomain`.
+     *
+     * Requires per-pod addressability; without it, leave this unset and route
+     * by `CallSid` at the load balancer. Normalized the same way as
+     * `voicePublicDomain`.
+     */
+    instancePublicDomain: publicDomainSchema(),
 
     /**
      * Path the voice WebSocket is served at. Combined with voicePublicDomain to
@@ -290,6 +313,7 @@ export const EnvironmentVariables = {
   TWILIO_MEMORY_PHONE_TRAIT_FIELD: 'TWILIO_MEMORY_PHONE_TRAIT_FIELD',
   TWILIO_CONVERSATION_CONFIGURATION_ID: 'TWILIO_CONVERSATION_CONFIGURATION_ID',
   TWILIO_VOICE_PUBLIC_DOMAIN: 'TWILIO_VOICE_PUBLIC_DOMAIN',
+  TWILIO_INSTANCE_PUBLIC_DOMAIN: 'TWILIO_INSTANCE_PUBLIC_DOMAIN',
   TWILIO_VOICE_WEBSOCKET_PATH: 'TWILIO_VOICE_WEBSOCKET_PATH',
   TWILIO_VOICE_ACTION_PATH: 'TWILIO_VOICE_ACTION_PATH',
   TWILIO_VOICE_CALL_EVENT_PATH: 'TWILIO_VOICE_CALL_EVENT_PATH',

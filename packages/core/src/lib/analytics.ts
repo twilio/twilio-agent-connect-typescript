@@ -37,6 +37,17 @@ function getClient(): Analytics | null {
   return client;
 }
 
+/**
+ * Whether product analytics are on — i.e. `TAC_ANALYTICS_DISABLED` isn't `"true"`.
+ *
+ * Lets a caller skip work, like an API call, that would only feed an event.
+ *
+ * @internal
+ */
+export function analyticsEnabled(): boolean {
+  return !isDisabled();
+}
+
 type EventProperties = { account_sid: string } & Record<string, unknown>;
 
 /**

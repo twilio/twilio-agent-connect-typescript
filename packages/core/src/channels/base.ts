@@ -3,11 +3,12 @@ import {
   ChannelType,
   ConversationId,
   ConversationWebhookPayload,
-  ProfileId,
+  ConversationParticipantSchema,
   MemoryMode,
   MemoryModeSchema,
   isConversationId,
   isProfileId,
+  ProfileId,
 } from '../types/index';
 import { TACConfig } from '../lib/config';
 import { ConversationClient } from '../clients/conversation';
@@ -35,7 +36,7 @@ export interface BaseChannelOptions {
    *
    * - "never": Memory is not automatically retrieved. Use the memory TAC tool or manually call `tac.retrieveMemory()` in callbacks for conditional retrieval.
    * - "always": Memory is automatically retrieved (using the message as query) for every inbound message and available in `onMessageReady` callback.
-   * - "once": Memory is retrieved once at conversation start with no query (and no conversation id) and cached on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE.
+   * - "once" (Voice only): Memory is retrieved once at conversation start with no query (and no conversation id) and cached on the session. Subsequent prompts reuse the cache until the conversation becomes INACTIVE. Deprecated on messaging channels (removed in 3.0), which run it as "always".
    */
   memoryMode?: MemoryMode;
 
@@ -49,12 +50,13 @@ export interface BaseChannelOptions {
 /**
  * Abstract base class for all channel implementations
  *
- * Provides common functionality for:
- * - Conversation lifecycle management and session tracking
- * - Webhook deduplication using Twilio idempotency tokens
- * - Event filtering to prevent cross-channel fanout
- * - Memory retrieval integration
- * - Error handling and logging
+ * Provides only what every channel family shares: webhook deduplication,
+ * event filtering to prevent cross-channel fanout, lifecycle analytics from
+ * Conversation Orchestrator webhooks, memory retrieval, and error handling.
+ *
+ * Session storage deliberately isn't here. `VoiceChannel` owns its sessions (a
+ * call is pinned to the process holding its WebSocket); messaging channels
+ * derive a session per webhook and hold nothing between them.
  *
  * Subclasses must implement channel-specific webhook processing and message sending.
  */
@@ -63,8 +65,9 @@ export abstract class BaseChannel {
   protected readonly config: TACConfig;
   protected readonly logger: Logger;
   protected readonly conversationClient: ConversationClient | null;
-  protected readonly activeConversations: Map<ConversationId, ConversationSession>;
   protected readonly callbacks: BaseChannelEvents;
+  /** TAC's forwarder to `tac.onConversationEnded`, while it fills the slot. */
+  private tacConversationEndedForwarder: BaseChannelEvents['onConversationEnded'];
   protected readonly memoryMode: MemoryMode;
   private readonly processedWebhookTokens: Set<string>;
   private readonly maxTrackedTokens: number;
@@ -74,7 +77,6 @@ export abstract class BaseChannel {
     this.config = tac.getConfig();
     this.logger = tac.logger.child({ component: 'channel' });
     this.conversationClient = tac.getConversationClient();
-    this.activeConversations = new Map();
     this.callbacks = {};
 
     // Validate memoryMode with runtime check for JS consumers
@@ -140,128 +142,166 @@ export abstract class BaseChannel {
   public abstract processWebhook(payload: unknown): Promise<void>;
 
   /**
-   * Send a response back to the user (implemented by subclasses)
+   * Send a response back to the user (implemented by subclasses).
+   *
+   * Accepts the conversation id or the turn's `ConversationSession`; messaging
+   * channels send straight from a session, and rebuild one from the id.
    */
   public abstract sendResponse(
-    conversationId: ConversationId,
+    conversationId: ConversationId | ConversationSession,
     message: string,
     metadata?: Record<string, unknown>
   ): Promise<void>;
 
   /**
-   * Start a new conversation session
+   * Get a live conversation session held by this channel.
+   *
+   * Only `VoiceChannel` holds sessions (a call is pinned to one process); the
+   * default returns `undefined`.
    */
-  protected startConversation(
-    conversationId: ConversationId,
-    profileId?: ProfileId,
-    serviceId?: string
-  ): ConversationSession {
-    if (this.activeConversations.has(conversationId)) {
-      this.logger.debug(
-        {
-          conversation_id: conversationId,
-          profile_id: this.activeConversations.get(conversationId)?.profileId,
-          service_id: this.activeConversations.get(conversationId)?.serviceId,
-        },
-        'Conversation already active'
-      );
-      return this.activeConversations.get(conversationId)!;
+  public getConversationSession(_conversationId: ConversationId): ConversationSession | undefined {
+    return undefined;
+  }
+
+  /**
+   * Check if this channel holds a live session for a conversation. Only
+   * `VoiceChannel` holds sessions; the default returns `false`.
+   */
+  public isConversationActive(_conversationId: ConversationId): boolean {
+    return false;
+  }
+
+  /**
+   * This channel's type as Conversation Orchestrator writes it on participant
+   * addresses (`SMS`, `WHATSAPP`, `VOICE`, …).
+   *
+   * @internal
+   */
+  protected get coChannel(): string {
+    return this.channelType.toUpperCase();
+  }
+
+  /**
+   * Whether `address` is TAC's own address on this channel. Channels override
+   * this; the default claims no address.
+   *
+   * @internal
+   */
+  protected isOwnCoAddress(_address: string): boolean {
+    return false;
+  }
+
+  /**
+   * Report "Conversation Started" from a CO `PARTICIPANT_ADDED` event.
+   *
+   * Counts the customer joining on this channel: a `CUSTOMER`, or an `UNKNOWN`
+   * participant that isn't TAC's own address (capture can add the customer
+   * untyped). Each channel reports only its own channel type, so a webhook
+   * handed to every channel counts once per channel.
+   *
+   * @internal
+   */
+  protected trackConversationStarted(eventData: unknown): void {
+    const parsed = ConversationParticipantSchema.safeParse(eventData);
+    if (!parsed.success) {
+      this.logger.debug({ err: parsed.error }, 'Skipping unparseable PARTICIPANT_ADDED payload');
+      return;
     }
-
-    const session: ConversationSession = {
-      conversationId: conversationId,
-      profileId: profileId,
-      serviceId: serviceId,
-      channel: this.channelType,
-      startedAt: new Date(),
-      metadata: {},
-    };
-
-    this.activeConversations.set(conversationId, session);
-
-    this.logger.debug(
-      {
-        conversation_id: conversationId,
-        profile_id: profileId,
-        service_id: serviceId,
-        channel: this.channelType,
-      },
-      'Conversation started'
-    );
-
-    if (this.callbacks.onConversationStarted) {
-      this.callbacks.onConversationStarted({ session });
+    const participant = parsed.data;
+    if (participant.type !== 'CUSTOMER' && participant.type !== 'UNKNOWN') {
+      return;
     }
-
+    const addresses = participant.addresses
+      .filter(a => a.channel === this.coChannel)
+      .map(a => a.address);
+    if (addresses.length === 0) {
+      return;
+    }
+    if (participant.type === 'UNKNOWN' && addresses.some(a => this.isOwnCoAddress(a))) {
+      return;
+    }
     trackEvent('Conversation Started', {
       account_sid: this.config.accountSid,
       channel: this.channelType,
-      conversation_id: conversationId,
-      has_profile_id: !!profileId,
+      conversation_id: participant.conversationId,
+      has_profile_id: !!participant.profileId,
     });
-
-    return session;
   }
 
   /**
-   * End a conversation session.
+   * Report "Conversation Ended" for a conversation CO closed.
    *
-   * Triggers the onConversationEnded callback BEFORE removing the session,
-   * so the callback receives the full ConversationSession data.
-   * Errors in the callback do not prevent session cleanup.
+   * `durationMs` is CO's `updatedAt − createdAt`; `undefined` leaves it out
+   * rather than guessing.
+   *
+   * @internal
    */
-  protected async endConversation(conversationId: ConversationId): Promise<void> {
-    const session = this.activeConversations.get(conversationId);
+  protected trackConversationEnded(conversationId: string, durationMs: number | undefined): void {
+    trackEvent('Conversation Ended', {
+      account_sid: this.config.accountSid,
+      channel: this.channelType,
+      conversation_id: conversationId,
+      ...(durationMs !== undefined && { duration_ms: durationMs }),
+    });
+  }
 
-    if (session) {
-      // Trigger callback BEFORE deleting the session
-      if (this.callbacks.onConversationEnded) {
-        try {
-          await this.callbacks.onConversationEnded({ session });
-        } catch (error) {
-          this.logger.error(
-            { err: error, conversation_id: conversationId },
-            'Error in conversation ended callback'
-          );
-        }
-      }
+  /**
+   * Whether anything would receive `onConversationEnded`. Channels check this
+   * before rebuilding a closed conversation's session from Conversation
+   * Orchestrator: with no handler, there is nothing to hand it to.
+   *
+   * Registering with TAC fills the slot with a forwarder to
+   * `tac.onConversationEnded`; while that forwarder is installed, ask TAC. A
+   * handler set with `channel.on('conversationEnded', ...)` — before or after
+   * registration — replaces it and counts on its own.
+   *
+   * @internal
+   */
+  protected hasConversationEndedHandler(): boolean {
+    const handler = this.callbacks.onConversationEnded;
+    if (!handler) {
+      return false;
+    }
+    if (handler !== this.tacConversationEndedForwarder) {
+      return true;
+    }
+    return this.tac.hasConversationEndedCallback();
+  }
 
-      trackEvent('Conversation Ended', {
-        account_sid: this.config.accountSid,
-        channel: this.channelType,
-        conversation_id: conversationId,
-        duration_ms: Date.now() - session.startedAt.getTime(),
-      });
+  /**
+   * Install TAC's forwarder to `tac.onConversationEnded` in this channel's
+   * slot, remembering it so {@link hasConversationEndedHandler} can tell it
+   * apart from a handler registered directly on the channel.
+   *
+   * @internal
+   */
+  public setConversationEndedForwarderInternal(
+    forwarder: NonNullable<BaseChannelEvents['onConversationEnded']>
+  ): void {
+    this.callbacks.onConversationEnded = forwarder;
+    this.tacConversationEndedForwarder = forwarder;
+  }
 
-      this.activeConversations.delete(conversationId);
-      this.logger.debug(
-        {
-          conversation_id: conversationId,
-          channel: this.channelType,
-          service_id: session.serviceId,
-        },
-        'Conversation ended'
-      );
-    } else {
-      this.logger.debug(
-        { conversation_id: conversationId, channel: this.channelType },
-        'Conversation end requested but no active session found'
+  /**
+   * Fire `onConversationEnded` for a session, swallowing handler errors.
+   *
+   * A developer callback throwing must not abort the channel's own cleanup or
+   * fail the webhook, so the error is logged and dropped here.
+   *
+   * @internal
+   */
+  protected async triggerConversationEnded(session: ConversationSession): Promise<void> {
+    if (!this.callbacks.onConversationEnded) {
+      return;
+    }
+    try {
+      await this.callbacks.onConversationEnded({ session });
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: session.conversationId },
+        'Error in conversation ended callback'
       );
     }
-  }
-
-  /**
-   * Get an active conversation session
-   */
-  public getConversationSession(conversationId: ConversationId): ConversationSession | undefined {
-    return this.activeConversations.get(conversationId);
-  }
-
-  /**
-   * Check if a conversation is active
-   */
-  public isConversationActive(conversationId: ConversationId): boolean {
-    return this.activeConversations.has(conversationId);
   }
 
   /**
@@ -312,8 +352,10 @@ export abstract class BaseChannel {
    * Self-filtering: check if webhook event belongs to this channel.
    *
    * - COMMUNICATION_CREATED: require author.channel matches this channel type
-   * - CONVERSATION_UPDATED: only process if conversation is tracked locally
-   * - Other events: pass through
+   * - Other events pass through, including CONVERSATION_UPDATED — the
+   *   per-channel handler filters that one. Filtering it here on locally
+   *   tracked state would drop it on any instance that didn't serve the
+   *   conversation's messages.
    */
   protected isEventForThisChannel(webhookData: ConversationWebhookPayload): boolean {
     const eventType = webhookData.eventType;
@@ -326,14 +368,6 @@ export abstract class BaseChannel {
         return false;
       }
       return authorChannel === this.channelType.toUpperCase();
-    }
-
-    // CONVERSATION_UPDATED: only process if this channel tracks the conversation
-    if (eventType === 'CONVERSATION_UPDATED') {
-      const conversationId = this.extractConversationId(webhookData);
-      if (conversationId && !this.activeConversations.has(conversationId)) {
-        return false;
-      }
     }
 
     return true;
@@ -499,33 +533,12 @@ export abstract class BaseChannel {
   }
 
   /**
-   * Invalidate cached memory for "once" mode when a conversation becomes
-   * INACTIVE. Conversation Orchestrator updates memory on the INACTIVE
-   * transition, so the next message re-fetches fresh memory. No-op for other
-   * memory modes.
-   */
-  protected invalidateCachedMemory(conversationId: ConversationId): void {
-    if (this.memoryMode !== 'once') {
-      return;
-    }
-
-    const session = this.activeConversations.get(conversationId);
-    if (session?.cachedMemory !== undefined) {
-      session.cachedMemory = undefined;
-      this.logger.debug(
-        { conversation_id: conversationId },
-        'Invalidated cached memory on INACTIVE status'
-      );
-    }
-  }
-
-  /**
    * Cleanup resources when shutting down
    */
   public shutdown(): void {
-    this.activeConversations.clear();
     delete this.callbacks.onConversationStarted;
     delete this.callbacks.onConversationEnded;
     delete this.callbacks.onError;
+    this.tacConversationEndedForwarder = undefined;
   }
 }

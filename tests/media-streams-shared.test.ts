@@ -124,9 +124,11 @@ function makeChannel(): {
       sessions.set(conversationId, session);
       return session;
     },
-    endConversationInternal: (conversationId: string) => {
+    isConversationActive: (conversationId: string) => sessions.has(conversationId),
+    releaseSessionInternal: (conversationId: string) => {
+      const session = sessions.get(conversationId);
       sessions.delete(conversationId);
-      return Promise.resolve();
+      return Promise.resolve(session);
     },
     handleErrorInternal: () => {},
   } as unknown as VoiceChannel;

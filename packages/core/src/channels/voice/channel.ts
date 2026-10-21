@@ -13,6 +13,8 @@ import {
   VoiceTwiMLOptionsConversationRelay,
   TwiMLRequest,
   ConversationWebhookPayload,
+  ConversationParticipant,
+  ConversationResponse,
   CallEventKind,
   CallStatusEvent,
   AmdEvent,
@@ -27,7 +29,7 @@ import type { ConversationClient } from '../../clients/conversation';
 import type { TAC } from '../../lib/tac';
 import type { TACConfig } from '../../lib/config';
 import { warnDeprecated } from '../../lib/deprecation';
-import { trackEvent } from '../../lib/analytics';
+import { analyticsEnabled, trackEvent } from '../../lib/analytics';
 import type { Logger } from '../../lib/logger';
 import type { TACMemoryResponse } from '../../lib/tac-memory-response';
 import { ConversationRelayProviderConfig } from './conversation-relay/config';
@@ -36,6 +38,16 @@ import { ConversationRelayProvider } from './conversation-relay/provider';
 import type { StreamTask } from './conversation-relay/provider';
 import type { VoiceProvider } from './provider';
 import { VoiceProviderConfig } from './provider';
+import { elapsedMs, parseIso8601 } from '../../util/timestamps';
+
+/**
+ * Channel name Conversation Orchestrator uses for voice participants. Not the
+ * provider's `channelName`, which is a transport label.
+ */
+const CO_VOICE_CHANNEL = 'VOICE';
+
+/** Participant types that represent TAC's own agent. */
+const AGENT_TYPES = new Set(['AGENT', 'AI_AGENT']);
 
 /**
  * Callback that produces per-call overrides for the TwiML inside
@@ -62,6 +74,12 @@ export type AmdHandler = (event: AmdEvent) => Promise<void> | void;
 
 /** Handler for Twilio `recordingStatusCallback` webhooks. */
 export type RecordingHandler = (event: RecordingEvent) => Promise<void> | void;
+
+/**
+ * Handler for a call's WebSocket teardown. Receives the live session just
+ * before it is discarded — see {@link VoiceChannel.onCallEnded}.
+ */
+export type CallEndedHandler = (session: ConversationSession) => Promise<void> | void;
 
 /** One ConversationRelay keypress, as delivered to a {@link DtmfHandler}. */
 export interface DtmfEvent {
@@ -129,6 +147,17 @@ export class VoiceChannel extends BaseChannel {
   private onCallStatusHandler: CallStatusHandler | undefined;
   private onAmdHandler: AmdHandler | undefined;
   private onRecordingHandler: RecordingHandler | undefined;
+  private onCallEndedHandler: CallEndedHandler | undefined;
+  /**
+   * Live sessions by conversation id. Instance-local by design: a call is
+   * pinned to the process holding its WebSocket.
+   */
+  private readonly activeConversations: Map<ConversationId, ConversationSession>;
+  /**
+   * Live calls whose conversation CO already closed mid-call: their
+   * `onConversationEnded` has fired, so teardown doesn't fire it again.
+   */
+  private readonly closedWhileLive: Set<string>;
 
   /**
    * @param tac - The owning {@link TAC} instance.
@@ -140,6 +169,8 @@ export class VoiceChannel extends BaseChannel {
   constructor(tac: TAC, options?: VoiceProviderConfig | ConversationRelayProviderConfigOptions) {
     super(tac, VoiceChannel.toBaseOptions(options));
     this.voiceCallbacks = {};
+    this.activeConversations = new Map();
+    this.closedWhileLive = new Set();
     this.provider = VoiceChannel.toProviderConfig(options).createProvider(this, this.config);
   }
 
@@ -298,6 +329,31 @@ export class VoiceChannel extends BaseChannel {
     this.voiceCallbacks.onDtmf = callback;
   }
 
+  /**
+   * Register a handler for a call's WebSocket teardown.
+   *
+   * Fires once per call, always, on the instance that held the call. It
+   * receives the live session just before it is discarded, so it is the only
+   * place late-call in-memory state — the transcript, `callSid`, anything you
+   * put on `metadata` — is still reachable.
+   *
+   * Not the same as `onConversationEnded` (fires when the *conversation*
+   * closes, on any instance; on an orchestrated call, from a session rebuilt
+   * from Conversation Orchestrator, identity only) or {@link onCallStatus} (a
+   * Twilio Calls-API webhook, no session). Handler errors are logged and
+   * swallowed.
+   *
+   * @example
+   * ```typescript
+   * voiceChannel.onCallEnded(async session => {
+   *   await archive(session.callSid, session.metadata.transcript ?? []);
+   * });
+   * ```
+   */
+  public onCallEnded(callback: CallEndedHandler): void {
+    this.onCallEndedHandler = callback;
+  }
+
   // =========================================================================
   // Provider-facing surface
   //
@@ -395,8 +451,7 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Start tracking a conversation session. Forwards to
-   * `BaseChannel.startConversation`.
+   * Start tracking a call's session. Forwards to {@link startConversation}.
    *
    * @internal
    */
@@ -408,13 +463,15 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * End a tracked conversation session. Forwards to
-   * `BaseChannel.endConversation`.
+   * Release a finished call's session and fire the end-of-call hooks.
+   * Forwards to {@link releaseSession}.
    *
    * @internal
    */
-  public endConversationInternal(conversationId: ConversationId): Promise<void> {
-    return this.endConversation(conversationId);
+  public releaseSessionInternal(
+    conversationId: ConversationId
+  ): Promise<ConversationSession | undefined> {
+    return this.releaseSession(conversationId);
   }
 
   /**
@@ -485,13 +542,27 @@ export class VoiceChannel extends BaseChannel {
   }
 
   /**
-   * Process conversation webhooks for cleanup.
+   * Process Conversation Orchestrator webhooks.
    *
-   * Voice channel processes CONVERSATION_UPDATED events:
-   * - CLOSED status: Clean up local session state
+   * Voice channel processes these events:
    *
-   * Note: Conversation tracking uses instance-local memory. In multi-instance
-   * deployments, webhooks may route to a different instance, preventing cleanup.
+   * - **PARTICIPANT_ADDED**: report "Conversation Started" when the customer
+   *   joins on voice (orchestrated ConversationRelay only).
+   * - **CLOSED** (CONVERSATION_UPDATED): fire `onConversationEnded`. The call's
+   *   session is normally already released (the WebSocket closed when the
+   *   caller hung up), so this rebuilds it from Conversation Orchestrator —
+   *   which is also what makes the hook fire on whichever instance received the
+   *   webhook rather than only on the one that held the call. If this instance
+   *   still holds the call's session (the call is live), the hook fires now
+   *   instead, with a snapshot of that live session, and the session stays
+   *   until the call's own teardown — which still fires {@link onCallEnded}. A
+   *   single call can then produce a second `onConversationEnded`, under a
+   *   different conversation id, when Conversation Orchestrator later closes
+   *   the conversation it started for the call's remaining traffic. It also
+   *   reports "Conversation Ended", with CO's duration.
+   * - **INACTIVE**: invalidate cached memory, if this instance holds the
+   *   session. A call is pinned to one instance for its lifetime, so an
+   *   INACTIVE landing elsewhere has no cache to clear and is ignored.
    *
    * @param payload - Raw webhook event data from Twilio
    * @param idempotencyToken - Optional Twilio idempotency token from request headers
@@ -506,6 +577,14 @@ export class VoiceChannel extends BaseChannel {
       const { webhookData, eventType, conversationId } = result;
 
       switch (eventType) {
+        case 'PARTICIPANT_ADDED':
+          // Only with a CO conversation behind calls; otherwise the session
+          // reports the start and counting this too would double it.
+          if (this.provider.conversationClosedByOrchestrator) {
+            this.trackConversationStarted(webhookData.data);
+          }
+          break;
+
         case 'CONVERSATION_UPDATED':
           this.logger.debug(
             { conversation_id: conversationId, status: webhookData.data?.status },
@@ -545,17 +624,401 @@ export class VoiceChannel extends BaseChannel {
       throw new Error('Missing conversation ID in conversation.updated event');
     }
 
-    // Check if conversation is closed
-    if (payload.data?.status === 'CLOSED') {
-      this.logger.debug(
-        { conversation_id: conversationId, status: payload.data.status },
-        'Conversation closed, cleaning up'
-      );
-      await this.endConversation(conversationId);
-    } else if (payload.data?.status === 'INACTIVE') {
-      // "once" mode: drop the cache so the next message re-fetches.
-      this.invalidateCachedMemory(conversationId);
+    if (payload.data?.configurationId !== this.config.conversationConfigurationId) {
+      return;
     }
+
+    const status = payload.data?.status;
+    if (status === 'CLOSED') {
+      if (!this.provider.conversationClosedByOrchestrator) {
+        // This provider has no Conversation Orchestrator conversation behind
+        // its calls; onConversationEnded already fired at teardown and firing
+        // again here would double it.
+        return;
+      }
+      const createdAt = payload.data?.createdAt;
+      const updatedAt = payload.data?.updatedAt;
+      await this.handleConversationClosed(
+        conversationId,
+        elapsedMs(
+          typeof createdAt === 'string' ? createdAt : undefined,
+          typeof updatedAt === 'string' ? updatedAt : undefined
+        )
+      );
+    } else if (status === 'INACTIVE' && this.memoryMode === 'once') {
+      const session = this.activeConversations.get(conversationId);
+      // Memory is updated by Conversation Orchestrator on the INACTIVE
+      // transition, so the cached copy is stale from here on.
+      if (session?.cachedMemory !== undefined) {
+        session.cachedMemory = undefined;
+        this.logger.debug(
+          { conversation_id: conversationId },
+          'Invalidated cached memory on INACTIVE status'
+        );
+      }
+    }
+  }
+
+  // =========================================================================
+  // Session lifecycle
+  // =========================================================================
+
+  /**
+   * Get the live session this instance holds for a conversation.
+   */
+  public override getConversationSession(
+    conversationId: ConversationId
+  ): ConversationSession | undefined {
+    return this.activeConversations.get(conversationId);
+  }
+
+  /**
+   * Whether this instance holds a live session for a conversation.
+   */
+  public override isConversationActive(conversationId: ConversationId): boolean {
+    return this.activeConversations.has(conversationId);
+  }
+
+  /**
+   * Track a new session for a call, or return the existing one.
+   */
+  protected startConversation(
+    conversationId: ConversationId,
+    profileId?: ProfileId
+  ): ConversationSession {
+    const existing = this.activeConversations.get(conversationId);
+    if (existing) {
+      this.logger.debug(
+        { conversation_id: conversationId, profile_id: existing.profileId },
+        'Conversation already active'
+      );
+      return existing;
+    }
+
+    const session: ConversationSession = {
+      conversationId,
+      profileId,
+      channel: this.channelType,
+      startedAt: new Date(),
+      metadata: {},
+    };
+
+    this.activeConversations.set(conversationId, session);
+
+    this.logger.debug(
+      { conversation_id: conversationId, profile_id: profileId, channel: this.channelType },
+      'Conversation started'
+    );
+
+    if (this.callbacks.onConversationStarted) {
+      this.callbacks.onConversationStarted({ session });
+    }
+
+    // With a CO conversation behind the call, CO's PARTICIPANT_ADDED reports
+    // the start instead — see trackConversationStarted.
+    if (!this.provider.conversationClosedByOrchestrator) {
+      trackEvent('Conversation Started', {
+        account_sid: this.config.accountSid,
+        channel: this.channelType,
+        conversation_id: conversationId,
+        has_profile_id: !!profileId,
+      });
+    }
+
+    return session;
+  }
+
+  /**
+   * Free a finished call's session and fire the end-of-call hooks.
+   *
+   * Called from every teardown path and idempotent, so a second call is a
+   * no-op returning `undefined`. Always fires {@link onCallEnded}. Also fires
+   * `onConversationEnded` unless a Conversation Orchestrator CLOSED webhook will
+   * do that later (see `VoiceProvider.conversationClosedByOrchestrator`).
+   * Nothing is kept for that CLOSED: it gets a session rebuilt from
+   * Conversation Orchestrator.
+   */
+  protected async releaseSession(
+    conversationId: ConversationId
+  ): Promise<ConversationSession | undefined> {
+    const session = this.activeConversations.get(conversationId);
+    if (!session) {
+      return undefined;
+    }
+    this.activeConversations.delete(conversationId);
+
+    // Measured before the callbacks below, which are application-owned: they
+    // are awaited and may do network I/O or mutate the session, and neither
+    // their latency nor their edits belong in the reported duration.
+    const durationMs = Date.now() - session.startedAt.getTime();
+    const orchestrated = this.provider.conversationClosedByOrchestrator;
+
+    if (this.onCallEndedHandler) {
+      try {
+        await this.onCallEndedHandler(session);
+      } catch (error) {
+        this.logger.error(
+          { err: error, conversation_id: conversationId },
+          'Error in call ended callback'
+        );
+      }
+    }
+
+    if (orchestrated) {
+      // CO closed this conversation mid-call, if at all; its hook fired then.
+      this.closedWhileLive.delete(conversationId);
+    } else {
+      await this.triggerConversationEnded(session);
+      // Only when no CO conversation sits behind the call (relay-only, Media
+      // Streams): otherwise CO's CLOSED reports the end, with CO's duration.
+      trackEvent('Conversation Ended', {
+        account_sid: this.config.accountSid,
+        channel: this.channelType,
+        conversation_id: conversationId,
+        duration_ms: durationMs,
+      });
+    }
+
+    this.logger.debug(
+      { conversation_id: conversationId, channel: this.channelType },
+      'Released voice session'
+    );
+    return session;
+  }
+
+  /**
+   * Fire `onConversationEnded` for a CLOSED webhook.
+   *
+   * The call has normally ended by now (the socket closed when the caller hung
+   * up, or {@link endCall} hung it up), and its session went with it. The hook
+   * gets a session rebuilt from Conversation Orchestrator, identity only,
+   * which is what lets it fire on whichever instance received the webhook. The
+   * call's live state (transcript, `metadata`) reached {@link onCallEnded} at
+   * teardown.
+   *
+   * If this instance still holds the session, the call is live: CO closed the
+   * conversation mid-call (a closed timeout during a long hold, or the app
+   * closing it). The hook fires now, from a snapshot, and the session stays for
+   * the call's own teardown to release — which is what keeps `onCallEnded`
+   * firing and the rest of the call working. The call then carries on under
+   * the closed conversation's id; CO starts a new conversation for its later
+   * traffic, whose own CLOSED arrives here later and takes the rebuild path.
+   *
+   * The hook is at-least-once: a duplicate CLOSED delivery that isn't deduped
+   * by its idempotency token fires it again, same as `onMessageReady`.
+   */
+  private async handleConversationClosed(
+    conversationId: ConversationId,
+    durationMs: number | undefined
+  ): Promise<void> {
+    const live = this.activeConversations.get(conversationId);
+    if (live) {
+      this.logger.warn(
+        { conversation_id: conversationId, call_sid: live.callSid },
+        "Conversation closed while its call is still live; the call continues under the closed conversation's id"
+      );
+      this.closedWhileLive.add(conversationId);
+      this.trackConversationEnded(conversationId, durationMs);
+      await this.triggerConversationEnded(this.detachedSnapshot(live));
+      return;
+    }
+
+    const notify = this.hasConversationEndedHandler();
+    const report = analyticsEnabled();
+    if (!notify && !report) {
+      return;
+    }
+    const session = await this.rebuildSession(conversationId, undefined, { shared: true });
+    if (!session) {
+      return;
+    }
+    if (report) {
+      this.trackConversationEnded(conversationId, durationMs);
+    }
+    if (notify) {
+      await this.triggerConversationEnded(session);
+    }
+  }
+
+  /**
+   * A copy of a live call's session that shares no mutable state with it.
+   *
+   * `onConversationEnded` may keep or edit what it's given while the call
+   * carries on, so the callback-visible data — `metadata` and the nested
+   * objects — is cloned. A value that can't be cloned (an app-owned handle, a
+   * class instance whose methods a clone would lose) is shared rather than
+   * failing the hook.
+   */
+  private detachedSnapshot(live: ConversationSession): ConversationSession {
+    const conversationId = live.conversationId;
+    const detached = <T>(value: T, what: string): T => {
+      if (value === null || typeof value !== 'object') {
+        return value;
+      }
+      const proto = Object.getPrototypeOf(value) as unknown;
+      if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) {
+        return value;
+      }
+      try {
+        return structuredClone(value);
+      } catch (error) {
+        this.logger.debug(
+          { conversation_id: conversationId, value: what, err: error },
+          "Sharing a value that can't be copied into the CLOSED snapshot"
+        );
+        return value;
+      }
+    };
+
+    const metadata: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(live.metadata)) {
+      metadata[key] = detached(value, `metadata[${JSON.stringify(key)}]`);
+    }
+    const snapshot: ConversationSession = {
+      ...live,
+      startedAt: new Date(live.startedAt.getTime()),
+      metadata,
+    };
+    if (live.profile !== undefined) snapshot.profile = detached(live.profile, 'profile');
+    if (live.authorInfo !== undefined) {
+      snapshot.authorInfo = detached(live.authorInfo, 'authorInfo');
+    }
+    if (live.aiAgentInfo !== undefined) {
+      snapshot.aiAgentInfo = detached(live.aiAgentInfo, 'aiAgentInfo');
+    }
+    if (live.pendingHandoffData !== undefined) {
+      snapshot.pendingHandoffData = detached(live.pendingHandoffData, 'pendingHandoffData');
+    }
+    return snapshot;
+  }
+
+  /**
+   * The participant representing TAC's agent at `address` on voice: one that
+   * owns the address AND has an agent type. A HUMAN_AGENT at that address is
+   * someone else.
+   */
+  private static findVoiceAgent(
+    participants: ConversationParticipant[],
+    address: string
+  ): ConversationParticipant | undefined {
+    return participants.find(
+      p =>
+        p.type !== undefined &&
+        AGENT_TYPES.has(p.type) &&
+        p.addresses.some(a => a.channel === CO_VOICE_CHANNEL && a.address === address)
+    );
+  }
+
+  /**
+   * Reconstruct a session from Conversation Orchestrator.
+   *
+   * Carries identity only — conversation id, `callSid`, profile, both
+   * participants. Live in-memory state (transcript, metadata) isn't available
+   * here; it reaches {@link onCallEnded}. `callSid` defaults to a VOICE
+   * participant address's `channelId` — the customer's if present, else the
+   * agent's, else any other participant's. Returns `undefined` if no
+   * participant is on the voice channel, which is how another channel's CLOSED
+   * is filtered out.
+   *
+   * `shared` (the CLOSED path) shares the participant lookup with the other
+   * channels handling the same webhook; other callers need fresh participants.
+   */
+  private async rebuildSession(
+    conversationId: ConversationId,
+    callSid: string | undefined,
+    options?: { shared?: boolean }
+  ): Promise<ConversationSession | undefined> {
+    const client = this.conversationClient;
+    if (!client) {
+      return undefined;
+    }
+
+    let participants: ConversationParticipant[];
+    try {
+      participants = options?.shared
+        ? await this.tac.listParticipantsShared(conversationId)
+        : await client.listParticipants(conversationId);
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        'Failed to list participants while rebuilding a voice session'
+      );
+      return undefined;
+    }
+
+    const onVoice = (p: ConversationParticipant): boolean =>
+      p.addresses.some(a => a.channel === CO_VOICE_CHANNEL);
+    if (!participants.some(onVoice)) {
+      return undefined;
+    }
+
+    // A conversation grouped across channels may list another channel's
+    // customer first; the caller is the CUSTOMER on VOICE.
+    const customer = participants.find(p => p.type === 'CUSTOMER' && onVoice(p));
+    // TAC may own several numbers; the agent is whichever one this call used.
+    let agent: ConversationParticipant | undefined;
+    for (const number of this.config.phoneNumbers) {
+      agent = VoiceChannel.findVoiceAgent(participants, number);
+      if (agent) break;
+    }
+
+    let resolvedCallSid = callSid;
+    if (resolvedCallSid === undefined) {
+      // CO's conversation webhooks carry no channel ids; the call a voice
+      // participant is on is recorded on its VOICE address. Prefer the
+      // customer's, then the agent's, then anyone else's.
+      const ordered = [
+        ...[customer, agent].filter((p): p is ConversationParticipant => p !== undefined),
+        ...participants.filter(p => p !== customer && p !== agent),
+      ];
+      resolvedCallSid =
+        ordered.flatMap(p => p.addresses).find(a => a.channel === CO_VOICE_CHANNEL && a.channelId)
+          ?.channelId ?? undefined;
+      if (resolvedCallSid === undefined) {
+        this.logger.debug(
+          { conversation_id: conversationId },
+          'Rebuilt voice session has no callSid'
+        );
+      }
+    }
+
+    const session: ConversationSession = {
+      conversationId,
+      channel: this.channelType,
+      startedAt: new Date(),
+      metadata: {},
+    };
+    if (resolvedCallSid !== undefined) session.callSid = resolvedCallSid;
+    if (customer?.profileId) session.profileId = customer.profileId;
+
+    const customerAddress = customer?.addresses.find(a => a.channel === CO_VOICE_CHANNEL)?.address;
+    if (customer && customerAddress) {
+      session.authorInfo = { address: customerAddress, participantId: customer.id };
+    }
+    if (agent) {
+      session.aiAgentInfo = {
+        address:
+          agent.addresses.find(a => a.channel === CO_VOICE_CHANNEL)?.address ??
+          this.config.phoneNumber,
+        participantId: agent.id,
+      };
+    }
+    return session;
+  }
+
+  /**
+   * This channel's participants are recorded by Conversation Orchestrator as
+   * VOICE, whatever the provider's transport label.
+   *
+   * @internal
+   */
+  protected override get coChannel(): string {
+    return CO_VOICE_CHANNEL;
+  }
+
+  /** @internal */
+  protected override isOwnCoAddress(address: string): boolean {
+    return this.config.phoneNumbers.includes(address);
   }
 
   /**
@@ -598,10 +1061,14 @@ export class VoiceChannel extends BaseChannel {
    * Send voice response via WebSocket
    */
   public async sendResponse(
-    conversationId: ConversationId,
+    conversationIdOrSession: ConversationId | ConversationSession,
     message: string,
     metadata?: Record<string, unknown>
   ): Promise<void> {
+    const conversationId =
+      typeof conversationIdOrSession === 'string'
+        ? conversationIdOrSession
+        : (conversationIdOrSession.conversationId as ConversationId);
     await this.provider.sendResponse(conversationId, message, metadata);
     trackEvent('Response Sent', {
       account_sid: this.config.accountSid,
@@ -857,6 +1324,11 @@ export class VoiceChannel extends BaseChannel {
    * hangs up while AMD is still resolving), and handlers shouldn't have to
    * guard against it.
    *
+   * The session is released as on any hangup: {@link onCallEnded} fires now.
+   * On an orchestrated call `onConversationEnded` fires later, when
+   * Conversation Orchestrator's CLOSED webhook arrives; otherwise it fires now
+   * too.
+   *
    * @param callSid - Twilio Call SID (from a call event, the outbound result, or
    *   `ConversationSession.callSid`).
    * @returns True if Twilio accepted the hangup, false if it failed (logged).
@@ -874,7 +1346,7 @@ export class VoiceChannel extends BaseChannel {
 
     const session = this.getConversationSessionByCallSid(callSid);
     if (session) {
-      await this.endConversation(session.conversationId as ConversationId);
+      await this.releaseSession(session.conversationId as ConversationId);
     }
     return hungUp;
   }
@@ -892,10 +1364,10 @@ export class VoiceChannel extends BaseChannel {
    * exist before the caller speaks — including before `onAmd` fires. Treat it
    * as racy and hang up with {@link endCall}, which needs no session.
    *
-   * At the other end, orchestrator mode keeps the session until Conversation
-   * Orchestrator's CLOSED webhook, so it outlives the call and `onCallStatus` /
-   * `onRecording` do resolve. Relay-only mode tears down on the
-   * ConversationRelay callback instead, which races them.
+   * At the other end the session is released as soon as the call's WebSocket
+   * closes, in every mode — so out-of-band events that arrive after the hangup
+   * (`onCallStatus`, `onRecording`) generally find nothing here. Read
+   * late-call state from the session {@link onCallEnded} hands you instead.
    *
    * @example
    * ```typescript
@@ -910,8 +1382,9 @@ export class VoiceChannel extends BaseChannel {
    * @param callSid - Twilio Call SID, e.g. from
    *   `InitiateVoiceConversationResult.callSid` or a call event.
    * @returns The session, or `undefined` — not created yet, the call ended, or
-   *   it landed on another instance (see the horizontal-scaling note in
-   *   CLAUDE.md).
+   *   it landed on another instance. For the last case,
+   *   {@link resolveConversationSessionByCallSid} falls back to Conversation
+   *   Orchestrator.
    */
   public getConversationSessionByCallSid(callSid: string): ConversationSession | undefined {
     for (const session of this.activeConversations.values()) {
@@ -920,6 +1393,90 @@ export class VoiceChannel extends BaseChannel {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Look up a call's session on any instance, falling back to Conversation
+   * Orchestrator when this instance doesn't hold the call.
+   *
+   * Out-of-band call events (`onCallStatus`, `onAmd`, `onRecording`) carry
+   * only a CallSid and, without `TACConfig.instancePublicDomain`, can reach any
+   * replica. This returns the live session when the call is held here — same
+   * as {@link getConversationSessionByCallSid} — and otherwise, for a
+   * ConversationRelay call in orchestrator mode, a session rebuilt from
+   * Conversation Orchestrator.
+   *
+   * A rebuilt session carries identity only (conversation id, `callSid`,
+   * profile, both participants), is not tracked, and can't be used with
+   * {@link sendResponse}: the call's WebSocket is on another instance. If CO
+   * holds several conversations for the call (it starts a new one when a
+   * conversation closes mid-call), the active one wins, else the newest — this
+   * rule applies only to the rebuild path. On the instance holding the call,
+   * the live session is returned as-is, so after a mid-call close it still
+   * carries the closed conversation's id while other instances return the new
+   * one; correlate by `callSid` if you need a stable key.
+   *
+   * To tell live from rebuilt, check
+   * `voiceChannel.getWebsocket(session.conversationId) !== null` — true only
+   * for a session live on this instance. A rebuilt session's `startedAt` is
+   * the rebuild time, not the call's, and its `metadata` is always empty.
+   *
+   * Cost: on a local miss this makes up to two Conversation Orchestrator
+   * requests (list conversations, then participants). Prefer
+   * {@link getConversationSessionByCallSid} on hot paths, or when
+   * `TACConfig.instancePublicDomain` already routes call events to the
+   * instance holding the call.
+   *
+   * @example
+   * ```typescript
+   * voiceChannel.onCallStatus(async event => {
+   *   const session = await voiceChannel.resolveConversationSessionByCallSid(event.callSid);
+   *   if (session) {
+   *     auditLog(session.conversationId, session.profileId, event.callStatus);
+   *   }
+   * });
+   * ```
+   *
+   * @param callSid - Twilio Call SID, e.g. from a call event.
+   * @returns The live or rebuilt session, or `undefined` — relay-only or Media
+   *   Streams mode (no CO conversation behind the call), CO knows no
+   *   conversation for it, or the lookup failed (logged).
+   */
+  public async resolveConversationSessionByCallSid(
+    callSid: string
+  ): Promise<ConversationSession | undefined> {
+    const local = this.getConversationSessionByCallSid(callSid);
+    if (local) {
+      return local;
+    }
+
+    const client = this.conversationClient;
+    if (!client || !this.provider.conversationClosedByOrchestrator) {
+      return undefined;
+    }
+
+    let conversations: ConversationResponse[];
+    try {
+      conversations = await client.listConversations({ channelId: callSid });
+    } catch (error) {
+      this.logger.error(
+        { err: error, call_sid: callSid },
+        'Failed to look up the conversation for a call'
+      );
+      return undefined;
+    }
+    if (conversations.length === 0) {
+      return undefined;
+    }
+
+    const active = conversations.filter(c => c.status === 'ACTIVE');
+    const candidates = active.length > 0 ? active : conversations;
+    // A missing or unparseable createdAt sorts first, so a conversation with
+    // good data always wins over one without.
+    const createdAt = (c: ConversationResponse): number =>
+      parseIso8601(c.createdAt) ?? Number.NEGATIVE_INFINITY;
+    const chosen = candidates.reduce((best, c) => (createdAt(c) > createdAt(best) ? c : best));
+    return this.rebuildSession(chosen.id as ConversationId, callSid);
   }
 
   // =========================================================================
@@ -1022,6 +1579,8 @@ export class VoiceChannel extends BaseChannel {
    */
   public override shutdown(): void {
     this.provider.shutdown();
+    this.activeConversations.clear();
+    this.closedWhileLive.clear();
     super.shutdown();
   }
 }

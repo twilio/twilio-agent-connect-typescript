@@ -18,6 +18,12 @@ import { TACTool } from '@twilio/tac-tools';
 import { TACConfig } from '../packages/core/src/lib/config';
 import type { Logger } from '../packages/core/src/lib/logger';
 import type { CallState } from '../packages/core/src/channels/voice/media-streams/openai-realtime/state';
+import { DEFAULT_EXPIRING_MAP_TTL_MS } from '../packages/core/src/util/expiring-map';
+
+/** The session-config token a TwiML document carries, if any. */
+function tokenIn(twiml: string): string | undefined {
+  return /<Parameter name="_tac_session_config_token" value="([^"]+)"/.exec(twiml)?.[1];
+}
 
 const noopLogger = {
   debug: () => {},
@@ -55,7 +61,7 @@ interface StubChannel {
   channel: VoiceChannel;
   /** Sessions created via `startConversationInternal`, keyed by conversation id. */
   sessions: Map<string, ConversationSession>;
-  /** Conversation ids passed to `endConversationInternal`, in order. */
+  /** Conversation ids passed to `releaseSessionInternal`, in order. */
   ended: string[];
   /** The mocked `client.calls.create`. */
   callsCreate: ReturnType<typeof vi.fn>;
@@ -117,10 +123,12 @@ function makeChannel(options?: {
       sessions.set(conversationId, session);
       return session;
     },
-    endConversationInternal: (conversationId: string) => {
+    isConversationActive: (conversationId: string) => sessions.has(conversationId),
+    releaseSessionInternal: (conversationId: string) => {
       ended.push(conversationId);
+      const session = sessions.get(conversationId);
       sessions.delete(conversationId);
-      return Promise.resolve();
+      return Promise.resolve(session);
     },
     handleErrorInternal: (error: Error) => {
       errors.push(error);
@@ -317,7 +325,7 @@ describe('OpenAIRealtimeProvider inbound', () => {
     );
   });
 
-  it('stashes the inbound session config keyed by call SID', async () => {
+  it('stashes the inbound session config under a token carried on the TwiML', async () => {
     const sessionConfig = { instructions: 'per-call' };
     const config = new OpenAIRealtimeProviderConfig({
       openaiApiKey: 'sk-test',
@@ -325,9 +333,34 @@ describe('OpenAIRealtimeProvider inbound', () => {
     });
     const { provider } = makeProvider(undefined, config);
 
-    await provider.handleIncomingCall({ callSid: 'CA123', extra: {} });
+    const twiml = await provider.handleIncomingCall({ callSid: 'CA123', extra: {} });
+    const token = tokenIn(twiml);
 
-    expect(provider.peekPendingSessionConfig('CA123')).toEqual(sessionConfig);
+    expect(token).toBeDefined();
+    expect(provider.peekPendingSessionConfig(token!)).toEqual(sessionConfig);
+    // Never keyed by the call SID: the stream may connect to another replica.
+    expect(provider.peekPendingSessionConfig('CA123')).toBeUndefined();
+  });
+
+  it('keeps inherited custom parameters alongside the inbound token', async () => {
+    const config = new OpenAIRealtimeProviderConfig({
+      openaiApiKey: 'sk-test',
+      defaultTwimlOptions: { customParameters: { tenant: 'acme' } },
+      onInboundCallSessionConfig: () => Promise.resolve({ instructions: 'per-call' }),
+    });
+    const { provider } = makeProvider(undefined, config);
+
+    const twiml = await provider.handleIncomingCall({ callSid: 'CA123', extra: {} });
+
+    expect(twiml).toContain('<Parameter name="tenant" value="acme"');
+    expect(tokenIn(twiml)).toBeDefined();
+  });
+
+  it('adds no token when the inbound hook is unset', async () => {
+    const { provider } = makeProvider();
+    const twiml = await provider.handleIncomingCall({ callSid: 'CA123', extra: {} });
+    expect(tokenIn(twiml)).toBeUndefined();
+    expect(provider.pendingSessionConfigCount()).toBe(0);
   });
 
   it('purges an inbound stash whose Media Stream never connects, once its TTL elapses', async () => {
@@ -341,11 +374,11 @@ describe('OpenAIRealtimeProvider inbound', () => {
 
       // Twilio answered the webhook — the override is stashed — but never opened
       // the Media Stream, so nothing will ever drain it on the connect path.
-      await provider.handleIncomingCall({ callSid: 'CA123', extra: {} });
-      expect(provider.peekPendingSessionConfig('CA123')).toBeDefined();
+      const token = tokenIn(await provider.handleIncomingCall({ callSid: 'CA123', extra: {} }))!;
+      expect(provider.peekPendingSessionConfig(token)).toBeDefined();
 
-      vi.advanceTimersByTime(120_000);
-      expect(provider.peekPendingSessionConfig('CA123')).toBeUndefined();
+      vi.advanceTimersByTime(DEFAULT_EXPIRING_MAP_TTL_MS);
+      expect(provider.peekPendingSessionConfig(token)).toBeUndefined();
       expect(provider.pendingSessionConfigCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -634,10 +667,11 @@ describe('OpenAIRealtimeProvider session config resolution', () => {
       defaultSessionConfig: validSessionConfig,
       onInboundCallSessionConfig: () => Promise.resolve(perCall),
     });
-    await provider.handleIncomingCall({ callSid: 'CA1', extra: {} });
+    const token = tokenIn(await provider.handleIncomingCall({ callSid: 'CA1', extra: {} }))!;
 
     const modelWs = new FakeSocket();
-    startCall(provider, modelWs);
+    // Twilio replays the <Parameter> back as a customParameter on `start`.
+    startCall(provider, modelWs, { customParameters: { _tac_session_config_token: token } });
 
     await awaitSessionUpdate(modelWs);
     expect(modelWs.json()[0]?.session).toEqual(perCall);
@@ -700,7 +734,9 @@ describe('OpenAIRealtimeProvider audio bridge', () => {
     // registerCall just before the throw — rollback must drop it too.
     internals.pendingSessionConfigs.set('tok1', { ...validSessionConfig });
 
-    vi.spyOn(provider, 'openModelSocket').mockResolvedValue(new FakeSocket() as unknown as WebSocket);
+    vi.spyOn(provider, 'openModelSocket').mockResolvedValue(
+      new FakeSocket() as unknown as WebSocket
+    );
     const twilioWs = new FakeSocket();
     provider.handleWebSocket(twilioWs as unknown as WebSocket);
     twilioWs.emit(

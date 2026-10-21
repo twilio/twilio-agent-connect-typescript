@@ -3,7 +3,8 @@ import {
   ChannelType,
   ConversationAddress,
   ConversationId,
-  SendMessageActionRequest,
+  ConversationParticipant,
+  ConversationSession,
   InitiateConversationResult,
 } from '../types/index';
 import { z } from 'zod';
@@ -66,126 +67,70 @@ export class ChatChannel extends MessagingChannel {
     return authorAddress === this.agentAddress;
   }
 
-  protected getAgentAddress(conversationId: ConversationId): ConversationAddress {
-    const session = this.getConversationSession(conversationId);
-    const channelId =
-      session && typeof session.metadata?.channelId === 'string'
-        ? session.metadata.channelId
-        : undefined;
+  protected getAgentAddress(_conversationId: ConversationId): ConversationAddress {
+    // channelId is per-conversation and arrives on each turn's session, so a
+    // lookup by id alone can't supply it.
+    return this.chatAddress(undefined);
+  }
+
+  protected override agentAddressFor(session: ConversationSession): ConversationAddress {
+    // channelId comes off the session; the inbound webhook puts it there.
+    return this.chatAddress(session.metadata?.channelId);
+  }
+
+  private chatAddress(channelId: unknown): ConversationAddress {
     return {
       channel: 'CHAT',
       address: this.agentAddress,
-      ...(channelId ? { channelId } : {}),
+      ...(typeof channelId === 'string' && channelId ? { channelId } : {}),
     };
   }
 
   /**
-   * Send chat response using the Conversation Orchestrator Actions API (SEND_MESSAGE).
+   * Rebuild the session, recovering `channelId` from the participants.
    *
-   * Reads the agent and customer participant ids stashed on the session by
-   * inbound reconciliation or outbound initiation. Missing ids are a misuse —
-   * `sendResponse` is only expected to be called after an inbound webhook
-   * (COMMUNICATION_CREATED → reconcile) or after `initiateOutboundConversation`,
-   * both of which populate the session.
+   * A session rebuilt from a bare conversation id has no webhook to take
+   * `channelId` from, so it's read off the customer's or agent's CHAT address
+   * instead, where Conversation Orchestrator records it.
    */
-  public async sendResponse(
-    conversationId: ConversationId,
-    message: string,
-    metadata?: Record<string, unknown>
-  ): Promise<void> {
-    this.logger.debug(
-      {
-        conversation_id: conversationId,
-        message_length: message.length,
-        operation: 'send_response',
-      },
-      'Sending chat response'
-    );
-
-    try {
-      const session = this.getConversationSession(conversationId);
-
-      if (!session || !session.authorInfo || !session.aiAgentInfo) {
-        throw new Error(
-          `Unable to send chat message: sendResponse called without a reconciled session ` +
-            `for conversation ${conversationId}. Wait for an inbound webhook or call ` +
-            `initiateOutboundConversation first.`
-        );
-      }
-
-      const customerParticipantId = session.authorInfo.participantId;
-      const agentParticipantId = session.aiAgentInfo.participantId;
-      if (!customerParticipantId || !agentParticipantId) {
-        throw new Error(
-          `Unable to send chat message: session for conversation ${conversationId} is ` +
-            `missing participant ids.`
-        );
-      }
-
-      // channelId (Chat Channel SID) is required for CHAT delivery — the V1
-      // Chat backend uses it to pick the destination thread. Inbound webhooks
-      // always populate it, so a missing value here is a misuse.
-      const chatChannelSid =
-        typeof session.metadata?.channelId === 'string' ? session.metadata.channelId : undefined;
-
-      if (!chatChannelSid) {
-        throw new Error(
-          "Missing required session.metadata['channelId'] for chat sendResponse; " +
-            'this is normally populated by an inbound webhook. Ensure an inbound ' +
-            'message has been processed before calling sendResponse, or set ' +
-            "session.metadata['channelId'] explicitly in advanced usage."
-        );
-      }
-
-      const channelSettings: ActionChannelSettings = {
-        channelId: chatChannelSid,
-      };
-
-      this.logger.debug(
-        {
-          conversation_id: conversationId,
-          recipient_participant_id: customerParticipantId,
-          agent_participant_id: agentParticipantId,
-          channel_id: chatChannelSid,
-        },
-        'Sending chat message via Actions API'
-      );
-
-      const actionRequest: SendMessageActionRequest = {
-        type: 'SEND_MESSAGE',
-        payload: {
-          from: {
-            channel: 'CHAT',
-            participantId: agentParticipantId,
-          },
-          to: [
-            {
-              channel: 'CHAT',
-              participantId: customerParticipantId,
-            },
-          ],
-          content: { text: message },
-          channelSettings,
-        },
-      };
-
-      await this.conversationClient.createAction(conversationId, actionRequest);
-
-      this.logger.info(
-        { conversation_id: conversationId, channel_id: chatChannelSid },
-        'Chat message sent successfully via Actions API'
-      );
-    } catch (error) {
-      this.logger.error({ err: error, conversation_id: conversationId }, 'Send response error');
-      this.handleError(error instanceof Error ? error : new Error(String(error)), {
-        conversationId,
-        message,
-        metadata,
-      });
-      throw error;
+  protected override sessionFromParticipants(
+    conversationId: string,
+    participants: ConversationParticipant[]
+  ): ConversationSession | null {
+    const session = super.sessionFromParticipants(conversationId, participants);
+    if (session === null || session.metadata.channelId) {
+      return session;
     }
+    const ownIds = new Set(
+      [session.authorInfo?.participantId, session.aiAgentInfo?.participantId].filter(
+        (id): id is string => Boolean(id)
+      )
+    );
+    const channelId = participants
+      .filter(p => ownIds.has(p.id))
+      .flatMap(p => p.addresses)
+      .find(a => a.channel === 'CHAT' && a.channelId)?.channelId;
+    if (channelId) {
+      session.metadata.channelId = channelId;
+    }
+    return session;
+  }
 
-    this.trackResponseSent(conversationId);
+  protected override buildChannelSettings(session: ConversationSession): ActionChannelSettings {
+    // channelId (Chat Channel SID) is required for CHAT delivery — the V1
+    // Chat backend uses it to pick the destination thread. Inbound webhooks
+    // always populate it; a session rebuilt from a bare id has it only when
+    // the conversation's participants carry it.
+    const channelId = session.metadata?.channelId;
+    if (typeof channelId !== 'string' || !channelId) {
+      throw new Error(
+        "Missing required session.metadata['channelId'] for chat sendResponse. Pass the " +
+          'ConversationSession from onMessageReady or initiateOutboundConversation: a bare ' +
+          "conversation id works only when the conversation's CHAT participants carry a " +
+          'channelId.'
+      );
+    }
+    return { channelId };
   }
 
   /**

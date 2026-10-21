@@ -52,6 +52,7 @@ export type {
   VoiceChannelEvents,
   VoiceChannelConfig,
   InboundCallTwimlHandler,
+  CallEndedHandler,
   CallStatusHandler,
   AmdHandler,
   RecordingHandler,
@@ -115,6 +116,9 @@ export { OperatorResultProcessor } from './lib/operator-result-processor';
 
 // TAC Memory Response wrapper
 export { TACMemoryResponse } from './lib/tac-memory-response';
+
+// Conversation session helpers
+export { conversationMetadata } from './lib/conversation-session-helpers';
 
 // Adapter utilities
 export { MemoryPromptBuilder } from './adapters/prompt-builder';

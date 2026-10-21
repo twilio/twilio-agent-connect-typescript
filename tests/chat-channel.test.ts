@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ChatChannel, TAC, ConversationSession } from '@twilio/tac-core';
+import {
+  ChatChannel,
+  TAC,
+  ConversationClient,
+  ConversationParticipant,
+  ConversationSession,
+} from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import { createTestTAC } from './helpers/tac';
 
@@ -21,12 +27,46 @@ describe('Chat Channel', () => {
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
+  const CHAT_SID = 'CH00000000000000000000000000000000';
+
+  const chatParticipant = (
+    id: string,
+    type: ConversationParticipant['type'],
+    address: string,
+    channelId?: string,
+    profileId?: string
+  ): ConversationParticipant => ({
+    id,
+    conversationId: 'CHtest123456789',
+    accountId: 'ACtest123456789',
+    type,
+    ...(profileId ? { profileId } : {}),
+    addresses: [{ channel: 'CHAT', address, ...(channelId ? { channelId } : {}) }],
+  });
+
+  const closedWebhook = (conversationId: string) => ({
+    eventType: 'CONVERSATION_UPDATED',
+    data: {
+      conversationId,
+      configurationId: getTestConfig().conversationConfigurationId,
+      status: 'CLOSED',
+    },
+  });
+
   let channel: ChatChannel;
   let tac: TAC;
+  let listParticipantsSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
     channel = new ChatChannel(tac);
+    // Every inbound message reads the conversation's participants once.
+    listParticipantsSpy = vi
+      .spyOn(ConversationClient.prototype, 'listParticipants')
+      .mockResolvedValue([
+        chatParticipant('PA_agent_123', 'AI_AGENT', 'ai-assistant', CHAT_SID),
+        chatParticipant('PA_customer_123', 'CUSTOMER', 'customer@example.com', CHAT_SID),
+      ]);
     // Short-circuit memory retrieval so webhook processing tests don't hit
     // real Twilio APIs with fake credentials and spam the logs with 401s.
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
@@ -58,8 +98,9 @@ describe('Chat Channel', () => {
       expect(customChannel.channelType).toBe('chat');
     });
 
-    it('should start with no active conversations', () => {
+    it('keeps no sessions (deprecated lookups return undefined/false)', () => {
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(channel.getConversationSession('CHtest123456789')).toBeUndefined();
     });
 
     it('should default memoryMode to "never"', () => {
@@ -79,7 +120,7 @@ describe('Chat Channel', () => {
   });
 
   describe('webhook processing', () => {
-    it('should process conversation.created event', async () => {
+    it('should ignore conversation.created; conversationStarted is a deprecated no-op', async () => {
       const webhookPayload = {
         eventType: 'CONVERSATION_CREATED',
         data: {
@@ -93,14 +134,8 @@ describe('Chat Channel', () => {
 
       await channel.processWebhook(webhookPayload);
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
-      expect(startedCallback).toHaveBeenCalledWith({
-        session: expect.objectContaining({
-          conversationId: 'CHtest123456789',
-          profileId: 'test_profile_123',
-          channel: 'chat',
-        }),
-      });
+      expect(startedCallback).not.toHaveBeenCalled();
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
     });
 
     it('should process communication.created event', async () => {
@@ -125,14 +160,19 @@ describe('Chat Channel', () => {
 
       await channel.processWebhook(webhookPayload);
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
       expect(messageCallback).toHaveBeenCalledWith({
         conversationId: 'CHtest123456789',
         profileId: undefined,
         message: 'Hello from chat',
         author: 'customer@example.com',
         userMemory: undefined,
+        session: expect.objectContaining({
+          conversationId: 'CHtest123456789',
+          channel: 'chat',
+          aiAgentInfo: expect.objectContaining({ participantId: 'PA_agent_123' }),
+        }),
       });
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should ignore messages from bot itself (default agent address)', async () => {
@@ -202,38 +242,69 @@ describe('Chat Channel', () => {
         },
       };
 
+      const captured: ConversationSession[] = [];
+      channel.on('messageReceived', data => captured.push(data.session));
+
       await channel.processWebhook(webhookPayload);
 
-      const session = channel.getConversationSession('CHtest123456789');
-      expect(session?.metadata?.channelId).toBe('CH00000000000000000000000000000000');
+      expect(captured).toHaveLength(1);
+      expect(captured[0].metadata?.channelId).toBe('CH00000000000000000000000000000000');
     });
 
-    it('should process conversation.updated (closed) event', async () => {
-      // First create a conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+    it('should add a lazily-created agent with the channelId on its CHAT address', async () => {
+      // Use real reconciliation for this test.
+      (channel as any).reconcileParticipants.mockRestore();
+      listParticipantsSpy.mockResolvedValue([
+        chatParticipant('PA_USER', 'CUSTOMER', 'user@example.com', CHAT_SID),
+      ]);
+      const addSpy = vi
+        .spyOn(ConversationClient.prototype, 'addParticipant')
+        .mockResolvedValue(chatParticipant('PA_AGENT', 'AI_AGENT', 'ai-assistant', CHAT_SID));
+      const captured: string[] = [];
+      channel.on('messageReceived', data => captured.push(data.message));
 
-      const endedCallback = vi.fn();
-      channel.on('conversationEnded', endedCallback);
-
-      // Then close it
       await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
+        eventType: 'COMMUNICATION_CREATED',
         data: {
           conversationId: 'CHtest123456789',
-          status: 'CLOSED',
+          author: { address: 'user@example.com', channel: 'CHAT', participantId: 'PA_USER' },
+          content: { type: 'TEXT', text: 'Test' },
+          channelId: CHAT_SID,
         },
       });
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(addSpy).toHaveBeenCalledTimes(1);
+      // Conversation Orchestrator requires channelId on a CHAT participant address.
+      expect(addSpy.mock.calls[0]![1]).toEqual([
+        { channel: 'CHAT', address: 'ai-assistant', channelId: CHAT_SID },
+      ]);
+      expect(captured).toEqual(['Test']);
+    });
+
+    it('should process conversation.updated (closed) event', async () => {
+      listParticipantsSpy.mockResolvedValue([
+        chatParticipant('PA_USER', 'CUSTOMER', 'user@example.com', undefined, 'profile_123'),
+      ]);
+      const endedCallback = vi.fn();
+      channel.on('conversationEnded', endedCallback);
+
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
+
       expect(endedCallback).toHaveBeenCalledWith({
         session: expect.objectContaining({
           conversationId: 'CHtest123456789',
           channel: 'chat',
+          profileId: 'profile_123',
         }),
       });
+    });
+
+    it('should exit fast on CLOSED with no handler registered', async () => {
+      tac.registerChannel(channel);
+
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
+
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
     });
 
     it('should ignore empty messages', async () => {
@@ -262,31 +333,16 @@ describe('Chat Channel', () => {
   });
 
   describe('send response', () => {
-    /**
-     * Pre-populate a fully-reconciled chat session. `sendResponse` now reads
-     * ids directly from `session.authorInfo` and `session.aiAgentInfo`; it no
-     * longer calls `listParticipants`/`addParticipant` at send time.
-     */
-    const seedReconciledSession = (conversationId: string, opts?: {
-      channelId?: string;
-      agentParticipantId?: string;
-      customerParticipantId?: string;
-    }) => {
-      (channel as any).activeConversations.set(conversationId, {
-        conversationId,
-        channel: 'chat',
-        startedAt: new Date(),
-        authorInfo: {
-          address: 'customer@example.com',
-          participantId: opts?.customerParticipantId ?? 'PA_customer_123',
-        },
-        aiAgentInfo: {
-          address: 'ai-assistant',
-          participantId: opts?.agentParticipantId ?? 'PA_agent_123',
-        },
-        metadata: opts?.channelId ? { channelId: opts.channelId } : {},
-      });
-    };
+    /** A chat session shaped the way an inbound webhook (or outbound initiation) leaves it. */
+    const reconciledSession = (overrides: Partial<ConversationSession> = {}): ConversationSession => ({
+      conversationId: 'CHtest123456789',
+      channel: 'chat',
+      startedAt: new Date(),
+      authorInfo: { address: 'customer@example.com', participantId: 'PA_customer_123' },
+      aiAgentInfo: { address: 'ai-assistant', participantId: 'PA_agent_123' },
+      metadata: { channelId: CHAT_SID },
+      ...overrides,
+    });
 
     beforeEach(() => {
       // Access the conversation client's axios instance through TAC
@@ -295,7 +351,6 @@ describe('Chat Channel', () => {
       // Reset history to clear the getConfiguration call from TAC initialization
       mockAdapter.resetHistory();
 
-      // Mock createAction. sendResponse no longer lists participants.
       mockAdapter.onPost('/v2/Conversations/CHtest123456789/Actions').reply(202, {
         id: 'conv_action_01abcdef',
         type: 'SEND_MESSAGE',
@@ -305,13 +360,10 @@ describe('Chat Channel', () => {
     });
 
     it('should send response via Actions API', async () => {
-      seedReconciledSession('CHtest123456789', {
-        channelId: 'CH00000000000000000000000000000000',
-      });
+      await channel.sendResponse(reconciledSession(), 'Hello from bot');
 
-      await channel.sendResponse('CHtest123456789', 'Hello from bot');
-
-      // sendResponse no longer calls listParticipants — only createAction
+      // A session already carries both participants — only createAction
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
       const history = mockAdapter.history;
       expect(history.get.length).toBe(0);
       expect(history.post.length).toBe(1);
@@ -328,51 +380,77 @@ describe('Chat Channel', () => {
       expect(body.payload.to[0].channel).toBe('CHAT');
       expect(body.payload.to[0]).not.toHaveProperty('address');
       expect(body.payload.content.text).toBe('Hello from bot');
-      expect(body.payload.channelSettings.channelId).toBe(
-        'CH00000000000000000000000000000000'
-      );
+      expect(body.payload.channelSettings.channelId).toBe(CHAT_SID);
     });
 
     it('should throw when channelId missing from session metadata', async () => {
-      // Seed a reconciled session but without channelId
-      seedReconciledSession('CHtest123456789');
-
-      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        /session\.metadata\['channelId'\]/
-      );
+      await expect(
+        channel.sendResponse(reconciledSession({ metadata: {} }), 'Hello')
+      ).rejects.toThrow(/session\.metadata\['channelId'\]/);
+      expect(mockAdapter.history.post.length).toBe(0);
     });
 
-    it('should throw when no session exists', async () => {
+    it('by bare id, takes the channelId from the participants', async () => {
+      listParticipantsSpy.mockResolvedValue([
+        chatParticipant('PA_AGENT', 'AI_AGENT', 'ai-assistant', 'CH_CHAT_SID'),
+        chatParticipant('PA_USER', 'CUSTOMER', 'user@example.com', 'CH_CHAT_SID'),
+      ]);
+
+      await channel.sendResponse('CHtest123456789', 'Hello!');
+
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.from.participantId).toBe('PA_AGENT');
+      expect(body.payload.to[0].participantId).toBe('PA_USER');
+      expect(body.payload.channelSettings.channelId).toBe('CH_CHAT_SID');
+    });
+
+    it("by bare id, ignores other participants' channelIds", async () => {
+      listParticipantsSpy.mockResolvedValue([
+        chatParticipant('PA_USER', 'CUSTOMER', 'user@example.com'),
+        chatParticipant('PA_OTHER', 'HUMAN_AGENT', 'someone', 'CH_OTHER'),
+      ]);
+
+      await expect(channel.sendResponse('CHtest123456789', 'Hello!')).rejects.toThrow(
+        'Pass the ConversationSession'
+      );
+      expect(mockAdapter.history.post.length).toBe(0);
+    });
+
+    it('by bare id without any channelId, says to pass the session', async () => {
+      listParticipantsSpy.mockResolvedValue([
+        chatParticipant('PA_USER', 'CUSTOMER', 'user@example.com'),
+      ]);
+
+      await expect(channel.sendResponse('CHtest123456789', 'Hello!')).rejects.toThrow(
+        /session\.metadata\['channelId'\].*Pass the ConversationSession/
+      );
+      expect(mockAdapter.history.post.length).toBe(0);
+    });
+
+    it('should throw when no recipient resolves', async () => {
+      listParticipantsSpy.mockResolvedValue([]);
+
       await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        'without a reconciled session'
+        'no recipient resolved'
       );
     });
 
     it('should throw when session is missing authorInfo', async () => {
-      (channel as any).activeConversations.set('CHtest123456789', {
-        conversationId: 'CHtest123456789',
-        channel: 'chat',
-        startedAt: new Date(),
-        metadata: {},
-      });
+      const session = reconciledSession();
+      delete session.authorInfo;
 
-      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        'without a reconciled session'
-      );
+      await expect(channel.sendResponse(session, 'Hello')).rejects.toThrow('no recipient resolved');
     });
 
-    it('should throw when session is missing aiAgentInfo', async () => {
-      (channel as any).activeConversations.set('CHtest123456789', {
-        conversationId: 'CHtest123456789',
-        channel: 'chat',
-        startedAt: new Date(),
-        authorInfo: { address: 'customer@example.com', participantId: 'PA_customer_123' },
-        metadata: {},
-      });
+    it('falls back to the configured agent address when session is missing aiAgentInfo', async () => {
+      const session = reconciledSession();
+      delete session.aiAgentInfo;
 
-      await expect(channel.sendResponse('CHtest123456789', 'Hello')).rejects.toThrow(
-        'without a reconciled session'
-      );
+      await channel.sendResponse(session, 'Hello');
+
+      const body = JSON.parse(mockAdapter.history.post[0]!.data);
+      expect(body.payload.from).toEqual({ channel: 'CHAT', address: 'ai-assistant' });
     });
   });
 });
