@@ -66,6 +66,8 @@ export abstract class BaseChannel {
   protected readonly logger: Logger;
   protected readonly conversationClient: ConversationClient | null;
   protected readonly callbacks: BaseChannelEvents;
+  /** TAC's forwarder to `tac.onConversationEnded`, while it fills the slot. */
+  private tacConversationEndedForwarder: BaseChannelEvents['onConversationEnded'];
   protected readonly memoryMode: MemoryMode;
   private readonly processedWebhookTokens: Set<string>;
   private readonly maxTrackedTokens: number;
@@ -248,18 +250,36 @@ export abstract class BaseChannel {
    * before rebuilding a closed conversation's session from Conversation
    * Orchestrator: with no handler, there is nothing to hand it to.
    *
-   * A channel registered with TAC routes the event to `tac.onConversationEnded`,
-   * so its own slot is always filled; ask TAC then.
+   * Registering with TAC fills the slot with a forwarder to
+   * `tac.onConversationEnded`; while that forwarder is installed, ask TAC. A
+   * handler set with `channel.on('conversationEnded', ...)` — before or after
+   * registration — replaces it and counts on its own.
    *
    * @internal
    */
   protected hasConversationEndedHandler(): boolean {
-    if (!this.callbacks.onConversationEnded) {
+    const handler = this.callbacks.onConversationEnded;
+    if (!handler) {
       return false;
     }
-    return (
-      this.tac.getChannel(this.channelType) !== this || this.tac.hasConversationEndedCallback()
-    );
+    if (handler !== this.tacConversationEndedForwarder) {
+      return true;
+    }
+    return this.tac.hasConversationEndedCallback();
+  }
+
+  /**
+   * Install TAC's forwarder to `tac.onConversationEnded` in this channel's
+   * slot, remembering it so {@link hasConversationEndedHandler} can tell it
+   * apart from a handler registered directly on the channel.
+   *
+   * @internal
+   */
+  public setConversationEndedForwarderInternal(
+    forwarder: NonNullable<BaseChannelEvents['onConversationEnded']>
+  ): void {
+    this.callbacks.onConversationEnded = forwarder;
+    this.tacConversationEndedForwarder = forwarder;
   }
 
   /**
@@ -519,5 +539,6 @@ export abstract class BaseChannel {
     delete this.callbacks.onConversationStarted;
     delete this.callbacks.onConversationEnded;
     delete this.callbacks.onError;
+    this.tacConversationEndedForwarder = undefined;
   }
 }

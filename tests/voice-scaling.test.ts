@@ -197,6 +197,21 @@ describe('hook split', () => {
 describe('stateless conversation closed', () => {
   // CLOSED must work on an instance that never held the call.
 
+  it('fires a handler set on the channel after registering it', async () => {
+    const tac = await createTestTAC(getTestConfig());
+    const channel = new VoiceChannel(tac);
+    tac.registerChannel(channel);
+    const ended: ConversationSession[] = [];
+    channel.on('conversationEnded', ({ session }: { session: ConversationSession }) => {
+      ended.push(session);
+    });
+
+    mockParticipants(tac, voiceParticipants('conv_direct', 'CA_direct'));
+    await channel.processWebhook(closedWebhook('conv_direct'));
+
+    expect(ended.map(s => s.conversationId)).toEqual(['conv_direct']);
+  });
+
   it('fires on an instance that never saw the call', async () => {
     const a = await setup();
     const b = await setup();

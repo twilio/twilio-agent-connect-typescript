@@ -309,6 +309,17 @@ describe('BaseChannel', () => {
       expect(channel.testHasConversationEndedHandler()).toBe(true);
     });
 
+    it('reports a handler registered directly after registering with TAC', async () => {
+      const tac = await createTestTAC(tacConfig);
+      const channel = new TestChannel(tac);
+      tac.registerChannel(channel);
+
+      // Replaces TAC's forwarder, so it counts without a TAC-level handler.
+      channel.on('conversationEnded', () => undefined);
+
+      expect(channel.testHasConversationEndedHandler()).toBe(true);
+    });
+
     it('swallows errors thrown by the conversation-ended handler', async () => {
       const channel = new TestChannel(await createTestTAC(tacConfig));
       const handler = vi.fn(() => {
