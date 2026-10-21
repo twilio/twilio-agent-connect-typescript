@@ -1,4 +1,4 @@
-import { WebSocket } from 'ws';
+import { WebSocket, type ClientOptions } from 'ws';
 import type { TACTool } from '@twilio/tac-tools';
 import packageJson from '../../../../../../../package.json' with { type: 'json' };
 import type { TACConfig } from '../../../../lib/config';
@@ -13,6 +13,7 @@ import {
 } from '../../../../types/index';
 import type { VoiceChannel } from '../../channel';
 import { VoiceProvider } from '../../provider';
+import { checkServerIdentity } from '../../../../util/distrusted-intermediates';
 import { TwiMLBuilderMediaStreams } from '../twiml';
 import type { MediaStreamsOpenAIProviderConfig } from './config';
 import type { MediaStreamsOpenAICallState } from './state';
@@ -138,7 +139,11 @@ export abstract class MediaStreamsOpenAIProvider<
    */
   public openModelSocket(url: string, headers: Record<string, string>): Promise<WebSocket> {
     return new Promise<WebSocket>((resolve, reject) => {
-      const ws = new WebSocket(url, { headers });
+      const ws = new WebSocket(url, {
+        headers,
+        // ws types this hook as returning boolean; Node's TLS layer expects Error | undefined.
+        checkServerIdentity: checkServerIdentity as unknown as ClientOptions['checkServerIdentity'],
+      });
       const onOpen = (): void => {
         ws.off('error', onError);
         // A listener-less 'error' emission throws, and `ws` emits one for any

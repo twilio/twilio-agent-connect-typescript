@@ -109,6 +109,11 @@ export {
 
 // Studio handoff URL helpers
 export { studioExecutionsUrl, studioVoiceHandoffUrl } from './util/handoff-urls';
+export {
+  DISTRUSTED_SPKI_SHA256,
+  checkServerIdentity,
+  createDistrustingHttpsAgent,
+} from './util/distrusted-intermediates';
 
 // Conversation Intelligence processor
 export { OperatorResultProcessor } from './lib/operator-result-processor';
