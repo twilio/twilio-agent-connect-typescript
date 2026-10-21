@@ -303,10 +303,9 @@ export class TAC {
       }
     );
 
-    // Handle conversation ended events
-    channel.on(
-      'conversationEnded',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
+    // Handle conversation ended events. Installed as the channel's forwarder so
+    // the channel can tell it apart from a handler registered on it directly.
+    channel.setConversationEndedForwarderInternal(
       async ({ session }: { session: ConversationSession }) => {
         if (this.conversationEndedCallback) {
           try {

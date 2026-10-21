@@ -318,6 +318,18 @@ describe('Messaging horizontal scaling', () => {
       expect(ended[0]!.aiAgentInfo?.participantId).toBe('PA_AGENT');
     });
 
+    it('CLOSED fires a handler set on the channel after registering it', async () => {
+      const { channel } = await makeSmsChannel();
+      const ended: ConversationSession[] = [];
+      channel.on('conversationEnded', ({ session }: { session: ConversationSession }) => {
+        ended.push(session);
+      });
+
+      await deliver(channel, closed());
+
+      expect(ended.map(s => s.conversationId)).toEqual([CONV_ID]);
+    });
+
     it('a CHAT close does not fire on the SMS channel', async () => {
       const { tac, channel, counter } = await makeSmsChannel();
       counter.install(coOf(tac), 'listParticipants', () => [
@@ -1203,6 +1215,19 @@ describe('Messaging horizontal scaling', () => {
       mockTrack.mock.calls
         .map(c => c[0] as { event: string; properties: Record<string, unknown> })
         .filter(c => c.event === event);
+
+    it('CLOSED with analytics on fires a handler set on the channel after registering it', async () => {
+      const { channel } = await makeSmsChannel();
+      const ended: ConversationSession[] = [];
+      channel.on('conversationEnded', ({ session }: { session: ConversationSession }) => {
+        ended.push(session);
+      });
+
+      await deliver(channel, closed());
+
+      expect(ended.map(s => s.conversationId)).toEqual([CONV_ID]);
+      expect(tracked('Conversation Ended')).toHaveLength(1);
+    });
 
     it('CLOSED with analytics on but no handler still reports the end', async () => {
       const { channel, counter } = await makeSmsChannel();
