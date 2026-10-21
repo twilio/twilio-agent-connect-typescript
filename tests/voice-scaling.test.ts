@@ -181,6 +181,28 @@ describe('hook split', () => {
     assertNoResidualState(channel, 'CA_relay');
   });
 
+  it.each([
+    ['orchestrated', getTestConfig, ['conv_throw'], []],
+    ['relay-only', relayOnlyConfig, ['conv_throw'], ['conv_throw']],
+  ] as const)(
+    '%s teardown survives a throwing webSocketDisconnected callback',
+    async (_mode, config, expectedCallEnded, expectedConversationEnded) => {
+      const { channel, conversationEnded, callEnded } = await setup(config());
+      const disconnected = vi.fn(() => {
+        throw new Error('app bug');
+      });
+      channel.on('webSocketDisconnected', disconnected);
+
+      startSession(channel, 'conv_throw');
+      await expect(teardown(channel, 'conv_throw')).resolves.toBeUndefined();
+
+      expect(disconnected).toHaveBeenCalledWith({ conversationId: 'conv_throw' });
+      expect(callEnded.map(s => s.conversationId)).toEqual(expectedCallEnded);
+      expect(conversationEnded.map(s => s.conversationId)).toEqual(expectedConversationEnded);
+      assertNoResidualState(channel, 'conv_throw');
+    }
+  );
+
   it('onCallEnded carries state the rebuild cannot', async () => {
     const { channel, callEnded } = await setup();
 
