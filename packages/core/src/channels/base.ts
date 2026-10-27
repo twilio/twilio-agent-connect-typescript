@@ -204,7 +204,10 @@ export abstract class BaseChannel {
   protected trackConversationStarted(eventData: unknown): void {
     const parsed = ConversationParticipantSchema.safeParse(eventData);
     if (!parsed.success) {
-      this.logger.debug({ err: parsed.error }, 'Skipping unparseable PARTICIPANT_ADDED payload');
+      this.logger.warn(
+        { validation_errors: parsed.error.issues },
+        'Skipping unparseable PARTICIPANT_ADDED payload'
+      );
       return;
     }
     const participant = parsed.data;
