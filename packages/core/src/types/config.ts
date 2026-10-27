@@ -111,9 +111,10 @@ export const TACConfigSchema = z
     apiKey: z.string().min(1, 'Twilio API Key is required'),
     apiSecret: z.string().min(1, 'Twilio API Secret is required'),
     /**
-     * Default Twilio phone number for Voice (inbound) and SMS. Optional if
-     * `phoneNumbers` is set; at least one of the two is required. After
-     * validation this is always populated and is a member of `phoneNumbers`.
+     * Default Twilio phone number for Voice (inbound) and SMS. Optional;
+     * back-filled from `phoneNumbers` when omitted, and always a member of
+     * `phoneNumbers` when set. Required (this or `phoneNumbers`) by the Voice
+     * and SMS channels.
      */
     phoneNumber: z.string().min(1, 'Twilio Phone Number is required').optional(),
     /**
@@ -221,18 +222,14 @@ export const TACConfigSchema = z
       .optional(),
   })
   // Reconcile each `(default, allowlist)` sender pair: back-fill whichever side
-  // is missing, keep the default first, de-duplicate. `phoneNumber` requires at
-  // least one of the two; RCS/WhatsApp stay optional. Mirrors the Python SDK's
-  // `_normalize_sender_sets` model validator.
-  .transform((data, ctx) => {
+  // is missing, keep the default first, de-duplicate. All three pairs are
+  // optional here; each channel requires its own pair at construction. Mirrors
+  // the Python SDK's `_normalize_sender_sets` model validator.
+  .transform(data => {
     const phone = normalizeSenderPair(data.phoneNumber, data.phoneNumbers ?? [], {
-      required: true,
+      required: false,
       field: 'phoneNumber',
     });
-    if (phone.error) {
-      ctx.addIssue({ code: 'custom', message: phone.error, path: ['phoneNumber'] });
-      return z.NEVER;
-    }
     const rcs = normalizeSenderPair(data.rcsSenderId, data.rcsSenderIds ?? [], {
       required: false,
       field: 'rcsSenderId',
@@ -244,8 +241,7 @@ export const TACConfigSchema = z
 
     return {
       ...data,
-      // Guaranteed populated: the required check above returned early otherwise.
-      phoneNumber: phone.default!,
+      phoneNumber: phone.default,
       phoneNumbers: phone.plural,
       rcsSenderId: rcs.default,
       rcsSenderIds: rcs.plural,

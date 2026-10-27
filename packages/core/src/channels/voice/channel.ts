@@ -139,6 +139,13 @@ export class VoiceChannel extends BaseChannel {
    */
   constructor(tac: TAC, options?: VoiceProviderConfig | ConversationRelayProviderConfigOptions) {
     super(tac, VoiceChannel.toBaseOptions(options));
+    if (this.config.phoneNumbers.length === 0) {
+      throw new Error(
+        'phoneNumber(s) is required for Voice channel. ' +
+          'Set TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS or provide ' +
+          'phoneNumber / phoneNumbers in TACConfig.'
+      );
+    }
     this.voiceCallbacks = {};
     this.provider = VoiceChannel.toProviderConfig(options).createProvider(this, this.config);
   }

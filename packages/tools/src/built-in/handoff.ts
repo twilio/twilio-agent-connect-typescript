@@ -105,7 +105,10 @@ const DEFAULT_HANDOFF_TOOL_DESCRIPTION =
  * response is delivered.
  *
  * The tool also sets the conversation to INACTIVE and clears status callbacks
- * to prevent further webhook events from being routed to TAC.
+ * to prevent further webhook events from being routed to TAC. On digital
+ * channels it first resolves the Studio `From` sender (Chat uses
+ * `phoneNumber`); if there is none, it returns `handoff_failed` without
+ * touching the conversation.
  *
  * **Not available in voice-only mode.** This tool requires Conversation
  * Orchestrator for conversation state management and Conversation Memory for
@@ -173,32 +176,37 @@ export function createStudioHandoffTool(
       const attributes = { ...staticAttributes, reason: params.reason };
       const payload = buildHandoffPayload(session, memoryStoreId, attributes);
 
-      // 1. Set conversation to INACTIVE to trigger the CO-generated
-      // conversation summary that Flex fetches on pickup. Downstream
-      // (Studio/Flex) flips it back to ACTIVE on pickup and CLOSED on hangup —
-      // we don't close it ourselves.
-      try {
-        await coClient.updateConversation(session.conversationId, 'INACTIVE');
-      } catch (err) {
-        tac.logger.warn(
-          { err, conversation_id: session.conversationId },
-          'Failed to set conversation INACTIVE during handoff'
-        );
-      }
+      // Stop TAC routing for this conversation so Flex/Studio take over.
+      // Both steps warn and continue: a stale status or callback must not block
+      // the handoff itself.
+      const stopTacRouting = async (): Promise<void> => {
+        // Set conversation to INACTIVE to trigger the CO-generated
+        // conversation summary that Flex fetches on pickup. Downstream
+        // (Studio/Flex) flips it back to ACTIVE on pickup and CLOSED on hangup —
+        // we don't close it ourselves.
+        try {
+          await coClient.updateConversation(session.conversationId, 'INACTIVE');
+        } catch (err) {
+          tac.logger.warn(
+            { err, conversation_id: session.conversationId },
+            'Failed to set conversation INACTIVE during handoff'
+          );
+        }
 
-      // 2. Clear statusCallbacks so TAC stops receiving webhook events for
-      // this conversation (Flex/human agent will handle it from here).
-      try {
-        await coClient.clearStatusCallbacks(session.conversationId);
-      } catch (err) {
-        tac.logger.warn(
-          { err, conversation_id: session.conversationId },
-          'Failed to clear status callbacks during handoff'
-        );
-      }
+        // Clear statusCallbacks so TAC stops receiving webhook events for
+        // this conversation (Flex/human agent will handle it from here).
+        try {
+          await coClient.clearStatusCallbacks(session.conversationId);
+        } catch (err) {
+          tac.logger.warn(
+            { err, conversation_id: session.conversationId },
+            'Failed to clear status callbacks during handoff'
+          );
+        }
+      };
 
-      // 3. Deliver handoff payload.
       if (session.channel === 'voice') {
+        await stopTacRouting();
         // Voice: store on session for deferred delivery. The voice channel
         // sends the WS "end" message after the LLM's final response so the
         // caller hears a goodbye before transfer. handoffData is a JSON
@@ -210,23 +218,35 @@ export function createStudioHandoffTool(
         };
         session.pendingHandoffData = pending;
       } else {
+        // Studio's `From` is the Twilio sender its widgets reply from, so it
+        // must match the channel of `To` (the customer address). SMS/RCS/
+        // WhatsApp hand off From the sender the customer actually reached
+        // (`session.aiAgentInfo.address`), in the same channel-prefixed form
+        // as `To` — `+1555…`, `rcs:<sender_id>`, `whatsapp:+1555…` — which is
+        // what Studio expects for those channels. Chat's agent address is an
+        // identity (e.g. "ai-assistant"), not a Twilio sender, so it keeps
+        // the configured default phone number.
+        const fromAddress =
+          session.channel !== 'chat' && session.aiAgentInfo?.address
+            ? session.aiAgentInfo.address
+            : config.phoneNumber;
+        // Resolve the sender before touching the conversation: once TAC
+        // routing is stopped, nothing takes over unless Studio starts.
+        if (!fromAddress) {
+          const error =
+            `No Studio \`From\` sender for ${session.channel} handoff: ` +
+            'set phoneNumber in TACConfig.';
+          tac.logger.error({ conversation_id: session.conversationId }, error);
+          return { status: 'handoff_failed', channel: session.channel, error };
+        }
+
+        await stopTacRouting();
+
         // Digital channels: POST handoff payload to the Studio Flow Executions
         // endpoint. If the POST fails (network, 4xx, 5xx, timeout), return
         // handoff_failed so the LLM can tell the user instead of claiming
         // success.
         try {
-          // Studio's `From` is the Twilio sender its widgets reply from, so it
-          // must match the channel of `To` (the customer address). SMS/RCS/
-          // WhatsApp hand off From the sender the customer actually reached
-          // (`session.aiAgentInfo.address`), in the same channel-prefixed form
-          // as `To` — `+1555…`, `rcs:<sender_id>`, `whatsapp:+1555…` — which is
-          // what Studio expects for those channels. Chat's agent address is an
-          // identity (e.g. "ai-assistant"), not a Twilio sender, so it keeps
-          // the configured default phone number.
-          const fromAddress =
-            session.channel !== 'chat' && session.aiAgentInfo?.address
-              ? session.aiAgentInfo.address
-              : config.phoneNumber;
           await postStudioHandoff(payload, session, {
             handoffUrl: studioExecutionsUrl(flowSid),
             fromAddress,

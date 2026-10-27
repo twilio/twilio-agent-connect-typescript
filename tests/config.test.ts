@@ -396,14 +396,15 @@ describe('TACConfig', () => {
       }).toThrow('Missing required environment variable: TWILIO_API_SECRET');
     });
 
-    it('should throw error when neither TWILIO_PHONE_NUMBER nor TWILIO_PHONE_NUMBERS is set', () => {
+    it('should accept neither TWILIO_PHONE_NUMBER nor TWILIO_PHONE_NUMBERS being set', () => {
       setRequiredEnvVars();
       delete process.env.TWILIO_PHONE_NUMBER;
       delete process.env.TWILIO_PHONE_NUMBERS;
 
-      expect(() => {
-        TACConfig.fromEnv();
-      }).toThrow(/At least one of `phoneNumber` \/ `phoneNumbers` must be set/);
+      const config = TACConfig.fromEnv();
+
+      expect(config.phoneNumber).toBeUndefined();
+      expect(config.phoneNumbers).toEqual([]);
     });
 
     it('should accept TWILIO_PHONE_NUMBERS alone (no singular) and back-fill the default', () => {
@@ -765,10 +766,10 @@ describe('TACConfig', () => {
       expect(cfg.phoneNumbers).toEqual(['+1555', '+1444']);
     });
 
-    it('requires at least one of phoneNumber / phoneNumbers', () => {
-      expect(() => new TACConfig(BASE as never)).toThrow(
-        /At least one of `phoneNumber` \/ `phoneNumbers` must be set/
-      );
+    it('keeps phoneNumber / phoneNumbers optional', () => {
+      const cfg = new TACConfig(BASE);
+      expect(cfg.phoneNumber).toBeUndefined();
+      expect(cfg.phoneNumbers).toEqual([]);
     });
 
     it('keeps RCS and WhatsApp optional and symmetric', () => {
