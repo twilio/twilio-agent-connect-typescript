@@ -48,9 +48,8 @@ const voiceChannel = new VoiceChannel(tac);
 
 voiceChannel.onCallStatus(async event => {
   console.log(`[STATUS] ${event.callSid}: ${event.callStatus}`);
-  // The conversation session. Answered locally when this instance holds the
-  // call; otherwise rebuilt from Conversation Orchestrator (identity only), so
-  // it works on any replica. An early event may not resolve one yet.
+  // The call's conversation session, on any instance. An early event may not
+  // have one yet.
   const session = await voiceChannel.resolveConversationSessionByCallSid(event.callSid);
   console.log(`[STATUS] session lookup -> ${session?.conversationId ?? 'none'}`);
 });
