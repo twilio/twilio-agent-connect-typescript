@@ -27,6 +27,7 @@ import {
   SMSChannel,
   RCSChannel,
   WhatsAppChannel,
+  MessagingChannel,
   ConversationId,
   ChannelType,
   ProfileId,
@@ -108,13 +109,12 @@ const rcsChannel = tac.getConfig().rcsSenderId ? new RCSChannel(tac) : undefined
 // Only construct WhatsApp channel if whatsappNumber is configured
 const whatsappChannel = tac.getConfig().whatsappNumber ? new WhatsAppChannel(tac) : undefined;
 
-tac.registerChannel(voiceChannel);
-tac.registerChannel(smsChannel);
+const messagingChannels: MessagingChannel[] = [smsChannel];
 if (rcsChannel) {
-  tac.registerChannel(rcsChannel);
+  messagingChannels.push(rcsChannel);
 }
 if (whatsappChannel) {
-  tac.registerChannel(whatsappChannel);
+  messagingChannels.push(whatsappChannel);
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ tac.onMessageReady(handleMessageReady);
 // Server startup & outbound initiation
 // ---------------------------------------------------------------------------
 
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel, messagingChannels });
 
 server
   .start()

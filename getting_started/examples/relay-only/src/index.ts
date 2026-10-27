@@ -35,8 +35,6 @@ if (tac.isOrchestratorEnabled()) {
 
 const voiceChannel = new VoiceChannel(tac);
 
-tac.registerChannel(voiceChannel);
-
 const conversationHistory: Record<string, AgentInputItem[]> = {};
 
 tac.onMessageReady(async ({ conversationId, message, abortSignal }) => {
@@ -107,6 +105,6 @@ tac.onConversationEnded(({ session }) => {
   console.log(`Conversation ${convId} ended, history cleaned up`);
 });
 
-const server = new TACServer(tac);
+const server = new TACServer(tac, { voiceChannel });
 
 await server.start();
