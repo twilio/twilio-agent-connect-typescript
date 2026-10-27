@@ -29,7 +29,7 @@ import type { ConversationClient } from '../../clients/conversation';
 import type { TAC } from '../../lib/tac';
 import type { TACConfig } from '../../lib/config';
 import { warnDeprecated } from '../../lib/deprecation';
-import { analyticsEnabled, trackEvent } from '../../lib/analytics';
+import { trackEvent } from '../../lib/analytics';
 import type { Logger } from '../../lib/logger';
 import type { TACMemoryResponse } from '../../lib/tac-memory-response';
 import { ConversationRelayProviderConfig } from './conversation-relay/config';
@@ -559,7 +559,8 @@ export class VoiceChannel extends BaseChannel {
    *   single call can then produce a second `onConversationEnded`, under a
    *   different conversation id, when Conversation Orchestrator later closes
    *   the conversation it started for the call's remaining traffic. It also
-   *   reports "Conversation Ended", with CO's duration.
+   *   reports "Conversation Ended", with CO's duration, from the payload alone
+   *   and once across channels; only a registered handler costs the lookup.
    * - **INACTIVE**: invalidate cached memory, if this instance holds the
    *   session. A call is pinned to one instance for its lifetime, so an
    *   INACTIVE landing elsewhere has no cache to clear and is ignored.
@@ -823,21 +824,15 @@ export class VoiceChannel extends BaseChannel {
       return;
     }
 
-    const notify = this.hasConversationEndedHandler();
-    const report = analyticsEnabled();
-    if (!notify && !report) {
+    this.trackConversationEnded(conversationId, durationMs);
+    if (!this.hasConversationEndedHandler()) {
       return;
     }
     const session = await this.rebuildSession(conversationId, undefined, { shared: true });
     if (!session) {
       return;
     }
-    if (report) {
-      this.trackConversationEnded(conversationId, durationMs);
-    }
-    if (notify) {
-      await this.triggerConversationEnded(session);
-    }
+    await this.triggerConversationEnded(session);
   }
 
   /**

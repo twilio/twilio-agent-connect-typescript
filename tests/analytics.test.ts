@@ -12,13 +12,8 @@ vi.mock('@segment/analytics-node', () => ({
   },
 }));
 
-import {
-  analyticsEnabled,
-  trackEvent,
-  shutdownAnalytics,
-  _resetAnalytics,
-} from '../packages/core/src/lib/analytics';
-import { SMSChannel, WhatsAppChannel } from '@twilio/tac-core';
+import { trackEvent, shutdownAnalytics, _resetAnalytics } from '../packages/core/src/lib/analytics';
+import { SMSChannel, VoiceChannel, WhatsAppChannel } from '@twilio/tac-core';
 import type { ConversationParticipant, ConversationSession, TAC } from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
 
@@ -80,9 +75,7 @@ describe('analytics', () => {
       conversation_id: 'conv-2',
     });
 
-    expect(mockTrack).toHaveBeenCalledWith(
-      expect.objectContaining({ anonymousId: 'AC456' })
-    );
+    expect(mockTrack).toHaveBeenCalledWith(expect.objectContaining({ anonymousId: 'AC456' }));
   });
 
   it('does not track when TAC_ANALYTICS_DISABLED=true', () => {
@@ -141,13 +134,6 @@ describe('analytics', () => {
         properties: expect.objectContaining({ account_sid: 'AC789' }),
       })
     );
-  });
-
-  it('analyticsEnabled follows TAC_ANALYTICS_DISABLED', () => {
-    expect(analyticsEnabled()).toBe(true);
-    process.env.TAC_ANALYTICS_DISABLED = 'true';
-    _resetAnalytics();
-    expect(analyticsEnabled()).toBe(false);
   });
 });
 
@@ -321,8 +307,27 @@ describe('messaging analytics', () => {
       expect(tracked()).toHaveLength(0);
     });
 
-    it("reports Conversation Ended on CLOSED with CO's duration", async () => {
+    it("reports Conversation Ended on CLOSED with CO's duration, without a lookup", async () => {
       const channel = new SMSChannel(tac);
+      const lookup = stubListParticipants([]);
+
+      await channel.processWebhook(conversationClosed('conv-1'));
+
+      const { properties } = only('Conversation Ended');
+      // The payload doesn't say which channel; no call is made to find out.
+      expect(properties).not.toHaveProperty('channel');
+      expect(properties.conversation_id).toBe('conv-1');
+      expect(properties.duration_ms).toBe(300_000);
+      expect(lookup).not.toHaveBeenCalled();
+    });
+
+    it('looks up participants on CLOSED only for an onConversationEnded handler', async () => {
+      const channel = new SMSChannel(tac);
+      tac.registerChannel(channel);
+      const ended: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        ended.push(session);
+      });
       const lookup = stubListParticipants([
         coParticipant('CUSTOMER', 'SMS', '+15551112222'),
         coParticipant('AI_AGENT', 'SMS', '+15551234567'),
@@ -330,21 +335,9 @@ describe('messaging analytics', () => {
 
       await channel.processWebhook(conversationClosed('conv-1'));
 
-      const { properties } = only('Conversation Ended');
-      expect(properties.channel).toBe('sms');
-      expect(properties.conversation_id).toBe('conv-1');
-      expect(properties.duration_ms).toBe(300_000);
+      expect(ended.map(s => s.conversationId)).toEqual(['conv-1']);
       expect(lookup).toHaveBeenCalledTimes(1);
-      expect(lookup).toHaveBeenCalledWith('conv-1');
-    });
-
-    it('does not report a CLOSED conversation on another channel', async () => {
-      const channel = new SMSChannel(tac);
-      stubListParticipants([coParticipant('CUSTOMER', 'CHAT', 'user@example.com')]);
-
-      await channel.processWebhook(conversationClosed('conv-1'));
-
-      expect(tracked()).toHaveLength(0);
+      expect(only('Conversation Ended').properties).not.toHaveProperty('channel');
     });
 
     it('ignores a CLOSED for another conversation configuration', async () => {
@@ -359,26 +352,41 @@ describe('messaging analytics', () => {
       expect(tracked()).toHaveLength(0);
     });
 
-    it('shares one participant lookup across channels for the same CLOSED', async () => {
-      // Each channel reports its own channel; the lookup is shared.
+    it('reports a CLOSED once across the channels it is handed to', async () => {
       const sms = new SMSChannel(tac);
       const whatsapp = new WhatsAppChannel(tac);
-      const lookup = stubListParticipants([
-        coParticipant('CUSTOMER', 'SMS', '+15551112222'),
-        coParticipant('CUSTOMER', 'WHATSAPP', 'whatsapp:+15551112222'),
-      ]);
+      const voice = new VoiceChannel(tac);
+      const lookup = stubListParticipants([]);
       const webhook = conversationClosed('conv-1');
 
-      await Promise.all([sms.processWebhook(webhook), whatsapp.processWebhook(webhook)]);
+      await Promise.all([
+        sms.processWebhook(webhook),
+        whatsapp.processWebhook(webhook),
+        voice.processWebhook(webhook),
+      ]);
 
-      const ended = tracked().filter(c => c.event === 'Conversation Ended');
-      expect(ended.map(c => c.properties.channel).sort()).toEqual(['sms', 'whatsapp']);
-      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(only('Conversation Ended').properties.conversation_id).toBe('conv-1');
+      expect(lookup).not.toHaveBeenCalled();
+    });
+
+    it('reports a CLOSED for a live voice call once, without a lookup', async () => {
+      const voice = new VoiceChannel(tac);
+      const sms = new SMSChannel(tac);
+      const lookup = stubListParticipants([]);
+      const webhook = conversationClosed('conv-1');
+      // A call this instance still holds: CO closed its conversation mid-call.
+      (
+        voice as unknown as { startConversation(id: string): ConversationSession }
+      ).startConversation('conv-1');
+
+      await Promise.all([voice.processWebhook(webhook), sms.processWebhook(webhook)]);
+
+      expect(only('Conversation Ended').properties).not.toHaveProperty('channel');
+      expect(lookup).not.toHaveBeenCalled();
     });
 
     it('leaves duration_ms out when a timestamp is missing', async () => {
       const channel = new SMSChannel(tac);
-      stubListParticipants([coParticipant('CUSTOMER', 'SMS', '+15551112222')]);
 
       await channel.processWebhook(conversationClosed('conv-1', null));
 

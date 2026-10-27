@@ -234,18 +234,14 @@ export abstract class BaseChannel {
   /**
    * Report "Conversation Ended" for a conversation CO closed.
    *
-   * `durationMs` is CO's `updatedAt − createdAt`; `undefined` leaves it out
-   * rather than guessing.
+   * Reported once per process across channels, without a `channel` — see
+   * `TAC.reportConversationEnded`. `durationMs` is CO's `updatedAt −
+   * createdAt`; `undefined` leaves it out rather than guessing.
    *
    * @internal
    */
   protected trackConversationEnded(conversationId: string, durationMs: number | undefined): void {
-    trackEvent('Conversation Ended', {
-      account_sid: this.config.accountSid,
-      channel: this.channelType,
-      conversation_id: conversationId,
-      ...(durationMs !== undefined && { duration_ms: durationMs }),
-    });
+    this.tac.reportConversationEnded(conversationId, durationMs);
   }
 
   /**

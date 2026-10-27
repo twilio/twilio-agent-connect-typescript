@@ -1229,7 +1229,7 @@ describe('Messaging horizontal scaling', () => {
       expect(tracked('Conversation Ended')).toHaveLength(1);
     });
 
-    it('CLOSED with analytics on but no handler still reports the end', async () => {
+    it('CLOSED with analytics on but no handler reports the end without any call', async () => {
       const { channel, counter } = await makeSmsChannel();
 
       await deliver(
@@ -1239,11 +1239,11 @@ describe('Messaging horizontal scaling', () => {
         })
       );
 
-      expect(counter.calls).toEqual(['listParticipants']);
+      expect(counter.calls).toEqual([]);
       const ended = tracked('Conversation Ended');
       expect(ended).toHaveLength(1);
       expect(ended[0]!.properties.conversation_id).toBe(CONV_ID);
-      expect(ended[0]!.properties.channel).toBe('sms');
+      expect('channel' in ended[0]!.properties).toBe(false);
       expect(ended[0]!.properties.duration_ms).toBe(5000);
     });
 
@@ -1257,15 +1257,21 @@ describe('Messaging horizontal scaling', () => {
       expect('duration_ms' in ended[0]!.properties).toBe(false);
     });
 
-    it('a CLOSED for another channel is not reported', async () => {
+    it('a CLOSED for another channel is reported but fires no handler', async () => {
+      // The payload doesn't say which channel; only the handler's lookup does.
       const { tac, channel, counter } = await makeSmsChannel();
       counter.install(coOf(tac), 'listParticipants', () => [
         participant('PA_U', 'CUSTOMER', 'user-1', { channel: 'CHAT' }),
       ]);
+      const ended: ConversationSession[] = [];
+      tac.onConversationEnded(({ session }) => {
+        ended.push(session);
+      });
 
       await deliver(channel, closed());
 
-      expect(tracked('Conversation Ended')).toHaveLength(0);
+      expect(ended).toEqual([]);
+      expect(tracked('Conversation Ended')).toHaveLength(1);
     });
 
     it('PARTICIPANT_ADDED for the customer reports the start, without any call', async () => {

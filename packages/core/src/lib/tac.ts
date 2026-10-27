@@ -15,7 +15,7 @@ import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
 import { Logger, createLogger } from './logger';
-import { shutdownAnalytics } from './analytics';
+import { shutdownAnalytics, trackEvent } from './analytics';
 import { maskAddress } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
 import { ExpiringMap } from '../util/expiring-map';
@@ -26,6 +26,13 @@ import { ExpiringMap } from '../util/expiring-map';
  * participants can't drift meaningfully.
  */
 const SHARED_PARTICIPANTS_TTL_MS = 60_000;
+
+/**
+ * How long a reported "Conversation Ended" is remembered, so the channels
+ * handed one CLOSED webhook report it once. Spans the fan-out and its retries,
+ * like the shared participant lookup.
+ */
+const ENDED_REPORT_TTL_MS = 60_000;
 
 export interface TACOptions {
   config?: TACConfig | TACConfigInput;
@@ -100,6 +107,9 @@ export class TAC {
   private readonly participantLookups = new ExpiringMap<Promise<ConversationParticipant[]>>({
     ttlMs: SHARED_PARTICIPANTS_TTL_MS,
   });
+
+  // Conversations recently reported ended — see reportConversationEnded.
+  private readonly reportedEnded = new ExpiringMap<true>({ ttlMs: ENDED_REPORT_TTL_MS });
 
   private constructor(token: symbol, options: TACOptions = {}) {
     if (token !== TAC.FACTORY_TOKEN) {
@@ -498,8 +508,8 @@ export class TAC {
    * List a conversation's participants, shared across channels briefly.
    *
    * A CO webhook is handed to every channel, and several may need the same
-   * conversation's participants — to rebuild a closed conversation's session,
-   * or to report it ended. Concurrent callers share one in-flight request, and
+   * conversation's participants — to rebuild a closed conversation's session
+   * for `onConversationEnded`. Concurrent callers share one in-flight request, and
    * later callers reuse its result until a minute after the request started. A
    * failure isn't cached. Not for paths that need fresh participants, like
    * reconciliation or resolving a session by CallSid.
@@ -527,6 +537,32 @@ export class TAC {
       }
     });
     return lookup;
+  }
+
+  /**
+   * Report "Conversation Ended" for a conversation Conversation Orchestrator
+   * closed, once per process.
+   *
+   * Every channel is handed the CLOSED webhook, and its payload doesn't say
+   * which channel the conversation was on. Finding out would take a
+   * participant lookup made only for telemetry, so the event carries no
+   * `channel`: join it to "Conversation Started" on `conversation_id`. The
+   * first channel to report a conversation wins; the rest are dropped.
+   *
+   * @param durationMs - CO's `updatedAt − createdAt`; `undefined` leaves it
+   *   out rather than guessing.
+   * @internal
+   */
+  public reportConversationEnded(conversationId: string, durationMs: number | undefined): void {
+    if (this.reportedEnded.has(conversationId)) {
+      return;
+    }
+    this.reportedEnded.set(conversationId, true);
+    trackEvent('Conversation Ended', {
+      account_sid: this.config.accountSid,
+      conversation_id: conversationId,
+      ...(durationMs !== undefined && { duration_ms: durationMs }),
+    });
   }
 
   /**

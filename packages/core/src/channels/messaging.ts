@@ -18,7 +18,7 @@ import axios from 'axios';
 import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import { ConversationClient } from '../clients/conversation';
 import type { TAC } from '../lib/tac';
-import { analyticsEnabled, trackEvent } from '../lib/analytics';
+import { trackEvent } from '../lib/analytics';
 import { attachConversationMetadata } from '../lib/conversation-session-helpers';
 import { warnDeprecated } from '../lib/deprecation';
 import { maskAddress } from '../util/log-redaction';
@@ -884,12 +884,12 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Handle conversation updated event.
    *
-   * Only CLOSED is acted on: it fires `onConversationEnded` and reports
-   * "Conversation Ended". With neither a handler registered nor analytics on,
-   * it costs nothing. Otherwise one participant lookup — shared with the other
-   * channels handling the same webhook — confirms the conversation is on this
-   * channel (a CHAT close must not fire on SMS) and lets this work on whichever
-   * replica Twilio picked.
+   * Only CLOSED is acted on: it reports "Conversation Ended", from the payload
+   * alone and once across channels, and fires `onConversationEnded`. Only a
+   * registered handler costs a participant lookup — shared with the other
+   * channels handling the same webhook — which confirms the conversation is on
+   * this channel (a CHAT close must not fire on SMS) and lets this work on
+   * whichever replica Twilio picked.
    *
    * The session is rebuilt the same way on every replica. The conversation's
    * CO metadata is read through `conversationMetadata(session)`: answered from
@@ -909,9 +909,14 @@ export abstract class MessagingChannel extends BaseChannel {
     if (data.status !== 'CLOSED') {
       return;
     }
-    const notify = this.hasConversationEndedHandler();
-    const report = analyticsEnabled();
-    if (!notify && !report) {
+    this.trackConversationEnded(
+      conversationId,
+      elapsedMs(
+        typeof data.createdAt === 'string' ? data.createdAt : undefined,
+        typeof data.updatedAt === 'string' ? data.updatedAt : undefined
+      )
+    );
+    if (!this.hasConversationEndedHandler()) {
       return;
     }
 
@@ -938,18 +943,7 @@ export abstract class MessagingChannel extends BaseChannel {
     }
 
     this.logger.debug({ conversation_id: conversationId }, 'Conversation closed');
-    if (report) {
-      this.trackConversationEnded(
-        conversationId,
-        elapsedMs(
-          typeof data.createdAt === 'string' ? data.createdAt : undefined,
-          typeof data.updatedAt === 'string' ? data.updatedAt : undefined
-        )
-      );
-    }
-    if (notify) {
-      await this.triggerConversationEnded(session);
-    }
+    await this.triggerConversationEnded(session);
   }
 
   /**
