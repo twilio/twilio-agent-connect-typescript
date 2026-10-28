@@ -7,12 +7,12 @@ This example shows the core Twilio Agent Connect (TAC) pattern with **no LLM SDK
 1. Creating TAC with `TAC.create({ config: TACConfig.fromEnv() })`
 2. Creating a `VoiceChannel` and an `SMSChannel`
 3. Passing the channels to `TACServer`, which registers them with TAC and serves their webhooks
-4. An `onMessageReady` callback that receives the inbound `message`, the retrieved `memory`, and the conversation `session`
+4. An `onMessageReady` callback that receives the inbound `message`, the `memory` TAC retrieved (set a channel's `memoryMode` to enable this), and the conversation `session`
 5. Folding memory and profile data into the system prompt with `MemoryPromptBuilder.compose()`
 6. A placeholder showing where any LLM call goes
 7. Returning the reply string, which TAC sends back on the channel the message arrived on
 
-The composed system prompt is logged for every message, so you can see exactly what memory TAC adds.
+The composed system prompt is logged for every message, so you can see exactly what TAC adds: the customer's profile, plus memory once you set a `memoryMode`.
 
 ## Prerequisites
 
