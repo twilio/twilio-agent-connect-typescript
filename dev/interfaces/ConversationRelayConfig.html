@@ -1,0 +1,478 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>ConversationRelayConfig | Twilio Agent Connect (TypeScript)</title><meta name="description" content="Documentation for Twilio Agent Connect (TypeScript)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script><style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-sys-color-primary: #ffb3b2;
+    --md-sys-color-on-primary: #680013;
+    --md-sys-color-primary-container: #92001f;
+    --md-sys-color-on-primary-container: #ffdad9;
+    --md-sys-color-secondary: #e6bdbb;
+    --md-sys-color-on-secondary: #442929;
+    --md-sys-color-secondary-container: #5d3f3f;
+    --md-sys-color-on-secondary-container: #ffdad9;
+    --md-sys-color-tertiary: #e4c18d;
+    --md-sys-color-on-tertiary: #412d05;
+    --md-sys-color-tertiary-container: #5a4319;
+    --md-sys-color-on-tertiary-container: #ffdead;
+    --md-sys-color-error: #ffb4ab;
+    --md-sys-color-on-error: #690005;
+    --md-sys-color-error-container: #93000a;
+    --md-sys-color-on-error-container: #ffb4ab;
+    --md-sys-color-background: #201a1a;
+    --md-sys-color-on-background: #ede0df;
+    --md-sys-color-surface: #201a1a;
+    --md-sys-color-on-surface: #ede0df;
+    --md-sys-color-surface-variant: #524343;
+    --md-sys-color-on-surface-variant: #d7c1c0;
+    --md-sys-color-outline: #a08c8b;
+    --md-sys-color-outline-variant: #524343;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-inverse-surface: #ede0df;
+    --md-sys-color-inverse-on-surface: #362f2e;
+    --md-sys-color-inverse-primary: #bf002b;
+    --md-sys-color-surface-dim: #181212;
+    --md-sys-color-surface-bright: #3f3737;
+    --md-sys-color-surface-container-lowest: #120d0d;
+    --md-sys-color-surface-container-low: #201a1a;
+    --md-sys-color-surface-container: #251e1e;
+    --md-sys-color-surface-container-high: #2f2828;
+    --md-sys-color-surface-container-highest: #3a3333
+  }
+}
+:root[data-theme="dark"] {
+  --md-sys-color-primary: #ffb3b2;
+  --md-sys-color-on-primary: #680013;
+  --md-sys-color-primary-container: #92001f;
+  --md-sys-color-on-primary-container: #ffdad9;
+  --md-sys-color-secondary: #e6bdbb;
+  --md-sys-color-on-secondary: #442929;
+  --md-sys-color-secondary-container: #5d3f3f;
+  --md-sys-color-on-secondary-container: #ffdad9;
+  --md-sys-color-tertiary: #e4c18d;
+  --md-sys-color-on-tertiary: #412d05;
+  --md-sys-color-tertiary-container: #5a4319;
+  --md-sys-color-on-tertiary-container: #ffdead;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffb4ab;
+  --md-sys-color-background: #201a1a;
+  --md-sys-color-on-background: #ede0df;
+  --md-sys-color-surface: #201a1a;
+  --md-sys-color-on-surface: #ede0df;
+  --md-sys-color-surface-variant: #524343;
+  --md-sys-color-on-surface-variant: #d7c1c0;
+  --md-sys-color-outline: #a08c8b;
+  --md-sys-color-outline-variant: #524343;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #ede0df;
+  --md-sys-color-inverse-on-surface: #362f2e;
+  --md-sys-color-inverse-primary: #bf002b;
+  --md-sys-color-surface-dim: #181212;
+  --md-sys-color-surface-bright: #3f3737;
+  --md-sys-color-surface-container-lowest: #120d0d;
+  --md-sys-color-surface-container-low: #201a1a;
+  --md-sys-color-surface-container: #251e1e;
+  --md-sys-color-surface-container-high: #2f2828;
+  --md-sys-color-surface-container-highest: #3a3333
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --md-sys-color-primary: #bf002b;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #ffdad9;
+    --md-sys-color-on-primary-container: #410008;
+    --md-sys-color-secondary: #775656;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #ffdad9;
+    --md-sys-color-on-secondary-container: #2c1515;
+    --md-sys-color-tertiary: #745a2f;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #ffdead;
+    --md-sys-color-on-tertiary-container: #281900;
+    --md-sys-color-error: #ba1a1a;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffdad6;
+    --md-sys-color-on-error-container: #410002;
+    --md-sys-color-background: #fffbff;
+    --md-sys-color-on-background: #201a1a;
+    --md-sys-color-surface: #fffbff;
+    --md-sys-color-on-surface: #201a1a;
+    --md-sys-color-surface-variant: #f4dddc;
+    --md-sys-color-on-surface-variant: #524343;
+    --md-sys-color-outline: #857372;
+    --md-sys-color-outline-variant: #d7c1c0;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-inverse-surface: #362f2e;
+    --md-sys-color-inverse-on-surface: #fbeeed;
+    --md-sys-color-inverse-primary: #ffb3b2;
+    --md-sys-color-surface-dim: #e4d7d6;
+    --md-sys-color-surface-bright: #fff8f7;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #fef1f0;
+    --md-sys-color-surface-container: #f8ebea;
+    --md-sys-color-surface-container-high: #f2e5e4;
+    --md-sys-color-surface-container-highest: #ede0df
+  }
+}
+:root[data-theme="light"] {
+  --md-sys-color-primary: #bf002b;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #ffdad9;
+  --md-sys-color-on-primary-container: #410008;
+  --md-sys-color-secondary: #775656;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #ffdad9;
+  --md-sys-color-on-secondary-container: #2c1515;
+  --md-sys-color-tertiary: #745a2f;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #ffdead;
+  --md-sys-color-on-tertiary-container: #281900;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-background: #fffbff;
+  --md-sys-color-on-background: #201a1a;
+  --md-sys-color-surface: #fffbff;
+  --md-sys-color-on-surface: #201a1a;
+  --md-sys-color-surface-variant: #f4dddc;
+  --md-sys-color-on-surface-variant: #524343;
+  --md-sys-color-outline: #857372;
+  --md-sys-color-outline-variant: #d7c1c0;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #362f2e;
+  --md-sys-color-inverse-on-surface: #fbeeed;
+  --md-sys-color-inverse-primary: #ffb3b2;
+  --md-sys-color-surface-dim: #e4d7d6;
+  --md-sys-color-surface-bright: #fff8f7;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #fef1f0;
+  --md-sys-color-surface-container: #f8ebea;
+  --md-sys-color-surface-container-high: #f2e5e4;
+  --md-sys-color-surface-container-highest: #ede0df
+}
+</style><link rel="stylesheet" href="../assets/material-style.css"/><style>
+				.tsd-ext-version-select .settings-label {
+					margin: 0.75rem 0.75rem 0.75rem 0;
+				}
+			</style></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">Twilio Agent Connect (TypeScript)</a>
+<div id="tsd-toolbar-links"><a href="https://github.com/twilio/twilio-agent-connect-typescript">GitHub</a><a href="https://www.twilio.com/docs/conversations/agent-connect">Twilio Docs</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="" aria-current="page">ConversationRelayConfig</a></li></ul>
+<h1>Interface ConversationRelayConfig</h1></div>
+<section class="tsd-panel tsd-comment">
+<div class="tsd-comment tsd-typography"><p>Extended ConversationRelay configuration that includes child elements.
+Includes all ConversationRelayAttributes fields plus support for languages array.</p>
+<p>Note: The type is defined as an explicit interface and the schema is annotated
+with z.ZodType<ConversationRelayConfig> to prevent TypeScript's type inference
+from collapsing to <code>any</code> when resolving complex Zod generics with many optional
+fields (especially under exactOptionalPropertyTypes).</p>
+</div></section>
+<div class="tsd-signature"><span class="tsd-signature-keyword">interface</span> <span class="tsd-kind-interface">ConversationRelayConfig</span> <span class="tsd-signature-symbol">{</span><br/>    <a class="tsd-kind-property" href="#url">url</a><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#welcomegreeting">welcomeGreeting</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#welcomegreetinginterruptible">welcomeGreetingInterruptible</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">&quot;none&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;any&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;speech&quot;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#transcriptionprovider">transcriptionProvider</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#transcriptionlanguage">transcriptionLanguage</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#speechmodel">speechModel</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#ttsprovider">ttsProvider</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#ttslanguage">ttsLanguage</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#voice">voice</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#elevenlabstextnormalization">elevenlabsTextNormalization</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#interruptible">interruptible</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">&quot;none&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;any&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;speech&quot;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#interruptsensitivity">interruptSensitivity</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">&quot;low&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;medium&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;high&quot;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#dtmfdetection">dtmfDetection</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#hints">hints</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#reportinputduringagentspeech">reportInputDuringAgentSpeech</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#partialprompts">partialPrompts</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#profanityfilter">profanityFilter</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#preemptible">preemptible</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#language">language</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#debug">debug</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#intelligenceservice">intelligenceService</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#conversationconfiguration">conversationConfiguration</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#languages">languages</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>        <span class="tsd-kind-property">code</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">ttsProvider</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">voice</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">ttsLanguage</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">transcriptionProvider</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">speechModel</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">transcriptionLanguage</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div>
+<section class="tsd-panel tsd-hierarchy" data-refl="1235">
+<h4>Hierarchy (<a href="../hierarchy.html#ConversationRelayConfig">View Summary</a>)</h4>
+<ul class="tsd-hierarchy">
+<li class="tsd-hierarchy-item"><a href="../types/ConversationRelayAttributes.html" class="tsd-signature-type tsd-kind-type-alias">ConversationRelayAttributes</a>
+<ul class="tsd-hierarchy">
+<li class="tsd-hierarchy-item"><span class="tsd-hierarchy-target">ConversationRelayConfig</span></li></ul></li></ul></section><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L226">core/src/types/crelay.ts:226</a></li></ul></aside>
+<section class="tsd-panel-group tsd-index-group">
+<section class="tsd-panel tsd-index-panel">
+<details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h5 class="tsd-index-heading uppercase">Index</h5></summary>
+<div class="tsd-accordion-details">
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="properties">Properties<a href="#properties" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#url" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>url</span></a>
+<a href="#welcomegreeting" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>welcome<wbr/>Greeting?</span></a>
+<a href="#welcomegreetinginterruptible" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>welcome<wbr/>Greeting<wbr/>Interruptible?</span></a>
+<a href="#transcriptionprovider" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>transcription<wbr/>Provider?</span></a>
+<a href="#transcriptionlanguage" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>transcription<wbr/>Language?</span></a>
+<a href="#speechmodel" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>speech<wbr/>Model?</span></a>
+<a href="#ttsprovider" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>tts<wbr/>Provider?</span></a>
+<a href="#ttslanguage" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>tts<wbr/>Language?</span></a>
+<a href="#voice" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>voice?</span></a>
+<a href="#elevenlabstextnormalization" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>elevenlabs<wbr/>Text<wbr/>Normalization?</span></a>
+<a href="#interruptible" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>interruptible?</span></a>
+<a href="#interruptsensitivity" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>interrupt<wbr/>Sensitivity?</span></a>
+<a href="#dtmfdetection" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>dtmf<wbr/>Detection?</span></a>
+<a href="#hints" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>hints?</span></a>
+<a href="#reportinputduringagentspeech" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>report<wbr/>Input<wbr/>During<wbr/>Agent<wbr/>Speech?</span></a>
+<a href="#partialprompts" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>partial<wbr/>Prompts?</span></a>
+<a href="#profanityfilter" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>profanity<wbr/>Filter?</span></a>
+<a href="#preemptible" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>preemptible?</span></a>
+<a href="#language" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>language?</span></a>
+<a href="#debug" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>debug?</span></a>
+<a href="#intelligenceservice" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>intelligence<wbr/>Service?</span></a>
+<a href="#conversationconfiguration" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>conversation<wbr/>Configuration?</span></a>
+<a href="#languages" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>languages?</span></a>
+</div></section></div></details></section></section>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="properties-1">Properties<a href="#properties-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="url"><span>url</span><a href="#url" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">url</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>WebSocket URL for ConversationRelay (required)</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.url</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L46">core/src/types/crelay.ts:46</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="welcomegreeting"><code class="tsd-tag">Optional</code><span>welcome<wbr/>Greeting</span><a href="#welcomegreeting" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">welcomeGreeting</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Initial greeting to play when call connects</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.welcomeGreeting</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L50">core/src/types/crelay.ts:50</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="welcomegreetinginterruptible"><code class="tsd-tag">Optional</code><span>welcome<wbr/>Greeting<wbr/>Interruptible</span><a href="#welcomegreetinginterruptible" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">welcomeGreetingInterruptible</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">&quot;none&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;any&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;speech&quot;</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Whether welcome greeting can be interrupted</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.welcomeGreetingInterruptible</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L52">core/src/types/crelay.ts:52</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="transcriptionprovider"><code class="tsd-tag">Optional</code><span>transcription<wbr/>Provider</span><a href="#transcriptionprovider" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">transcriptionProvider</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Transcription provider (e.g., 'Deepgram', 'Google')</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.transcriptionProvider</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L56">core/src/types/crelay.ts:56</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="transcriptionlanguage"><code class="tsd-tag">Optional</code><span>transcription<wbr/>Language</span><a href="#transcriptionlanguage" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">transcriptionLanguage</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Language for transcription (e.g., 'en-US')</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.transcriptionLanguage</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L58">core/src/types/crelay.ts:58</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="speechmodel"><code class="tsd-tag">Optional</code><span>speech<wbr/>Model</span><a href="#speechmodel" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">speechModel</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Speech model for transcription (e.g., 'nova-3-general')</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.speechModel</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L60">core/src/types/crelay.ts:60</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="ttsprovider"><code class="tsd-tag">Optional</code><span>tts<wbr/>Provider</span><a href="#ttsprovider" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">ttsProvider</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Text-to-speech provider (e.g., 'Google', 'ElevenLabs')</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.ttsProvider</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L64">core/src/types/crelay.ts:64</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="ttslanguage"><code class="tsd-tag">Optional</code><span>tts<wbr/>Language</span><a href="#ttslanguage" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">ttsLanguage</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Language for TTS (e.g., 'en-US')</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.ttsLanguage</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L66">core/src/types/crelay.ts:66</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="voice"><code class="tsd-tag">Optional</code><span>voice</span><a href="#voice" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">voice</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Voice identifier for TTS (e.g., 'en-US-Journey-O')</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.voice</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L68">core/src/types/crelay.ts:68</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="elevenlabstextnormalization"><code class="tsd-tag">Optional</code><span>elevenlabs<wbr/>Text<wbr/>Normalization</span><a href="#elevenlabstextnormalization" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">elevenlabsTextNormalization</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>ElevenLabs text normalization setting</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.elevenlabsTextNormalization</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L70">core/src/types/crelay.ts:70</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="interruptible"><code class="tsd-tag">Optional</code><span>interruptible</span><a href="#interruptible" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">interruptible</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">&quot;none&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;any&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;speech&quot;</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>When agent speech can be interrupted</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.interruptible</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L74">core/src/types/crelay.ts:74</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="interruptsensitivity"><code class="tsd-tag">Optional</code><span>interrupt<wbr/>Sensitivity</span><a href="#interruptsensitivity" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">interruptSensitivity</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">&quot;low&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;medium&quot;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">&quot;high&quot;</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Interrupt detection sensitivity</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.interruptSensitivity</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L76">core/src/types/crelay.ts:76</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="dtmfdetection"><code class="tsd-tag">Optional</code><span>dtmf<wbr/>Detection</span><a href="#dtmfdetection" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">dtmfDetection</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Enable DTMF tone detection</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.dtmfDetection</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L78">core/src/types/crelay.ts:78</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="hints"><code class="tsd-tag">Optional</code><span>hints</span><a href="#hints" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">hints</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Recognition hints for domain-specific vocabulary</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.hints</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L80">core/src/types/crelay.ts:80</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="reportinputduringagentspeech"><code class="tsd-tag">Optional</code><span>report<wbr/>Input<wbr/>During<wbr/>Agent<wbr/>Speech</span><a href="#reportinputduringagentspeech" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">reportInputDuringAgentSpeech</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Whether prompts should be reported when TTS is playing and interrupt is disabled</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.reportInputDuringAgentSpeech</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L82">core/src/types/crelay.ts:82</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="partialprompts"><code class="tsd-tag">Optional</code><span>partial<wbr/>Prompts</span><a href="#partialprompts" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">partialPrompts</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Enable partial prompts (streaming)</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.partialPrompts</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L86">core/src/types/crelay.ts:86</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="profanityfilter"><code class="tsd-tag">Optional</code><span>profanity<wbr/>Filter</span><a href="#profanityfilter" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">profanityFilter</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Enable profanity filtering</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.profanityFilter</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L88">core/src/types/crelay.ts:88</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="preemptible"><code class="tsd-tag">Optional</code><span>preemptible</span><a href="#preemptible" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">preemptible</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Allow preemption of agent speech</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.preemptible</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L90">core/src/types/crelay.ts:90</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="language"><code class="tsd-tag">Optional</code><span>language</span><a href="#language" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">language</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Default language code</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.language</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L92">core/src/types/crelay.ts:92</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="debug"><code class="tsd-tag">Optional</code><span>debug</span><a href="#debug" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">debug</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Debug options for troubleshooting (string per SDK, not boolean)</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.debug</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L94">core/src/types/crelay.ts:94</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="intelligenceservice"><code class="tsd-tag">Optional</code><span>intelligence<wbr/>Service</span><a href="#intelligenceservice" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">intelligenceService</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Conversational Intelligence Service ID or unique name</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.intelligenceService</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L98">core/src/types/crelay.ts:98</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="conversationconfiguration"><code class="tsd-tag">Optional</code><span>conversation<wbr/>Configuration</span><a href="#conversationconfiguration" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">conversationConfiguration</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol"> = ...</span></div>
+<div class="tsd-comment tsd-typography"><p>Twilio Conversation Orchestrator configuration ID</p>
+</div><aside class="tsd-sources">
+<p>Inherited from ConversationRelayAttributes.conversationConfiguration</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L102">core/src/types/crelay.ts:102</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="languages"><code class="tsd-tag">Optional</code><span>languages</span><a href="#languages" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">languages</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">code</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">ttsProvider</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">voice</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">ttsLanguage</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">transcriptionProvider</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">speechModel</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">transcriptionLanguage</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">[]</span></div>
+<div class="tsd-comment tsd-typography"><p>Optional language configurations as child <Language> elements</p>
+</div>
+<div class="tsd-type-declaration">
+<h4>Type Declaration</h4>
+<ul class="tsd-parameters">
+<li class="tsd-parameter">
+<h5><span class="tsd-kind-property">code</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>Language code (e.g., 'en-US', 'es-ES', 'en-AU')</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">ttsProvider</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>TTS provider for this language</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">voice</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>TTS voice for this language</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">ttsLanguage</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>TTS language (may differ from code)</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">transcriptionProvider</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>Transcription provider for this language</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">speechModel</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>Speech model for transcription</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">transcriptionLanguage</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>Transcription language (may differ from code)</p>
+</div></li></ul></div><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/types/crelay.ts#L228">core/src/types/crelay.ts:228</a></li></ul></aside></section></section></details></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details">
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Properties</summary>
+<div><a href="#url" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>url</span></a><a href="#welcomegreeting" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>welcome<wbr/>Greeting</span></a><a href="#welcomegreetinginterruptible" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>welcome<wbr/>Greeting<wbr/>Interruptible</span></a><a href="#transcriptionprovider" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>transcription<wbr/>Provider</span></a><a href="#transcriptionlanguage" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>transcription<wbr/>Language</span></a><a href="#speechmodel" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>speech<wbr/>Model</span></a><a href="#ttsprovider" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>tts<wbr/>Provider</span></a><a href="#ttslanguage" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>tts<wbr/>Language</span></a><a href="#voice" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>voice</span></a><a href="#elevenlabstextnormalization" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>elevenlabs<wbr/>Text<wbr/>Normalization</span></a><a href="#interruptible" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>interruptible</span></a><a href="#interruptsensitivity" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>interrupt<wbr/>Sensitivity</span></a><a href="#dtmfdetection" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>dtmf<wbr/>Detection</span></a><a href="#hints" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>hints</span></a><a href="#reportinputduringagentspeech" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>report<wbr/>Input<wbr/>During<wbr/>Agent<wbr/>Speech</span></a><a href="#partialprompts" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>partial<wbr/>Prompts</span></a><a href="#profanityfilter" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>profanity<wbr/>Filter</span></a><a href="#preemptible" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>preemptible</span></a><a href="#language" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>language</span></a><a href="#debug" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>debug</span></a><a href="#intelligenceservice" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>intelligence<wbr/>Service</span></a><a href="#conversationconfiguration" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>conversation<wbr/>Configuration</span></a><a href="#languages"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>languages</span></a></div></details></div></details></div>
+<div class="site-menu">
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/twilio/twilio-agent-connect-typescript" class="tsd-nav-link">GitHub</a><a href="https://www.twilio.com/docs/conversations/agent-connect" class="tsd-nav-link">Twilio Docs</a></nav>
+<nav class="tsd-navigation"><a href="../modules.html">Twilio Agent Connect (TypeScript)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
+<div class="overlay"></div><script>
+          try {
+            const generateLinkElement = document.querySelector(".tsd-generator a");
+            const link = document.createElement("a");
+            Object.assign(link, {
+              href: "https://github.com/dmnsgn/typedoc-material-theme",
+              target: "_blank",
+              rel: "noreferrer",
+              innerText: "typedoc-material-theme."
+            });
+            generateLinkElement.insertAdjacentElement("afterend", link);
+            generateLinkElement.insertAdjacentText("afterend", " with ");
+          } catch (error) {
+
+          }
+        </script><script src="../assets/versionsMenu.js" type="module"></script></body></html>

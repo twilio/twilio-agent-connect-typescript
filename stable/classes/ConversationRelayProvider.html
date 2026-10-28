@@ -1,0 +1,730 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>ConversationRelayProvider | Twilio Agent Connect (TypeScript)</title><meta name="description" content="Documentation for Twilio Agent Connect (TypeScript)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script><style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-sys-color-primary: #ffb3b2;
+    --md-sys-color-on-primary: #680013;
+    --md-sys-color-primary-container: #92001f;
+    --md-sys-color-on-primary-container: #ffdad9;
+    --md-sys-color-secondary: #e6bdbb;
+    --md-sys-color-on-secondary: #442929;
+    --md-sys-color-secondary-container: #5d3f3f;
+    --md-sys-color-on-secondary-container: #ffdad9;
+    --md-sys-color-tertiary: #e4c18d;
+    --md-sys-color-on-tertiary: #412d05;
+    --md-sys-color-tertiary-container: #5a4319;
+    --md-sys-color-on-tertiary-container: #ffdead;
+    --md-sys-color-error: #ffb4ab;
+    --md-sys-color-on-error: #690005;
+    --md-sys-color-error-container: #93000a;
+    --md-sys-color-on-error-container: #ffb4ab;
+    --md-sys-color-background: #201a1a;
+    --md-sys-color-on-background: #ede0df;
+    --md-sys-color-surface: #201a1a;
+    --md-sys-color-on-surface: #ede0df;
+    --md-sys-color-surface-variant: #524343;
+    --md-sys-color-on-surface-variant: #d7c1c0;
+    --md-sys-color-outline: #a08c8b;
+    --md-sys-color-outline-variant: #524343;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-inverse-surface: #ede0df;
+    --md-sys-color-inverse-on-surface: #362f2e;
+    --md-sys-color-inverse-primary: #bf002b;
+    --md-sys-color-surface-dim: #181212;
+    --md-sys-color-surface-bright: #3f3737;
+    --md-sys-color-surface-container-lowest: #120d0d;
+    --md-sys-color-surface-container-low: #201a1a;
+    --md-sys-color-surface-container: #251e1e;
+    --md-sys-color-surface-container-high: #2f2828;
+    --md-sys-color-surface-container-highest: #3a3333
+  }
+}
+:root[data-theme="dark"] {
+  --md-sys-color-primary: #ffb3b2;
+  --md-sys-color-on-primary: #680013;
+  --md-sys-color-primary-container: #92001f;
+  --md-sys-color-on-primary-container: #ffdad9;
+  --md-sys-color-secondary: #e6bdbb;
+  --md-sys-color-on-secondary: #442929;
+  --md-sys-color-secondary-container: #5d3f3f;
+  --md-sys-color-on-secondary-container: #ffdad9;
+  --md-sys-color-tertiary: #e4c18d;
+  --md-sys-color-on-tertiary: #412d05;
+  --md-sys-color-tertiary-container: #5a4319;
+  --md-sys-color-on-tertiary-container: #ffdead;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffb4ab;
+  --md-sys-color-background: #201a1a;
+  --md-sys-color-on-background: #ede0df;
+  --md-sys-color-surface: #201a1a;
+  --md-sys-color-on-surface: #ede0df;
+  --md-sys-color-surface-variant: #524343;
+  --md-sys-color-on-surface-variant: #d7c1c0;
+  --md-sys-color-outline: #a08c8b;
+  --md-sys-color-outline-variant: #524343;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #ede0df;
+  --md-sys-color-inverse-on-surface: #362f2e;
+  --md-sys-color-inverse-primary: #bf002b;
+  --md-sys-color-surface-dim: #181212;
+  --md-sys-color-surface-bright: #3f3737;
+  --md-sys-color-surface-container-lowest: #120d0d;
+  --md-sys-color-surface-container-low: #201a1a;
+  --md-sys-color-surface-container: #251e1e;
+  --md-sys-color-surface-container-high: #2f2828;
+  --md-sys-color-surface-container-highest: #3a3333
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --md-sys-color-primary: #bf002b;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #ffdad9;
+    --md-sys-color-on-primary-container: #410008;
+    --md-sys-color-secondary: #775656;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #ffdad9;
+    --md-sys-color-on-secondary-container: #2c1515;
+    --md-sys-color-tertiary: #745a2f;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #ffdead;
+    --md-sys-color-on-tertiary-container: #281900;
+    --md-sys-color-error: #ba1a1a;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffdad6;
+    --md-sys-color-on-error-container: #410002;
+    --md-sys-color-background: #fffbff;
+    --md-sys-color-on-background: #201a1a;
+    --md-sys-color-surface: #fffbff;
+    --md-sys-color-on-surface: #201a1a;
+    --md-sys-color-surface-variant: #f4dddc;
+    --md-sys-color-on-surface-variant: #524343;
+    --md-sys-color-outline: #857372;
+    --md-sys-color-outline-variant: #d7c1c0;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-inverse-surface: #362f2e;
+    --md-sys-color-inverse-on-surface: #fbeeed;
+    --md-sys-color-inverse-primary: #ffb3b2;
+    --md-sys-color-surface-dim: #e4d7d6;
+    --md-sys-color-surface-bright: #fff8f7;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #fef1f0;
+    --md-sys-color-surface-container: #f8ebea;
+    --md-sys-color-surface-container-high: #f2e5e4;
+    --md-sys-color-surface-container-highest: #ede0df
+  }
+}
+:root[data-theme="light"] {
+  --md-sys-color-primary: #bf002b;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #ffdad9;
+  --md-sys-color-on-primary-container: #410008;
+  --md-sys-color-secondary: #775656;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #ffdad9;
+  --md-sys-color-on-secondary-container: #2c1515;
+  --md-sys-color-tertiary: #745a2f;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #ffdead;
+  --md-sys-color-on-tertiary-container: #281900;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-background: #fffbff;
+  --md-sys-color-on-background: #201a1a;
+  --md-sys-color-surface: #fffbff;
+  --md-sys-color-on-surface: #201a1a;
+  --md-sys-color-surface-variant: #f4dddc;
+  --md-sys-color-on-surface-variant: #524343;
+  --md-sys-color-outline: #857372;
+  --md-sys-color-outline-variant: #d7c1c0;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #362f2e;
+  --md-sys-color-inverse-on-surface: #fbeeed;
+  --md-sys-color-inverse-primary: #ffb3b2;
+  --md-sys-color-surface-dim: #e4d7d6;
+  --md-sys-color-surface-bright: #fff8f7;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #fef1f0;
+  --md-sys-color-surface-container: #f8ebea;
+  --md-sys-color-surface-container-high: #f2e5e4;
+  --md-sys-color-surface-container-highest: #ede0df
+}
+</style><link rel="stylesheet" href="../assets/material-style.css"/><style>
+				.tsd-ext-version-select .settings-label {
+					margin: 0.75rem 0.75rem 0.75rem 0;
+				}
+			</style></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">Twilio Agent Connect (TypeScript)</a>
+<div id="tsd-toolbar-links"><a href="https://github.com/twilio/twilio-agent-connect-typescript">GitHub</a><a href="https://www.twilio.com/docs/conversations/agent-connect">Twilio Docs</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<ul class="tsd-breadcrumb" aria-label="Breadcrumb">
+<li><a href="" aria-current="page">ConversationRelayProvider</a></li></ul>
+<h1>Class ConversationRelayProvider</h1></div>
+<section class="tsd-panel tsd-comment">
+<div class="tsd-comment tsd-typography"><p>Twilio ConversationRelay: Twilio handles ASR/TTS and exchanges JSON
+<code>setup</code>/<code>prompt</code>/<code>interrupt</code> messages over one WebSocket.</p>
+<p>This is the default provider <a href="VoiceChannel.html" class="tsd-kind-class">VoiceChannel</a> builds when none is passed
+explicitly.</p>
+</div></section>
+<section class="tsd-panel tsd-hierarchy" data-refl="5164">
+<h4>Hierarchy (<a href="../hierarchy.html#ConversationRelayProvider">View Summary</a>)</h4>
+<ul class="tsd-hierarchy">
+<li class="tsd-hierarchy-item"><a href="VoiceProvider.html" class="tsd-signature-type tsd-kind-class">VoiceProvider</a>
+<ul class="tsd-hierarchy">
+<li class="tsd-hierarchy-item"><span class="tsd-hierarchy-target">ConversationRelayProvider</span></li></ul></li></ul></section><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L59">core/src/channels/voice/conversation-relay/provider.ts:59</a></li></ul></aside>
+<section class="tsd-panel-group tsd-index-group">
+<section class="tsd-panel tsd-index-panel">
+<details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h5 class="tsd-index-heading uppercase">Index</h5></summary>
+<div class="tsd-accordion-details">
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="constructors">Constructors<a href="#constructors" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#constructor" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Constructor"><use href="../assets/icons.svg#icon-512"></use></svg><span>constructor</span></a>
+</div></section>
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="properties">Properties<a href="#properties" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#logger" class="tsd-index-link tsd-is-protected"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>logger</span></a>
+<a href="#streamtasks" class="tsd-index-link tsd-is-protected"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>stream<wbr/>Tasks</span></a>
+<a href="#channel" class="tsd-index-link tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>channel</span></a>
+</div></section>
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="accessors">Accessors<a href="#accessors" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#channelname" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>channel<wbr/>Name</span></a>
+</div></section>
+<section class="tsd-index-section">
+<h3 class="tsd-index-heading tsd-anchor-link" id="methods">Methods<a href="#methods" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-index-list"><a href="#getwebsocket" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Web<wbr/>Socket</span></a>
+<a href="#handlewebsocket" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>handle<wbr/>Web<wbr/>Socket</span></a>
+<a href="#sendresponse" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>send<wbr/>Response</span></a>
+<a href="#sendstreamingresponse" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>send<wbr/>Streaming<wbr/>Response</span></a>
+<a href="#startstreamtask" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>start<wbr/>Stream<wbr/>Task</span></a>
+<a href="#cancelstreamtask" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>cancel<wbr/>Stream<wbr/>Task</span></a>
+<a href="#completestreamtask" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>complete<wbr/>Stream<wbr/>Task</span></a>
+<a href="#hasactivestreamtask" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>has<wbr/>Active<wbr/>Stream<wbr/>Task</span></a>
+<a href="#handleincomingcall" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>handle<wbr/>Incoming<wbr/>Call</span></a>
+<a href="#initiateoutboundconversation" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>initiate<wbr/>Outbound<wbr/>Conversation</span></a>
+<a href="#handletwilioprovidercallback" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>handle<wbr/>Twilio<wbr/>Provider<wbr/>Callback</span></a>
+<a href="#connectconversationrelay" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>connect<wbr/>Conversation<wbr/>Relay</span></a>
+<a href="#shutdown" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>shutdown</span></a>
+<a href="#applycalleventcallbacks" class="tsd-index-link tsd-is-protected tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>apply<wbr/>Call<wbr/>Event<wbr/>Callbacks</span></a>
+<a href="#resolvefromnumber" class="tsd-index-link tsd-is-protected tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>resolve<wbr/>From<wbr/>Number</span></a>
+</div></section></div></details></section></section>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Constructors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="constructors-1">Constructors<a href="#constructors-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="constructor"><span>constructor</span><a href="#constructor" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="constructorconversationrelayprovider"><span class="tsd-signature-keyword">new</span> <span class="tsd-kind-constructor-signature">ConversationRelayProvider</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">channel</span><span class="tsd-signature-symbol">:</span> <a href="VoiceChannel.html" class="tsd-signature-type tsd-kind-class">VoiceChannel</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">tacConfig</span><span class="tsd-signature-symbol">:</span> <a href="TACConfig.html" class="tsd-signature-type tsd-kind-class">TACConfig</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">config</span><span class="tsd-signature-symbol">:</span> <a href="ConversationRelayProviderConfig.html" class="tsd-signature-type tsd-kind-class">ConversationRelayProviderConfig</a><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <a href="" class="tsd-signature-type tsd-kind-class">ConversationRelayProvider</a><a href="#constructorconversationrelayprovider" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">channel</span>: <a href="VoiceChannel.html" class="tsd-signature-type tsd-kind-class">VoiceChannel</a></span></li>
+<li><span><span class="tsd-kind-parameter">tacConfig</span>: <a href="TACConfig.html" class="tsd-signature-type tsd-kind-class">TACConfig</a></span></li>
+<li><span><span class="tsd-kind-parameter">config</span>: <a href="ConversationRelayProviderConfig.html" class="tsd-signature-type tsd-kind-class">ConversationRelayProviderConfig</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <a href="" class="tsd-signature-type tsd-kind-class">ConversationRelayProvider</a></h4><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#constructor">constructor</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L83">core/src/channels/voice/conversation-relay/provider.ts:83</a></li></ul></aside></div></li></ul></section></section></details>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="properties-1">Properties<a href="#properties-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member tsd-is-protected">
+<h3 class="tsd-anchor-link" id="logger"><code class="tsd-tag">Protected</code> <code class="tsd-tag">Readonly</code><span>logger</span><a href="#logger" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">logger</span><span class="tsd-signature-symbol">:</span> <a href="../types/Logger.html" class="tsd-signature-type tsd-kind-type-alias">Logger</a></div>
+<div class="tsd-comment tsd-typography"><p>The owning channel's logger, so relocated ConversationRelay logic keeps
+logging exactly as it did when it lived on <code>VoiceChannel</code>.</p>
+</div><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#logger">logger</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L69">core/src/channels/voice/conversation-relay/provider.ts:69</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-protected">
+<h3 class="tsd-anchor-link" id="streamtasks"><code class="tsd-tag">Protected</code> <code class="tsd-tag">Readonly</code><span>stream<wbr/>Tasks</span><a href="#streamtasks" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">streamTasks</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Map</span><span class="tsd-signature-symbol">&lt;</span><a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">,</span> <a href="../interfaces/StreamTask.html" class="tsd-signature-type tsd-kind-interface">StreamTask</a><span class="tsd-signature-symbol">&gt;</span></div>
+<div class="tsd-comment tsd-typography"><p>In-flight streaming responses, keyed by conversation.</p>
+</div><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L72">core/src/channels/voice/conversation-relay/provider.ts:72</a></li></ul></aside></section>
+<section class="tsd-panel tsd-member tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="channel"><code class="tsd-tag">Readonly</code><span>channel</span><a href="#channel" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<div class="tsd-signature"><span class="tsd-kind-property">channel</span><span class="tsd-signature-symbol">:</span> <a href="VoiceChannel.html" class="tsd-signature-type tsd-kind-class">VoiceChannel</a></div>
+<div class="tsd-comment tsd-typography"><p>The <code>VoiceChannel</code> that owns this provider.</p>
+</div><aside class="tsd-sources">
+<p>Inherited from <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#channel">channel</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/provider.ts#L29">core/src/channels/voice/provider.ts:29</a></li></ul></aside></section></section></details>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Accessors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="accessors-1">Accessors<a href="#accessors-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="channelname"><span>channel<wbr/>Name</span><a href="#channelname" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li>
+<div class="tsd-signature" id="channelnamechannelname"><span class="tsd-signature-keyword">get</span> <span class="tsd-kind-get-signature">channelName</span><span class="tsd-signature-symbol">()</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Channel name identifier, e.g. <code>&quot;VOICE&quot;</code>.</p>
+<p>A label for this provider's transport; it does not change how
+<code>VoiceChannel</code> reports its <code>ChannelType</code>.</p>
+</div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">string</span></h4><aside class="tsd-sources">
+<p>Overrides VoiceProvider.channelName</p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L100">core/src/channels/voice/conversation-relay/provider.ts:100</a></li></ul></aside></div></li></ul></section></section></details>
+<details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h2 class="tsd-anchor-link" id="methods-1">Methods<a href="#methods-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
+<section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="getwebsocket"><span>get<wbr/>Web<wbr/>Socket</span><a href="#getwebsocket" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="getwebsocket-1"><span class="tsd-kind-call-signature">getWebSocket</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">WebSocket</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span><a href="#getwebsocket-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Get active WebSocket connection for a conversation</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">WebSocket</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">null</span></h4><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#getwebsocket">getWebSocket</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L107">core/src/channels/voice/conversation-relay/provider.ts:107</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="handlewebsocket"><span>handle<wbr/>Web<wbr/>Socket</span><a href="#handlewebsocket" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="handlewebsocket-1"><span class="tsd-kind-call-signature">handleWebSocket</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">ws</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">WebSocket</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">void</span><a href="#handlewebsocket-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Handle WebSocket connection from ConversationRelay</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">ws</span>: <span class="tsd-signature-type">WebSocket</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#handlewebsocket">handleWebSocket</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L192">core/src/channels/voice/conversation-relay/provider.ts:192</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="sendresponse"><span>send<wbr/>Response</span><a href="#sendresponse" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="sendresponse-1"><span class="tsd-kind-call-signature">sendResponse</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">message</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">metadata</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span><a href="#sendresponse-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Send voice response via WebSocket</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span></li>
+<li><span><span class="tsd-kind-parameter">message</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">metadata</span>: <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#sendresponse">sendResponse</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L609">core/src/channels/voice/conversation-relay/provider.ts:609</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="sendstreamingresponse"><span>send<wbr/>Streaming<wbr/>Response</span><a href="#sendstreamingresponse" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="sendstreamingresponse-1"><span class="tsd-kind-call-signature">sendStreamingResponse</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">stream</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">AsyncIterable</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">signal</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">AbortSignal</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span><a href="#sendstreamingresponse-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Send a streaming voice response via WebSocket, token by token.</p>
+<p>Each chunk from the iterable is sent as a text token message with last: false.
+After the iterable completes, a final empty marker with last: true is sent
+only if at least one token was emitted. If the AbortSignal fires (e.g., user
+interrupted), iteration stops and no final marker is sent (the interrupt
+handler sends the finalization instead).</p>
+<p>Once the stream completes, a handoff pending on the session is delivered as
+the WS <code>end</code> message, matching <a href="#sendresponse" class="tsd-kind-method">sendResponse</a>. An aborted stream
+leaves it pending for the next response.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span></li>
+<li><span><span class="tsd-kind-parameter">stream</span>: <span class="tsd-signature-type">AsyncIterable</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span></span></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">signal</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">AbortSignal</span> <span class="tsd-signature-symbol">}</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span></h4><p>The accumulated full response text.</p>
+<aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#sendstreamingresponse">sendStreamingResponse</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L681">core/src/channels/voice/conversation-relay/provider.ts:681</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="startstreamtask"><span>start<wbr/>Stream<wbr/>Task</span><a href="#startstreamtask" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="startstreamtask-1"><span class="tsd-kind-call-signature">startStreamTask</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/StreamTask.html" class="tsd-signature-type tsd-kind-interface">StreamTask</a><a href="#startstreamtask-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Start tracking a streaming task for a conversation</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span>
+<div class="tsd-comment tsd-typography"><p>The conversation ID</p>
+</div></li></ul></div>
+<h4 class="tsd-returns-title">Returns <a href="../interfaces/StreamTask.html" class="tsd-signature-type tsd-kind-interface">StreamTask</a></h4><p>The stream task with its AbortController</p>
+<aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L767">core/src/channels/voice/conversation-relay/provider.ts:767</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="cancelstreamtask"><span>cancel<wbr/>Stream<wbr/>Task</span><a href="#cancelstreamtask" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="cancelstreamtask-1"><span class="tsd-kind-call-signature">cancelStreamTask</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">boolean</span><a href="#cancelstreamtask-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Cancel an active streaming task</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span>
+<div class="tsd-comment tsd-typography"><p>The conversation ID</p>
+</div></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">boolean</span></h4><p>true if a task was cancelled, false otherwise</p>
+<aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L784">core/src/channels/voice/conversation-relay/provider.ts:784</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="completestreamtask"><span>complete<wbr/>Stream<wbr/>Task</span><a href="#completestreamtask" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="completestreamtask-1"><span class="tsd-kind-call-signature">completeStreamTask</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">void</span><a href="#completestreamtask-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Complete a streaming task (remove from tracking)</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span>
+<div class="tsd-comment tsd-typography"><p>The conversation ID</p>
+</div></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L800">core/src/channels/voice/conversation-relay/provider.ts:800</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="hasactivestreamtask"><span>has<wbr/>Active<wbr/>Stream<wbr/>Task</span><a href="#hasactivestreamtask" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="hasactivestreamtask-1"><span class="tsd-kind-call-signature">hasActiveStreamTask</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">conversationId</span><span class="tsd-signature-symbol">:</span> <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">boolean</span><a href="#hasactivestreamtask-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Check if a stream task is active</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">conversationId</span>: <a href="../types/ConversationId.html" class="tsd-signature-type tsd-kind-type-alias">ConversationId</a></span>
+<div class="tsd-comment tsd-typography"><p>The conversation ID</p>
+</div></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">boolean</span></h4><p>true if an active task exists</p>
+<aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L811">core/src/channels/voice/conversation-relay/provider.ts:811</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="handleincomingcall"><span>handle<wbr/>Incoming<wbr/>Call</span><a href="#handleincomingcall" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="handleincomingcall-1"><span class="tsd-kind-call-signature">handleIncomingCall</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">twimlRequest</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>        <span class="tsd-kind-property">from</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">to</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">callSid</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">callerCountry</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">callerState</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">callerCity</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">direction</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">extra</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>        <span class="tsd-kind-property">hostTwimlOptions</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>            <span class="tsd-kind-property">customParameters</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>            <span class="tsd-kind-property">actionUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>            <span class="tsd-kind-property">websocketUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span><a href="#handleincomingcall-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Generate the TwiML response for an incoming voice call.</p>
+<p>ConversationRelay automatically handles conversation creation and
+participant management via the <code>conversationConfiguration</code> parameter.</p>
+<p>The WebSocket URL and default session-cleanup action URL are derived from
+<code>TACConfig.voicePublicDomain</code> + <code>TACConfig.voiceWebsocketPath</code> /
+<code>voiceActionPath</code>.</p>
+<p>TwiML fields are merged per-field, highest precedence first:</p>
+<ol>
+<li>Output of the customizer registered via
+<code>VoiceChannel.onInboundCallTwiml(...)</code> if configured and <code>twimlRequest</code>
+is given. (Application-owned.)</li>
+<li><code>ConversationRelayProviderConfig.defaultTwimlOptions</code> — per-channel
+defaults.</li>
+<li><code>hostTwimlOptions</code> — per-call transport facts supplied by the host (the
+code owning the route), e.g. a per-call <code>websocketUrl</code> with an affinity
+token.</li>
+<li>TAC defaults: a fixed default welcomeGreeting, <code>conversationConfiguration</code>
+from <code>TACConfig</code>, <code>actionUrl</code> resolved via Studio handoff (when
+<code>studioHandoffFlowSid</code> is configured), else derived from
+<code>TACConfig.voicePublicDomain</code> + <code>voiceActionPath</code>, and the <code>websocketUrl</code>
+derived from <code>TACConfig.voicePublicDomain</code> + <code>voiceWebsocketPath</code>.</li>
+</ol>
+<p>Fields not set at a layer fall through to lower layers. Arrays (<code>languages</code>)
+and nested objects (<code>customParameters</code>) replace wholesale when set at a
+higher-priority layer. <code>websocketUrl</code> falls back to the <code>TACConfig</code>-derived
+URL if unset at every layer.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">twimlRequest</span>: <span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">from</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">to</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">callSid</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">callerCountry</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">callerState</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">callerCity</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">direction</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">extra</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></span>
+<div class="tsd-comment tsd-typography"><p>Parsed Twilio webhook fields. Passed to the customizer
+if one is configured on the channel.</p>
+</div>
+<ul class="tsd-parameters">
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">from</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">to</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">callSid</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">callerCountry</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">callerState</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">callerCity</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">direction</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
+<li class="tsd-parameter">
+<h5><span class="tsd-kind-property">extra</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span></h5>
+<div class="tsd-comment tsd-typography"><p>Any other fields from the Twilio webhook not captured above. Values are
+always strings here (webhook form fields are url-encoded), unlike
+VoiceTwiMLOptionsConversationRelay.extra which accepts string | boolean |
+number for emitted TwiML attributes.</p>
+</div></li></ul></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">hostTwimlOptions</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>        <span class="tsd-kind-property">customParameters</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">actionUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">websocketUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></span>
+<div class="tsd-comment tsd-typography"><p>Additional per-call inputs.</p>
+</div>
+<ul class="tsd-parameters">
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">hostTwimlOptions</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">customParameters</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">actionUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">websocketUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></h5>
+<div class="tsd-comment tsd-typography"><p>Per-call TwiML supplied by a custom
+in-process host (e.g. an affinity-routed deployment injecting a per-call
+<code>websocketUrl</code>), layered below <code>defaultTwimlOptions</code> and the application
+customizer but above the TAC defaults.</p>
+</div>
+<ul class="tsd-parameters">
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">customParameters</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5>
+<div class="tsd-comment tsd-typography"><p>Custom parameters to pass to the provider's TwiML element as <code>&lt;Parameter&gt;</code>
+children.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">actionUrl</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>URL for Twilio to request when the call ends (<code>&lt;Connect action&gt;</code>). Set to
+a non-empty URL, or leave unset. An explicit <code>undefined</code> suppresses the
+action entirely (see the TwiML builder's actionUrl resolution); an empty
+string is rejected so it can't silently drop the action.</p>
+</div></li>
+<li class="tsd-parameter">
+<h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">websocketUrl</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5>
+<div class="tsd-comment tsd-typography"><p>WebSocket URL for the provider's TwiML element (<code>&lt;ConversationRelay url=...&gt;</code>
+today). Leave unset (the default) to use the URL the channel derives
+from <code>TACConfig.voicePublicDomain</code> + <code>voiceWebsocketPath</code>. Set it only for
+a per-call URL — e.g. an affinity-routed host that appends a token to the
+upgrade URL — typically from an <code>onInboundCallTwiml</code> customizer. Layers
+per-field like every other field. Must be non-empty when set.</p>
+</div></li></ul></li></ul></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">&gt;</span></h4><p>TwiML XML string for call connection.</p>
+
+<div class="tsd-comment tsd-typography">
+<div class="tsd-tag-throws">
+<h4 class="tsd-anchor-link" id="throws">Throws<a href="#throws" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h4><p>if either options layer isn't a
+<a href="../types/VoiceTwiMLOptionsConversationRelay.html" class="tsd-kind-type-alias">VoiceTwiMLOptionsConversationRelay</a>.</p>
+</div></div><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#handleincomingcall">handleIncomingCall</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L861">core/src/channels/voice/conversation-relay/provider.ts:861</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="initiateoutboundconversation"><span>initiate<wbr/>Outbound<wbr/>Conversation</span><a href="#initiateoutboundconversation" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="initiateoutboundconversation-1"><span class="tsd-kind-call-signature">initiateOutboundConversation</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/InitiateVoiceConversationOptions.html" class="tsd-signature-type tsd-kind-interface">InitiateVoiceConversationOptions</a><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/InitiateVoiceConversationResult.html" class="tsd-signature-type tsd-kind-interface">InitiateVoiceConversationResult</a><span class="tsd-signature-symbol">&gt;</span><a href="#initiateoutboundconversation-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Initiate an outbound voice conversation</p>
+<p>Places an outbound call with inline TwiML that connects to ConversationRelay.
+The conversationConfiguration attribute tells CO to create and manage the
+conversation during passive hydration. The session is initialized when the
+background callSid lookup started at WebSocket setup finds it.</p>
+<p>TwiML fields are merged per-field, highest precedence first:</p>
+<ol>
+<li><code>options.twimlOptions</code> — per-call overrides</li>
+<li><code>ConversationRelayProviderConfig.defaultTwimlOptions</code> — channel-wide
+defaults</li>
+<li>TAC defaults: welcome greeting, <code>conversationConfiguration</code> from
+<code>TACConfig</code>, and <code>actionUrl</code> from Studio handoff (if configured), else
+derived from <code>TACConfig.voicePublicDomain</code> + <code>voiceActionPath</code>.</li>
+</ol>
+<p>Calls-API parameters merge the same way:</p>
+<ol>
+<li><code>options.callOptions</code> — per-call overrides</li>
+<li><code>ConversationRelayProviderConfig.defaultCallOptions</code> — channel-wide
+defaults</li>
+<li>Callback URLs derived from <code>TACConfig.voicePublicDomain</code> +
+<code>voiceCallEventPath</code>, for handlers that are registered</li>
+</ol>
+<p>The WebSocket URL is derived from <code>TACConfig.voicePublicDomain</code> +
+<code>TACConfig.voiceWebsocketPath</code>, unless overridden per-call via
+<code>options.websocketUrl</code>.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">options</span>: <a href="../interfaces/InitiateVoiceConversationOptions.html" class="tsd-signature-type tsd-kind-interface">InitiateVoiceConversationOptions</a></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/InitiateVoiceConversationResult.html" class="tsd-signature-type tsd-kind-interface">InitiateVoiceConversationResult</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#initiateoutboundconversation">initiateOutboundConversation</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L994">core/src/channels/voice/conversation-relay/provider.ts:994</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="handletwilioprovidercallback"><span>handle<wbr/>Twilio<wbr/>Provider<wbr/>Callback</span><a href="#handletwilioprovidercallback" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="handletwilioprovidercallback-1"><span class="tsd-kind-call-signature">handleTwilioProviderCallback</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">rawPayload</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/TwilioProviderCallbackResponse.html" class="tsd-signature-type tsd-kind-interface">TwilioProviderCallbackResponse</a><span class="tsd-signature-symbol">&gt;</span><a href="#handletwilioprovidercallback-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Handle ConversationRelay callback from Twilio. Cleans up on call completion
+in voice-only mode; in orchestrated mode the CO webhook owns cleanup.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">rawPayload</span>: <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></span>
+<div class="tsd-comment tsd-typography"><p>Callback payload from Twilio</p>
+</div></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><a href="../interfaces/TwilioProviderCallbackResponse.html" class="tsd-signature-type tsd-kind-interface">TwilioProviderCallbackResponse</a><span class="tsd-signature-symbol">&gt;</span></h4><p>Response with status, content, and content type</p>
+<aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#handletwilioprovidercallback">handleTwilioProviderCallback</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L1064">core/src/channels/voice/conversation-relay/provider.ts:1064</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="connectconversationrelay"><span>connect<wbr/>Conversation<wbr/>Relay</span><a href="#connectconversationrelay" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="connectconversationrelay-1"><span class="tsd-kind-call-signature">connectConversationRelay</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">config</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/ConversationRelayConfig.html" class="tsd-signature-type tsd-kind-interface">ConversationRelayConfig</a><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">parameters</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">actionUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><a href="#connectconversationrelay-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Generate TwiML to connect a call to ConversationRelay.
+Validates configuration with Zod before generating TwiML.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">config</span>: <a href="../interfaces/ConversationRelayConfig.html" class="tsd-signature-type tsd-kind-interface">ConversationRelayConfig</a></span>
+<div class="tsd-comment tsd-typography"><p>ConversationRelay configuration (url, transcription, TTS, etc.)</p>
+</div></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">parameters</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">actionUrl</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">}</span></span>
+<div class="tsd-comment tsd-typography"><p>Optional settings for parameters and the Connect verb</p>
+</div></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">string</span></h4><p>TwiML XML string</p>
+
+<div class="tsd-comment tsd-typography">
+<div class="tsd-tag-throws">
+<h4 class="tsd-anchor-link" id="throws-1">Throws<a href="#throws-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h4><p>if config validation fails</p>
+</div></div><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L1114">core/src/channels/voice/conversation-relay/provider.ts:1114</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="shutdown"><span>shutdown</span><a href="#shutdown" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="shutdown-1"><span class="tsd-kind-call-signature">shutdown</span><span class="tsd-signature-symbol">()</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">void</span><a href="#shutdown-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Drop this provider's ConversationRelay transport state on channel shutdown.</p>
+<p>Note: WebSocket connections are managed by the server and closed there.
+This method only cleans up internal provider state.</p>
+</div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
+<p>Overrides <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#shutdown">shutdown</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/conversation-relay/provider.ts#L1167">core/src/channels/voice/conversation-relay/provider.ts:1167</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member tsd-is-protected tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="applycalleventcallbacks"><code class="tsd-tag">Protected</code><span>apply<wbr/>Call<wbr/>Event<wbr/>Callbacks</span><a href="#applycalleventcallbacks" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures tsd-is-protected tsd-is-inherited">
+<li class="tsd-is-inherited">
+<div class="tsd-signature tsd-anchor-link" id="applycalleventcallbacks-1"><span class="tsd-kind-call-signature">applyCallEventCallbacks</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">callParams</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><a href="#applycalleventcallbacks-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Set callback URLs on <code>callParams</code> for every registered call-event handler.</p>
+<p>A URL is derived only when its handler is registered — an unwanted
+call-event URL would otherwise surface as silent 11200 alerts for a
+feature nobody asked for. If TAC isn't serving these routes, set the URLs
+explicitly via <code>CallOptions</code> (or the provider config's default call
+options, where available). An explicit URL from either options layer is
+never overwritten.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">callParams</span>: <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
+<p>Inherited from <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#applycalleventcallbacks">applyCallEventCallbacks</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/provider.ts#L173">core/src/channels/voice/provider.ts:173</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member tsd-is-protected tsd-is-inherited">
+<h3 class="tsd-anchor-link" id="resolvefromnumber"><code class="tsd-tag">Protected</code><span>resolve<wbr/>From<wbr/>Number</span><a href="#resolvefromnumber" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures tsd-is-protected tsd-is-inherited">
+<li class="tsd-is-inherited">
+<div class="tsd-signature tsd-anchor-link" id="resolvefromnumber-1"><span class="tsd-kind-call-signature">resolveFromNumber</span><span class="tsd-signature-symbol">(</span><span class="tsd-kind-parameter">requested</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">undefined</span><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><a href="#resolvefromnumber-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-comment tsd-typography"><p>Resolve the outbound caller ID for a voice call.</p>
+<p>Validates <code>requested</code> against <code>config.phoneNumbers</code>, defaulting to
+<code>config.phoneNumber</code> — the same rule messaging channels apply via
+<code>resolveOutboundSender</code>.</p>
+</div>
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">requested</span>: <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">undefined</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">string</span></h4><aside class="tsd-sources">
+<p>Inherited from <a href="VoiceProvider.html">VoiceProvider</a>.<a href="VoiceProvider.html#resolvefromnumber">resolveFromNumber</a></p>
+<ul>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/voice/provider.ts#L198">core/src/channels/voice/provider.ts:198</a></li></ul></aside></div></li></ul></section></section></details></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details">
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Constructors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Constructors</summary>
+<div><a href="#constructor"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Constructor"><use href="../assets/icons.svg#icon-512"></use></svg><span>constructor</span></a></div></details>
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Properties"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Properties</summary>
+<div><a href="#logger" class="tsd-is-protected"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>logger</span></a><a href="#streamtasks" class="tsd-is-protected"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>stream<wbr/>Tasks</span></a><a href="#channel" class="tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Property"><use href="../assets/icons.svg#icon-1024"></use></svg><span>channel</span></a></div></details>
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Accessors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Accessors</summary>
+<div><a href="#channelname"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>channel<wbr/>Name</span></a></div></details>
+<details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Methods</summary>
+<div><a href="#getwebsocket"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Web<wbr/>Socket</span></a><a href="#handlewebsocket"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>handle<wbr/>Web<wbr/>Socket</span></a><a href="#sendresponse"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>send<wbr/>Response</span></a><a href="#sendstreamingresponse"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>send<wbr/>Streaming<wbr/>Response</span></a><a href="#startstreamtask"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>start<wbr/>Stream<wbr/>Task</span></a><a href="#cancelstreamtask"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>cancel<wbr/>Stream<wbr/>Task</span></a><a href="#completestreamtask"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>complete<wbr/>Stream<wbr/>Task</span></a><a href="#hasactivestreamtask"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>has<wbr/>Active<wbr/>Stream<wbr/>Task</span></a><a href="#handleincomingcall"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>handle<wbr/>Incoming<wbr/>Call</span></a><a href="#initiateoutboundconversation"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>initiate<wbr/>Outbound<wbr/>Conversation</span></a><a href="#handletwilioprovidercallback"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>handle<wbr/>Twilio<wbr/>Provider<wbr/>Callback</span></a><a href="#connectconversationrelay"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>connect<wbr/>Conversation<wbr/>Relay</span></a><a href="#shutdown"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>shutdown</span></a><a href="#applycalleventcallbacks" class="tsd-is-protected tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>apply<wbr/>Call<wbr/>Event<wbr/>Callbacks</span></a><a href="#resolvefromnumber" class="tsd-is-protected tsd-is-inherited"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>resolve<wbr/>From<wbr/>Number</span></a></div></details></div></details></div>
+<div class="site-menu">
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/twilio/twilio-agent-connect-typescript" class="tsd-nav-link">GitHub</a><a href="https://www.twilio.com/docs/conversations/agent-connect" class="tsd-nav-link">Twilio Docs</a></nav>
+<nav class="tsd-navigation"><a href="../modules.html">Twilio Agent Connect (TypeScript)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
+<div class="overlay"></div><script>
+          try {
+            const generateLinkElement = document.querySelector(".tsd-generator a");
+            const link = document.createElement("a");
+            Object.assign(link, {
+              href: "https://github.com/dmnsgn/typedoc-material-theme",
+              target: "_blank",
+              rel: "noreferrer",
+              innerText: "typedoc-material-theme."
+            });
+            generateLinkElement.insertAdjacentElement("afterend", link);
+            generateLinkElement.insertAdjacentText("afterend", " with ");
+          } catch (error) {
+
+          }
+        </script><script src="../assets/versionsMenu.js" type="module"></script></body></html>

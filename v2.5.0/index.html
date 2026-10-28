@@ -1,0 +1,366 @@
+<!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>Twilio Agent Connect (TypeScript)</title><meta name="description" content="Documentation for Twilio Agent Connect (TypeScript)"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script><script async src="assets/hierarchy.js" id="tsd-hierarchy-script"></script><style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-sys-color-primary: #ffb3b2;
+    --md-sys-color-on-primary: #680013;
+    --md-sys-color-primary-container: #92001f;
+    --md-sys-color-on-primary-container: #ffdad9;
+    --md-sys-color-secondary: #e6bdbb;
+    --md-sys-color-on-secondary: #442929;
+    --md-sys-color-secondary-container: #5d3f3f;
+    --md-sys-color-on-secondary-container: #ffdad9;
+    --md-sys-color-tertiary: #e4c18d;
+    --md-sys-color-on-tertiary: #412d05;
+    --md-sys-color-tertiary-container: #5a4319;
+    --md-sys-color-on-tertiary-container: #ffdead;
+    --md-sys-color-error: #ffb4ab;
+    --md-sys-color-on-error: #690005;
+    --md-sys-color-error-container: #93000a;
+    --md-sys-color-on-error-container: #ffb4ab;
+    --md-sys-color-background: #201a1a;
+    --md-sys-color-on-background: #ede0df;
+    --md-sys-color-surface: #201a1a;
+    --md-sys-color-on-surface: #ede0df;
+    --md-sys-color-surface-variant: #524343;
+    --md-sys-color-on-surface-variant: #d7c1c0;
+    --md-sys-color-outline: #a08c8b;
+    --md-sys-color-outline-variant: #524343;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-inverse-surface: #ede0df;
+    --md-sys-color-inverse-on-surface: #362f2e;
+    --md-sys-color-inverse-primary: #bf002b;
+    --md-sys-color-surface-dim: #181212;
+    --md-sys-color-surface-bright: #3f3737;
+    --md-sys-color-surface-container-lowest: #120d0d;
+    --md-sys-color-surface-container-low: #201a1a;
+    --md-sys-color-surface-container: #251e1e;
+    --md-sys-color-surface-container-high: #2f2828;
+    --md-sys-color-surface-container-highest: #3a3333
+  }
+}
+:root[data-theme="dark"] {
+  --md-sys-color-primary: #ffb3b2;
+  --md-sys-color-on-primary: #680013;
+  --md-sys-color-primary-container: #92001f;
+  --md-sys-color-on-primary-container: #ffdad9;
+  --md-sys-color-secondary: #e6bdbb;
+  --md-sys-color-on-secondary: #442929;
+  --md-sys-color-secondary-container: #5d3f3f;
+  --md-sys-color-on-secondary-container: #ffdad9;
+  --md-sys-color-tertiary: #e4c18d;
+  --md-sys-color-on-tertiary: #412d05;
+  --md-sys-color-tertiary-container: #5a4319;
+  --md-sys-color-on-tertiary-container: #ffdead;
+  --md-sys-color-error: #ffb4ab;
+  --md-sys-color-on-error: #690005;
+  --md-sys-color-error-container: #93000a;
+  --md-sys-color-on-error-container: #ffb4ab;
+  --md-sys-color-background: #201a1a;
+  --md-sys-color-on-background: #ede0df;
+  --md-sys-color-surface: #201a1a;
+  --md-sys-color-on-surface: #ede0df;
+  --md-sys-color-surface-variant: #524343;
+  --md-sys-color-on-surface-variant: #d7c1c0;
+  --md-sys-color-outline: #a08c8b;
+  --md-sys-color-outline-variant: #524343;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #ede0df;
+  --md-sys-color-inverse-on-surface: #362f2e;
+  --md-sys-color-inverse-primary: #bf002b;
+  --md-sys-color-surface-dim: #181212;
+  --md-sys-color-surface-bright: #3f3737;
+  --md-sys-color-surface-container-lowest: #120d0d;
+  --md-sys-color-surface-container-low: #201a1a;
+  --md-sys-color-surface-container: #251e1e;
+  --md-sys-color-surface-container-high: #2f2828;
+  --md-sys-color-surface-container-highest: #3a3333
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --md-sys-color-primary: #bf002b;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #ffdad9;
+    --md-sys-color-on-primary-container: #410008;
+    --md-sys-color-secondary: #775656;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #ffdad9;
+    --md-sys-color-on-secondary-container: #2c1515;
+    --md-sys-color-tertiary: #745a2f;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #ffdead;
+    --md-sys-color-on-tertiary-container: #281900;
+    --md-sys-color-error: #ba1a1a;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffdad6;
+    --md-sys-color-on-error-container: #410002;
+    --md-sys-color-background: #fffbff;
+    --md-sys-color-on-background: #201a1a;
+    --md-sys-color-surface: #fffbff;
+    --md-sys-color-on-surface: #201a1a;
+    --md-sys-color-surface-variant: #f4dddc;
+    --md-sys-color-on-surface-variant: #524343;
+    --md-sys-color-outline: #857372;
+    --md-sys-color-outline-variant: #d7c1c0;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-scrim: #000000;
+    --md-sys-color-inverse-surface: #362f2e;
+    --md-sys-color-inverse-on-surface: #fbeeed;
+    --md-sys-color-inverse-primary: #ffb3b2;
+    --md-sys-color-surface-dim: #e4d7d6;
+    --md-sys-color-surface-bright: #fff8f7;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #fef1f0;
+    --md-sys-color-surface-container: #f8ebea;
+    --md-sys-color-surface-container-high: #f2e5e4;
+    --md-sys-color-surface-container-highest: #ede0df
+  }
+}
+:root[data-theme="light"] {
+  --md-sys-color-primary: #bf002b;
+  --md-sys-color-on-primary: #ffffff;
+  --md-sys-color-primary-container: #ffdad9;
+  --md-sys-color-on-primary-container: #410008;
+  --md-sys-color-secondary: #775656;
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #ffdad9;
+  --md-sys-color-on-secondary-container: #2c1515;
+  --md-sys-color-tertiary: #745a2f;
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #ffdead;
+  --md-sys-color-on-tertiary-container: #281900;
+  --md-sys-color-error: #ba1a1a;
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #ffdad6;
+  --md-sys-color-on-error-container: #410002;
+  --md-sys-color-background: #fffbff;
+  --md-sys-color-on-background: #201a1a;
+  --md-sys-color-surface: #fffbff;
+  --md-sys-color-on-surface: #201a1a;
+  --md-sys-color-surface-variant: #f4dddc;
+  --md-sys-color-on-surface-variant: #524343;
+  --md-sys-color-outline: #857372;
+  --md-sys-color-outline-variant: #d7c1c0;
+  --md-sys-color-shadow: #000000;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-inverse-surface: #362f2e;
+  --md-sys-color-inverse-on-surface: #fbeeed;
+  --md-sys-color-inverse-primary: #ffb3b2;
+  --md-sys-color-surface-dim: #e4d7d6;
+  --md-sys-color-surface-bright: #fff8f7;
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #fef1f0;
+  --md-sys-color-surface-container: #f8ebea;
+  --md-sys-color-surface-container-high: #f2e5e4;
+  --md-sys-color-surface-container-highest: #ede0df
+}
+</style><link rel="stylesheet" href="assets/material-style.css"/><style>
+				.tsd-ext-version-select .settings-label {
+					margin: 0.75rem 0.75rem 0.75rem 0;
+				}
+			</style></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="index.html" class="title">Twilio Agent Connect (TypeScript)</a>
+<div id="tsd-toolbar-links"><a href="https://github.com/twilio/twilio-agent-connect-typescript">GitHub</a><a href="https://www.twilio.com/docs/conversations/agent-connect">Twilio Docs</a></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
+<ul role="listbox" id="tsd-search-results"></ul>
+<div id="tsd-search-status" aria-live="polite" aria-atomic="true">
+<div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></header>
+<div class="container container-main">
+<div class="col-content">
+<div class="tsd-page-title">
+<h1>Twilio Agent Connect (TypeScript)</h1></div>
+<div class="tsd-panel tsd-typography"><div align="center">
+  <div>
+    <img src="media/logo.svg" alt="TAC Logo" width="120" height="120">
+  </div>
+  <h1>
+    Twilio Agent Connect
+  </h1>
+  <h2>
+    A powerful SDK for building intelligent, context-aware AI agents with Twilio's communication technologies.
+  </h2>
+  <div align="center">
+    <a href="https://github.com/twilio/twilio-agent-connect-typescript"><img alt="Node.js" src="https://img.shields.io/badge/Node.js-22.13+-339933.svg"/></a>
+    <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg"/></a>
+    <a href="https://www.twilio.com/docs/conversations/agent-connect/quickstart"><img alt="Getting Started" src="https://img.shields.io/badge/Getting%20Started-Quickstart-F22F46.svg"/></a>
+  </div>
+  <p>
+    <a href="https://www.twilio.com/docs/conversations/agent-connect">Documentation</a>
+    ◆ <a href="https://twilio.github.io/twilio-agent-connect-typescript/">API Reference</a>
+    ◆ <a href="https://github.com/twilio/twilio-agent-connect-python">Python SDK</a>
+    ◆ <a href="https://github.com/twilio/twilio-agent-connect-typescript">TypeScript SDK</a>
+    ◆ <a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples">Examples</a>
+  </p>
+</div>
+<p>Seamlessly integrate with Twilio Conversation Memory and Conversation Orchestrator to build LLM-powered agents with persistent memory and conversation context.</p>
+<div class="tsd-alert tsd-alert-tip"><div class="tsd-alert-title"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><use href="assets/icons.svg#icon-alertTip"></use></svg><span>Tip</span></div><p>
+<strong>Building AI agents on AWS or Microsoft?</strong> Connect them to Twilio's voice, messaging, and conversation context with these dedicated packages:</p>
+<ul>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-aws">TAC for AWS</a></strong> — Strands, Bedrock Agents, Bedrock AgentCore</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-microsoft">TAC for Microsoft</a></strong> — Microsoft Agent Framework, Azure AI Foundry (incl. Voice Live), Azure OpenAI</li>
+</ul>
+</div>
+<hr>
+<h2 id="key-features" class="tsd-anchor-link">Key Features<a href="#key-features" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<ul>
+<li><strong>Multi-Channel Support</strong>: Built-in handling for Voice (ConversationRelay), SMS, RCS, WhatsApp, and Chat</li>
+<li><strong>Multi-Sender Support</strong>: Configure multiple phone numbers, RCS Sender IDs, or WhatsApp numbers per channel by setting the comma-separated plural env var (<code>TWILIO_PHONE_NUMBERS</code>, <code>TWILIO_RCS_SENDER_IDS</code>, <code>TWILIO_WHATSAPP_NUMBERS</code>) instead of the singular one; the first entry is the default sender for outbound</li>
+<li><strong>Outbound Conversations</strong>: Agent-initiated conversations across all supported channels</li>
+<li><strong>ConversationRelay-Only Mode</strong>: Get started quickly with TAC's voice plumbing (TwiML, WebSocket, callbacks) before adding Conversation Orchestrator or Conversation Memory</li>
+<li><strong>Memory Management</strong>: Automatic integration with Twilio Conversation Memory for persistent user context</li>
+<li><strong>Conversation Lifecycle</strong>: Automatic tracking of conversation sessions and state</li>
+<li><strong>Human Handoff</strong>: Built-in tool to route conversations to human agents via Twilio Studio Flows (including Flex)</li>
+</ul>
+<h2 id="get-started" class="tsd-anchor-link">Get Started<a href="#get-started" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>To get started, set up your Node.js environment (Node.js 22.13.0 or newer required), and then install the <a href="https://www.npmjs.com/package/twilio-agent-connect">TAC SDK package</a>:</p>
+<pre><code class="bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">install</span><span class="hl-1"> </span><span class="hl-2">twilio-agent-connect</span>
+</code><button type="button">Copy</button></pre>
+
+<h2 id="quick-examples" class="tsd-anchor-link">Quick Examples<a href="#quick-examples" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p><strong>Option 1: Use the Setup Wizard</strong></p>
+<p>Use the <a href="media/twilio-setup">Twilio Setup Wizard</a> to automatically create a Memory Store and Conversation Configuration and generate your <code>.env</code> file:</p>
+<pre><code class="bash"><span class="hl-0">git</span><span class="hl-1"> </span><span class="hl-2">clone</span><span class="hl-1"> </span><span class="hl-2">https://github.com/twilio/twilio-agent-connect-typescript.git</span><br/><span class="hl-0">cd</span><span class="hl-1"> </span><span class="hl-2">twilio-agent-connect-typescript</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">install</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">setup</span><span class="hl-1">  </span><span class="hl-3"># Open http://localhost:8080</span>
+</code><button type="button">Copy</button></pre>
+
+<p><strong>Option 2: Manual Setup</strong></p>
+<p>You can also create a Memory Store and Conversation Configuration manually through the <a href="https://1console.twilio.com">Twilio Console</a>. For a full walkthrough — credentials, Console navigation, and webhook configuration — see the <a href="https://www.twilio.com/docs/conversations/agent-connect/quickstart">TAC Quickstart</a>.</p>
+<hr>
+<p>After completing setup, here's a minimal example to get started:</p>
+<h3 id="multi-channel-with-openai-sdk" class="tsd-anchor-link">Multi-Channel with OpenAI SDK<a href="#multi-channel-with-openai-sdk" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<p>Use the OpenAI SDK to build an AI agent that works across Voice and SMS channels with conversation memory and user context.</p>
+<p>First, install the required dependencies:</p>
+<pre><code class="bash"><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">install</span><span class="hl-1"> </span><span class="hl-2">twilio-agent-connect</span><span class="hl-1"> </span><span class="hl-2">openai</span><span class="hl-1"> </span><span class="hl-2">dotenv</span>
+</code><button type="button">Copy</button></pre>
+
+<blockquote>
+<p><strong>Note</strong>: <code>dotenv</code> is optional — TAC works with environment variables from any source (<code>.env</code> files, Docker, Kubernetes, CI/CD, shell exports, etc.).</p>
+</blockquote>
+<p>Then create your application:</p>
+<pre><code class="typescript"><span class="hl-4">import</span><span class="hl-1"> { </span><span class="hl-5">config</span><span class="hl-1"> } </span><span class="hl-4">from</span><span class="hl-1"> </span><span class="hl-2">&#39;dotenv&#39;</span><span class="hl-1">;</span><br/><span class="hl-4">import</span><span class="hl-1"> </span><span class="hl-5">OpenAI</span><span class="hl-1"> </span><span class="hl-4">from</span><span class="hl-1"> </span><span class="hl-2">&#39;openai&#39;</span><span class="hl-1">;</span><br/><span class="hl-4">import</span><span class="hl-1"> {</span><br/><span class="hl-1">  </span><span class="hl-5">TAC</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-5">TACConfig</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-5">VoiceChannel</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-5">SMSChannel</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-5">TACServer</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-5">MemoryPromptBuilder</span><span class="hl-1">,</span><br/><span class="hl-1">} </span><span class="hl-4">from</span><span class="hl-1"> </span><span class="hl-2">&#39;twilio-agent-connect&#39;</span><span class="hl-1">;</span><br/><br/><span class="hl-0">config</span><span class="hl-1">();</span><br/><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">openai</span><span class="hl-1"> = </span><span class="hl-6">new</span><span class="hl-1"> </span><span class="hl-0">OpenAI</span><span class="hl-1">();</span><br/><br/><span class="hl-3">// Initialize TAC and channels</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">tac</span><span class="hl-1"> = </span><span class="hl-4">await</span><span class="hl-1"> </span><span class="hl-7">TAC</span><span class="hl-1">.</span><span class="hl-0">create</span><span class="hl-1">({ </span><span class="hl-5">config:</span><span class="hl-1"> </span><span class="hl-5">TACConfig</span><span class="hl-1">.</span><span class="hl-0">fromEnv</span><span class="hl-1">() });</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">voiceChannel</span><span class="hl-1"> = </span><span class="hl-6">new</span><span class="hl-1"> </span><span class="hl-0">VoiceChannel</span><span class="hl-1">(</span><span class="hl-5">tac</span><span class="hl-1">);</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">smsChannel</span><span class="hl-1"> = </span><span class="hl-6">new</span><span class="hl-1"> </span><span class="hl-0">SMSChannel</span><span class="hl-1">(</span><span class="hl-5">tac</span><span class="hl-1">);</span><br/><br/><span class="hl-3">// Store conversation history</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">conversationHistory</span><span class="hl-1">: </span><span class="hl-8">Record</span><span class="hl-1">&lt;</span><span class="hl-8">string</span><span class="hl-1">, </span><span class="hl-8">OpenAI</span><span class="hl-1">.</span><span class="hl-8">Chat</span><span class="hl-1">.</span><span class="hl-8">ChatCompletionMessageParam</span><span class="hl-1">[]&gt; = {};</span><br/><br/><span class="hl-3">// System instructions for the AI agent</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">SYSTEM_INSTRUCTIONS</span><span class="hl-1"> =</span><br/><span class="hl-1">  </span><span class="hl-2">&#39;You are a customer service agent speaking with a user over voice or SMS. &#39;</span><span class="hl-1"> +</span><br/><span class="hl-1">  </span><span class="hl-2">&#39;Keep responses short and conversational — a sentence or two. &#39;</span><span class="hl-1"> +</span><br/><span class="hl-1">  </span><span class="hl-2">&#39;Do not use markdown, asterisks, bullets, or emojis; your words will be &#39;</span><span class="hl-1"> +</span><br/><span class="hl-1">  </span><span class="hl-2">&#39;spoken aloud or sent as plain text.&#39;</span><span class="hl-1">;</span><br/><br/><span class="hl-3">// Handle incoming messages</span><br/><span class="hl-5">tac</span><span class="hl-1">.</span><span class="hl-0">onMessageReady</span><span class="hl-1">(</span><span class="hl-6">async</span><span class="hl-1"> ({ </span><span class="hl-5">conversationId</span><span class="hl-1">, </span><span class="hl-5">message</span><span class="hl-1">, </span><span class="hl-5">memory</span><span class="hl-1">, </span><span class="hl-5">session</span><span class="hl-1"> }) </span><span class="hl-6">=&gt;</span><span class="hl-1"> {</span><br/><span class="hl-1">  </span><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">convId</span><span class="hl-1"> = </span><span class="hl-5">conversationId</span><span class="hl-1"> </span><span class="hl-4">as</span><span class="hl-1"> </span><span class="hl-8">string</span><span class="hl-1">;</span><br/><br/><span class="hl-1">  </span><span class="hl-4">if</span><span class="hl-1"> (!</span><span class="hl-5">conversationHistory</span><span class="hl-1">[</span><span class="hl-5">convId</span><span class="hl-1">]) {</span><br/><span class="hl-1">    </span><span class="hl-5">conversationHistory</span><span class="hl-1">[</span><span class="hl-5">convId</span><span class="hl-1">] = [];</span><br/><span class="hl-1">  }</span><br/><br/><span class="hl-1">  </span><span class="hl-3">// Build system prompt with memory context using compose()</span><br/><span class="hl-1">  </span><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">systemPrompt</span><span class="hl-1"> = </span><span class="hl-5">MemoryPromptBuilder</span><span class="hl-1">.</span><span class="hl-0">compose</span><span class="hl-1">(</span><span class="hl-7">SYSTEM_INSTRUCTIONS</span><span class="hl-1">, </span><span class="hl-5">memory</span><span class="hl-1">, </span><span class="hl-5">session</span><span class="hl-1">);</span><br/><br/><span class="hl-1">  </span><span class="hl-5">conversationHistory</span><span class="hl-1">[</span><span class="hl-5">convId</span><span class="hl-1">].</span><span class="hl-0">push</span><span class="hl-1">({ </span><span class="hl-5">role:</span><span class="hl-1"> </span><span class="hl-2">&#39;user&#39;</span><span class="hl-1">, </span><span class="hl-5">content:</span><span class="hl-1"> </span><span class="hl-5">message</span><span class="hl-1"> });</span><br/><br/><span class="hl-1">  </span><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">response</span><span class="hl-1"> = </span><span class="hl-4">await</span><span class="hl-1"> </span><span class="hl-5">openai</span><span class="hl-1">.</span><span class="hl-5">chat</span><span class="hl-1">.</span><span class="hl-5">completions</span><span class="hl-1">.</span><span class="hl-0">create</span><span class="hl-1">({</span><br/><span class="hl-1">    </span><span class="hl-5">model:</span><span class="hl-1"> </span><span class="hl-2">&#39;gpt-4o-mini&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-5">messages:</span><span class="hl-1"> [</span><br/><span class="hl-1">      { </span><span class="hl-5">role:</span><span class="hl-1"> </span><span class="hl-2">&#39;system&#39;</span><span class="hl-1">, </span><span class="hl-5">content:</span><span class="hl-1"> </span><span class="hl-5">systemPrompt</span><span class="hl-1"> },</span><br/><span class="hl-1">      ...</span><span class="hl-5">conversationHistory</span><span class="hl-1">[</span><span class="hl-5">convId</span><span class="hl-1">],</span><br/><span class="hl-1">    ],</span><br/><span class="hl-1">  });</span><br/><br/><span class="hl-1">  </span><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">llmResponse</span><span class="hl-1"> = </span><span class="hl-5">response</span><span class="hl-1">.</span><span class="hl-5">choices</span><span class="hl-1">[</span><span class="hl-9">0</span><span class="hl-1">]?.</span><span class="hl-5">message</span><span class="hl-1">?.</span><span class="hl-5">content</span><span class="hl-1"> ?? </span><span class="hl-2">&#39;&#39;</span><span class="hl-1">;</span><br/><span class="hl-1">  </span><span class="hl-5">conversationHistory</span><span class="hl-1">[</span><span class="hl-5">convId</span><span class="hl-1">].</span><span class="hl-0">push</span><span class="hl-1">({ </span><span class="hl-5">role:</span><span class="hl-1"> </span><span class="hl-2">&#39;assistant&#39;</span><span class="hl-1">, </span><span class="hl-5">content:</span><span class="hl-1"> </span><span class="hl-5">llmResponse</span><span class="hl-1"> });</span><br/><br/><span class="hl-1">  </span><span class="hl-4">return</span><span class="hl-1"> </span><span class="hl-5">llmResponse</span><span class="hl-1">;</span><br/><span class="hl-1">});</span><br/><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-7">server</span><span class="hl-1"> = </span><span class="hl-6">new</span><span class="hl-1"> </span><span class="hl-0">TACServer</span><span class="hl-1">(</span><span class="hl-5">tac</span><span class="hl-1">, { </span><span class="hl-5">voiceChannel</span><span class="hl-1">, </span><span class="hl-5">messagingChannels:</span><span class="hl-1"> [</span><span class="hl-5">smsChannel</span><span class="hl-1">] });</span><br/><span class="hl-4">await</span><span class="hl-1"> </span><span class="hl-5">server</span><span class="hl-1">.</span><span class="hl-0">start</span><span class="hl-1">();</span>
+</code><button type="button">Copy</button></pre>
+
+<blockquote>
+<p><strong>Note</strong>: See the <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/getting_started/README.md">getting started guide</a> for complete setup instructions and <code>.env</code> configuration details.</p>
+</blockquote>
+<p><strong>That's it!</strong> The server automatically:</p>
+<ul>
+<li>Creates Fastify app with <code>/twiml</code>, <code>/ws</code>, and <code>/webhook</code> endpoints</li>
+<li>Handles Voice and SMS conversations</li>
+<li>Routes responses to the appropriate channel</li>
+<li>Provides conversation memory and user profile in the callback</li>
+</ul>
+<p>For configuration details and environment variables, see the <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/getting_started/README.md">getting started guide</a>.</p>
+<h2 id="how-it-works" class="tsd-anchor-link">How It Works<a href="#how-it-works" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>TAC simplifies building AI agents by handling the integration between Twilio's communication channels and your LLM:</p>
+<h3 id="message-flow" class="tsd-anchor-link">Message Flow<a href="#message-flow" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ol>
+<li><strong>Webhook/Connection Received</strong>: Twilio sends webhook (SMS) or WebSocket connection (Voice) to your server</li>
+<li><strong>Channel Processing</strong>: Channel validates and processes the incoming event</li>
+<li><strong>Memory Retrieval</strong>: TAC optionally retrieves user memories and profile from Memory</li>
+<li><strong>Callback Invoked</strong>: Your <code>onMessageReady</code> callback receives user message, context, and optional memory response</li>
+<li><strong>Response Handling</strong>: Your callback returns a response string that TAC routes to the appropriate channel</li>
+</ol>
+<p>For detailed architecture and advanced usage, see <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md">CLAUDE.md</a>.</p>
+<h2 id="telemetry" class="tsd-anchor-link">Telemetry<a href="#telemetry" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel, a conversation ID, the SDK name and version, and timing such as conversation duration.</p>
+<p>Message content, transcripts, phone numbers, and other end-user identifiers are never collected.</p>
+<p>Telemetry is on by default. To disable it, set the following environment variable:</p>
+<pre><code class="bash"><span class="hl-5">TAC_ANALYTICS_DISABLED</span><span class="hl-1">=</span><span class="hl-2">true</span>
+</code><button type="button">Copy</button></pre>
+
+<h2 id="learn-more" class="tsd-anchor-link">Learn More<a href="#learn-more" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p><strong>Examples &amp; Guides:</strong></p>
+<ul>
+<li><strong><a href="https://twilio.github.io/twilio-agent-connect-typescript/">API Reference</a></strong> - Full API documentation generated from the source</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/">Getting Started Guide</a></strong> - Examples and comprehensive documentation</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/twilio-setup/">Twilio Setup Wizard</a></strong> - Create your Memory Store and Conversation Configuration from a local web UI</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/openai/">OpenAI SDK Example</a></strong> - Complete multi-channel example with Voice, SMS, and Chat</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/whatsapp/">WhatsApp Example</a></strong> - WhatsApp channel with memory integration</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/chat/">Chat Example</a></strong> - Web chat integration example</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/relay-only/">ConversationRelay-Only Mode</a></strong> - Get started with voice using just ConversationRelay</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/openai-realtime/">OpenAI Realtime over Media Streams</a></strong> - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI Realtime API</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/gpt-live/">GPT-Live over Media Streams</a></strong> - Speech-to-speech voice calls, bridging Twilio Media Streams to the OpenAI GPT-Live API</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/outbound/">Outbound Conversations</a></strong> - Agent-initiated conversations example</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-call-events/">Voice Call Events</a></strong> - Answering machine detection, recording, and call disposition on outbound calls</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-dtmf/">Voice DTMF</a></strong> - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context</li>
+<li>More examples coming soon</li>
+</ul>
+<p><strong>AWS and Microsoft connectors:</strong></p>
+<ul>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-aws">TAC for AWS</a></strong> — <code>StrandsConnector</code>, <code>BedrockConnector</code>, <code>BedrockAgentCoreConnector</code> for AWS Strands, Bedrock Agents, and Bedrock AgentCore</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-microsoft">TAC for Microsoft</a></strong> — <code>AgentFrameworkConnector</code> and <code>VoiceLiveConnector</code> for Microsoft Agent Framework, Azure AI Foundry (including Voice Live), and Azure OpenAI</li>
+</ul>
+<p><strong>Documentation:</strong></p>
+<ul>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md">CLAUDE.md</a></strong> - Architecture, development guide, and API reference</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/getting_started/README.md">Getting Started Guide</a></strong> - Setup instructions, environment variables, and troubleshooting</li>
+</ul>
+<hr>
+<h1 id="tac-development-contribution" class="tsd-anchor-link">TAC Development / Contribution<a href="#tac-development-contribution" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h1>
+<p>TAC uses npm workspaces for package management. Ensure you have Node.js and npm installed:</p>
+<pre><code class="bash"><span class="hl-0">node</span><span class="hl-1"> </span><span class="hl-6">--version</span><span class="hl-1">  </span><span class="hl-3"># Should be 22.13.0 or newer</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-6">--version</span><span class="hl-1">   </span><span class="hl-3"># Should be 9 or newer</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="setup-development-environment" class="tsd-anchor-link">Setup Development Environment<a href="#setup-development-environment" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<pre><code class="bash"><span class="hl-3"># Clone repository</span><br/><span class="hl-0">git</span><span class="hl-1"> </span><span class="hl-2">clone</span><span class="hl-1"> </span><span class="hl-2">https://github.com/twilio/twilio-agent-connect-typescript.git</span><br/><span class="hl-0">cd</span><span class="hl-1"> </span><span class="hl-2">twilio-agent-connect-typescript</span><br/><br/><span class="hl-3"># Install all dependencies</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">install</span><br/><br/><span class="hl-3"># Build all packages</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">build</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="running-tests-and-checks" class="tsd-anchor-link">Running Tests and Checks<a href="#running-tests-and-checks" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<pre><code class="bash"><span class="hl-3"># Format code</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">format</span><br/><br/><span class="hl-3"># Run linting</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">lint</span><br/><br/><span class="hl-3"># Run type checking</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">typecheck</span><br/><br/><span class="hl-3"># Run tests</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">test</span><br/><br/><span class="hl-3"># Run tests in watch mode (for development)</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">test:watch</span><br/><br/><span class="hl-3"># Run all checks at once</span><br/><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">build</span><span class="hl-1"> &amp;&amp; </span><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">lint</span><span class="hl-1"> &amp;&amp; </span><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">run</span><span class="hl-1"> </span><span class="hl-2">typecheck</span><span class="hl-1"> &amp;&amp; </span><span class="hl-0">npm</span><span class="hl-1"> </span><span class="hl-2">test</span>
+</code><button type="button">Copy</button></pre>
+
+</div></div>
+<div class="col-sidebar">
+<div class="page-menu">
+<div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>
+<div class="tsd-navigation settings">
+<details class="tsd-accordion"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>Settings</h3></summary>
+<div class="tsd-accordion-details">
+<div class="tsd-filter-visibility"><span class="settings-label">Member Visibility</span>
+<ul id="tsd-filter-options">
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-protected" name="protected"/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Protected</span></label></li>
+<li class="tsd-filter-item"><label class="tsd-filter-input"><input type="checkbox" id="tsd-filter-inherited" name="inherited" checked/><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect class="tsd-checkbox-background" width="30" height="30" x="1" y="1" rx="6" fill="none"></rect><path class="tsd-checkbox-checkmark" d="M8.35422 16.8214L13.2143 21.75L24.6458 10.25" stroke="none" stroke-width="3.5" stroke-linejoin="round" fill="none"></path></svg><span>Inherited</span></label></li></ul></div>
+<div class="tsd-theme-toggle"><label class="settings-label" for="tsd-theme">Theme</label><select id="tsd-theme"><option value="os">OS</option><option value="light">Light</option><option value="dark">Dark</option></select></div></div></details></div>
+<details open class="tsd-accordion tsd-page-navigation"><summary class="tsd-accordion-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-chevronDown"></use></svg>
+<h3>On This Page</h3></summary>
+<div class="tsd-accordion-details">
+<ul>
+<li><a href="#key-features"><span>Key <wbr/>Features</span></a></li>
+<li><a href="#get-started"><span>Get <wbr/>Started</span></a></li>
+<li><a href="#quick-examples"><span>Quick <wbr/>Examples</span></a></li>
+<li>
+<ul>
+<li><a href="#multi-channel-with-openai-sdk"><span>Multi-<wbr/>Channel with <wbr/>Open<wbr/>AI <wbr/>SDK</span></a></li></ul></li>
+<li><a href="#how-it-works"><span>How <wbr/>It <wbr/>Works</span></a></li>
+<li>
+<ul>
+<li><a href="#message-flow"><span>Message <wbr/>Flow</span></a></li></ul></li>
+<li><a href="#telemetry"><span>Telemetry</span></a></li>
+<li><a href="#learn-more"><span>Learn <wbr/>More</span></a></li></ul><a href="#tac-development-contribution"><span>TAC <wbr/>Development / <wbr/>Contribution</span></a>
+<ul>
+<li><a href="#setup-development-environment"><span>Setup <wbr/>Development <wbr/>Environment</span></a></li>
+<li><a href="#running-tests-and-checks"><span>Running <wbr/>Tests and <wbr/>Checks</span></a></li></ul></div></details></div>
+<div class="site-menu">
+<nav id="tsd-sidebar-links" class="tsd-navigation"><a href="https://github.com/twilio/twilio-agent-connect-typescript" class="tsd-nav-link">GitHub</a><a href="https://www.twilio.com/docs/conversations/agent-connect" class="tsd-nav-link">Twilio Docs</a></nav>
+<nav class="tsd-navigation"><a href="modules.html">Twilio Agent Connect (TypeScript)</a>
+<ul class="tsd-small-nested-navigation" id="tsd-nav-container">
+<li>Loading...</li></ul></nav></div></div></div><footer>
+<p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
+<div class="overlay"></div><script>
+          try {
+            const generateLinkElement = document.querySelector(".tsd-generator a");
+            const link = document.createElement("a");
+            Object.assign(link, {
+              href: "https://github.com/dmnsgn/typedoc-material-theme",
+              target: "_blank",
+              rel: "noreferrer",
+              innerText: "typedoc-material-theme."
+            });
+            generateLinkElement.insertAdjacentElement("afterend", link);
+            generateLinkElement.insertAdjacentText("afterend", " with ");
+          } catch (error) {
+
+          }
+        </script><script src="assets/versionsMenu.js" type="module"></script></body></html>
