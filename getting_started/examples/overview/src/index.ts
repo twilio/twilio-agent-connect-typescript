@@ -6,7 +6,7 @@
  *
  * Key concepts:
  * 1. TAC hands your `onMessageReady` callback the inbound `message`, the
- *    `memory` (when a `memoryMode` is set), and the conversation `session`.
+ *    `memory`, and the conversation `session`.
  * 2. `MemoryPromptBuilder.compose()` folds memory and profile data into your
  *    system prompt.
  * 3. Pass that prompt to whatever LLM you use, and return its reply: TAC sends
@@ -31,8 +31,6 @@ config({ path: '../.env' });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
-// Channels default to memoryMode 'never', so `memory` is undefined in the callback
-// below. Pass { memoryMode: 'once' | 'always' } to have TAC fetch it.
 const voiceChannel = new VoiceChannel(tac);
 const smsChannel = new SMSChannel(tac);
 
