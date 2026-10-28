@@ -44,7 +44,7 @@ TAC includes examples for different integration approaches. Each one is a self-c
 
 ### Partner SDK Examples
 
-- **[`openai/`](examples/openai/)** — OpenAI Chat Completions across Voice and SMS with conversation memory and user context. **Start here.**
+- **[`openai/`](examples/openai/)** — OpenAI Chat Completions across Voice and SMS with conversation memory and user context
 - **[`openai-streaming/`](examples/openai-streaming/)** — Stream LLM responses token-by-token for faster time-to-first-audio on voice
 - **[`openai-realtime/`](examples/openai-realtime/)** — Speech-to-speech voice calls bridging Twilio Media Streams to the OpenAI Realtime API
 - **[`gpt-live/`](examples/gpt-live/)** — Speech-to-speech voice calls bridging Twilio Media Streams to OpenAI GPT-Live
@@ -148,6 +148,8 @@ See [`examples/.env.example`](examples/.env.example) for all available configura
 
 ## Next Steps
 
+- Start with `examples/overview/` to learn the core memory injection pattern
+- Try the partner SDK examples, such as `examples/openai/`, for production-ready integrations
 - Customize the agent's behavior by modifying the message handler in `examples/openai/src/index.ts`
 - Add tool calling to enable agent actions beyond text responses
 - Explore the main [README](../README.md) for advanced features
