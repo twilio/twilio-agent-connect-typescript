@@ -13,7 +13,7 @@ permissions:
 jobs:
   lockfile-hygiene:
     name: Lockfile Hygiene
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -22,7 +22,7 @@ jobs:
 
   lint:
     name: Linting
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -59,7 +59,7 @@ jobs:
 
   type-check:
     name: Type Check
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -90,7 +90,7 @@ jobs:
 
   test-node-24:
     name: Test - Node 24
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -112,7 +112,7 @@ jobs:
 
   test-node-22:
     name: Test - Node 22
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -134,7 +134,7 @@ jobs:
 
   getting-started-example:
     name: Getting Started Example
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -184,7 +184,7 @@ jobs:
 
   build:
     name: Build Package
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -221,7 +221,7 @@ jobs:
   all-checks:
     name: All Checks Passed
     needs: [lockfile-hygiene, lint, type-check, test-node-22, test-node-24, getting-started-example, build]
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'ubuntu-x64' }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest-large' || 'ubuntu-x64' }}
     if: always()
     steps:
       - name: Check all job statuses
