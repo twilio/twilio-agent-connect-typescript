@@ -53,7 +53,6 @@ tac.onMessageReady(({ conversationId, message, memory, session }) => {
     // the same for any LLM or framework, and returns BASE_PROMPT unchanged when
     // there is no memory to add.
     const systemPrompt = MemoryPromptBuilder.compose(BASE_PROMPT, memory, session);
-    console.log(`System prompt for ${conversationId}:\n${systemPrompt}\n`);
 
     history.push({ role: 'user', content: message });
 
@@ -64,7 +63,8 @@ tac.onMessageReady(({ conversationId, message, memory, session }) => {
     // - Azure AI:    messages: [{ role: 'system', content: systemPrompt }, ...history]
     // - Custom:      pass systemPrompt to your agent however it takes context
     // ------------------------------------------------------------------
-    const llmResponse = `This is a simulated reply. You said: ${message}`;
+    // For this example, simulate a response that shows systemPrompt is used
+    const llmResponse = `[Simulated response with system prompt: ${systemPrompt.slice(0, 50)}...]\n\nReceived: ${message}`;
 
     history.push({ role: 'assistant', content: llmResponse });
 

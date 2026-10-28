@@ -12,8 +12,6 @@ This example shows the core Twilio Agent Connect (TAC) pattern with **no LLM SDK
 6. A placeholder showing where any LLM call goes
 7. Returning the reply string, which TAC sends back on the channel the message arrived on
 
-The composed system prompt is logged for every message, so you can see exactly what TAC adds: the customer's profile, plus memory once you set a `memoryMode`.
-
 ## Prerequisites
 
 1. **Node.js 22.13.0+** installed
