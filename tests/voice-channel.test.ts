@@ -1,6 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTestTAC } from './helpers/tac';
-import { VoiceChannel, TAC, TACConfig, ConversationSession } from '@twilio/tac-core';
+import {
+  VoiceChannel,
+  TAC,
+  TACConfig,
+  ConversationSession,
+  InterruptCallback,
+} from '@twilio/tac-core';
 import {
   InterruptMessageSchema,
   DtmfMessageSchema,
@@ -2188,15 +2194,12 @@ describe('VoiceChannel', () => {
       expect(captured[0].durationUntilInterruptMs).toBe(2500);
     });
 
-    it('should propagate utteranceUntilInterrupt through tac.onInterrupt callback', async () => {
-      const { tac, mockWs } = await setupForInterrupt();
+    it('should propagate the interrupt payload through tac.onInterrupt callback', async () => {
+      const { tac, voiceChannel, mockWs } = await setupForInterrupt();
 
-      const captured: {
-        utteranceUntilInterrupt: string | undefined;
-        durationUntilInterruptMs: number | undefined;
-      }[] = [];
-      tac.onInterrupt(({ utteranceUntilInterrupt, durationUntilInterruptMs }) => {
-        captured.push({ utteranceUntilInterrupt, durationUntilInterruptMs });
+      const captured: Parameters<InterruptCallback>[0][] = [];
+      tac.onInterrupt(params => {
+        captured.push(params);
       });
 
       mockWs._emit(
@@ -2215,6 +2218,11 @@ describe('VoiceChannel', () => {
       expect(captured).toHaveLength(1);
       expect(captured[0].utteranceUntilInterrupt).toBe('Hello, I was saying');
       expect(captured[0].durationUntilInterruptMs).toBe(3200);
+      expect(captured[0].conversationId).toBe('CHinterrupt_test');
+      expect(captured[0].session).toBe(
+        voiceChannel.getConversationSession('CHinterrupt_test' as any)
+      );
+      expect(captured[0].session.conversationId).toBe('CHinterrupt_test');
     });
 
     it('should auto-start stream task on prompt and pass abortSignal', async () => {

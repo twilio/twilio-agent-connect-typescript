@@ -37,10 +37,24 @@ export type MessageReadyCallback = (params: {
   abortSignal?: AbortSignal;
 }) => Promise<string | null | void> | string | null | void;
 
+/**
+ * Callback registered with {@link TAC.onInterrupt}, invoked when the caller
+ * interrupts the agent on a voice call.
+ */
 export type InterruptCallback = (params: {
+  /** The interrupted conversation. */
   conversationId: ConversationId;
+  /**
+   * Text the agent had spoken when interrupted. `undefined` if
+   * ConversationRelay doesn't report it.
+   */
   utteranceUntilInterrupt: string | undefined;
+  /**
+   * How long the agent had been speaking, in milliseconds. `undefined` if
+   * ConversationRelay doesn't report it.
+   */
   durationUntilInterruptMs: number | undefined;
+  /** The live session for the call. */
   session: ConversationSession;
 }) => Promise<void> | void;
 
@@ -405,7 +419,24 @@ export class TAC {
   }
 
   /**
-   * Register callback for when user interrupts (voice channel)
+   * Register callback invoked when the caller interrupts the agent on a voice call.
+   *
+   * Currently fired by the ConversationRelay voice provider. The callback receives
+   * `conversationId`, the call's `session`, `utteranceUntilInterrupt` (the text the
+   * agent had spoken when interrupted) and `durationUntilInterruptMs` (how long it
+   * had been speaking); either of the last two may be `undefined` if
+   * ConversationRelay doesn't report it. Errors thrown by the callback are logged,
+   * not rethrown.
+   *
+   * @example
+   * ```typescript
+   * tac.onInterrupt(({ conversationId, utteranceUntilInterrupt, durationUntilInterruptMs }) => {
+   *   console.log(
+   *     `${conversationId} interrupted after ${durationUntilInterruptMs} ms: ` +
+   *       JSON.stringify(utteranceUntilInterrupt)
+   *   );
+   * });
+   * ```
    */
   public onInterrupt(callback: InterruptCallback): void {
     this.interruptCallback = callback;
