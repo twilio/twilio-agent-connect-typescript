@@ -57,7 +57,7 @@ tac.onMessageReady(({ conversationId, message, memory, session }) => {
     // ------------------------------------------------------------------
     // Call your LLM here with `systemPrompt` and `history`, for example:
     // - OpenAI:      messages: [{ role: 'system', content: systemPrompt }, ...history]
-    // - AWS Bedrock: system: [{ text: systemPrompt }], messages: history
+    // - AWS Bedrock: system: [{ text: systemPrompt }]
     // - Azure AI:    messages: [{ role: 'system', content: systemPrompt }, ...history]
     // - Custom:      pass systemPrompt to your agent however it takes context
     // ------------------------------------------------------------------
