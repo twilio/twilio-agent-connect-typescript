@@ -298,6 +298,33 @@ describe('handoff tool execution — digital channels', () => {
     expect(new URLSearchParams(body).get('From')).toBe('+15551234567');
   });
 
+  it('fails a Chat handoff with no phone number before touching the conversation', async () => {
+    const { phoneNumber: _omitted, ...configWithoutPhone } = getTestConfig();
+    const tac = await createTestTAC(configWithoutPhone);
+    const updateSpy = vi
+      .spyOn(tac.getConversationClient(), 'updateConversation')
+      .mockResolvedValue({} as never);
+    const clearSpy = vi
+      .spyOn(tac.getConversationClient(), 'clearStatusCallbacks')
+      .mockResolvedValue();
+
+    const session = makeSession({
+      channel: 'chat',
+      aiAgentInfo: { address: 'ai-assistant', participantId: 'p_agent' },
+    });
+    const tool = createStudioHandoffTool(tac, session);
+    const result = await tool.implementation({ reason: 'Customer wants human' });
+
+    // Nothing may disable TAC routing when Studio can't take over.
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(result.status).toBe('handoff_failed');
+    expect(result.channel).toBe('chat');
+    expect(result.error).toContain('chat');
+    expect(result.error).toContain('phoneNumber');
+  });
+
   it('returns handoff_failed when Studio POST raises (not a silent success)', async () => {
     (axios.post as unknown as { mockReset: () => void }).mockReset();
     vi.spyOn(axios, 'post').mockRejectedValue(new Error('boom'));

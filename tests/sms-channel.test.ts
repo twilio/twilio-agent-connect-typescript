@@ -153,6 +153,12 @@ describe('SMS Channel', () => {
       expect(started).not.toHaveBeenCalled();
     });
 
+    it('should require phoneNumber on TAC config', async () => {
+      const { phoneNumber: _omitted, ...configWithoutPhone } = getTestConfig();
+      const tacWithoutPhone = await createTestTAC(configWithoutPhone);
+      expect(() => new SMSChannel(tacWithoutPhone)).toThrow(/phoneNumber\(s\) is required/);
+    });
+
     it('should reject zero dedupCapacity', () => {
       expect(() => new SMSChannel(tac, { dedupCapacity: 0 })).toThrow(
         'dedupCapacity must be a positive integer'
