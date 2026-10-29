@@ -352,6 +352,28 @@ describe('ConversationClient', () => {
       expect(result[0]?.type).toBe('CUSTOMER');
     });
 
+    it('should accept a participant whose name is null', async () => {
+      const mockResponse = {
+        participants: [
+          {
+            id: 'part_123',
+            conversationId: 'CH123',
+            accountId: 'AC123456',
+            name: null,
+            type: 'CUSTOMER',
+            addresses: [],
+          },
+        ],
+      };
+
+      mockAdapter.onGet('/v2/Conversations/CH123/Participants').reply(200, mockResponse);
+
+      const result = await conversationClient.listParticipants('CH123');
+
+      expect(result.length).toBe(1);
+      expect(result[0]?.name).toBeNull();
+    });
+
     it('should return empty array when no participants', async () => {
       mockAdapter.onGet('/v2/Conversations/CH123/Participants').reply(200, { participants: [] });
 

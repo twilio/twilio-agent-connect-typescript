@@ -782,7 +782,9 @@ export abstract class MessagingChannel extends BaseChannel {
   ): Promise<ConversationParticipant | undefined> {
     const effectiveProfileId = profileId !== undefined ? profileId : participant.profileId;
     const updateOptions: { name?: string; profileId?: string } = {};
-    if (participant.name !== undefined) updateOptions.name = participant.name;
+    if (participant.name !== null && participant.name !== undefined) {
+      updateOptions.name = participant.name;
+    }
     if (effectiveProfileId !== null && effectiveProfileId !== undefined) {
       updateOptions.profileId = effectiveProfileId;
     }

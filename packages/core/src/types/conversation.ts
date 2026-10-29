@@ -313,7 +313,7 @@ export const ConversationParticipantSchema = z.object({
   id: z.string(),
   conversationId: z.string(),
   accountId: z.string(),
-  name: z.string().optional(),
+  name: z.string().nullish(), // API returns null when not set
   type: z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT', 'UNKNOWN']).optional(),
   profileId: z.string().nullable().optional(),
   addresses: z.array(ConversationAddressSchema).default([]),
