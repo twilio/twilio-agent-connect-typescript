@@ -1,8 +1,12 @@
 import {
   ActionChannelSettings,
+  ActionParticipantRef,
+  AuthorInfo,
   ConversationAddress,
   ConversationId,
   ConversationParticipant,
+  ConversationResponseSchema,
+  ConversationSession,
   ConversationWebhookPayload,
   InitiateConversationResult,
   ParticipantAddressType,
@@ -15,7 +19,11 @@ import { BaseChannel, BaseChannelEvents, BaseChannelOptions } from './base';
 import { ConversationClient } from '../clients/conversation';
 import type { TAC } from '../lib/tac';
 import { trackEvent } from '../lib/analytics';
+import { attachConversationMetadata } from '../lib/conversation-session-helpers';
+import { warnDeprecated } from '../lib/deprecation';
 import { maskAddress } from '../util/log-redaction';
+import { fitConversationMetadata } from '../util/conversation-metadata';
+import { elapsedMs } from '../util/timestamps';
 
 /**
  * Participant types that represent TAC itself at TAC's (channel, address).
@@ -42,6 +50,11 @@ const CHANNEL_IDENTITY_TYPES: Record<string, string> = {
 /**
  * Messaging channel configuration options.
  * Alias for BaseChannelOptions that can be extended by specific channel implementations.
+ *
+ * `memoryMode: "once"` is **deprecated** on messaging channels and removed in
+ * 3.0. It caches a recall on a session that outlives one request, which
+ * messaging channels don't keep, so it logs a warning and runs as `"always"`.
+ * It's still supported on the Voice channel.
  */
 export type MessagingChannelConfig = BaseChannelOptions;
 
@@ -56,6 +69,8 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
     author: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Memory structure is dynamic and defined by user
     userMemory: any;
+    /** This turn's session, derived from the webhook. */
+    session: ConversationSession;
   }) => void;
 }
 
@@ -64,6 +79,15 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
  *
  * Provides shared webhook processing logic for messaging channels
  * (SMS and Chat) that use the Conversations Service webhooks.
+ *
+ * **Stateless by construction.** No conversation session is kept between
+ * webhooks: each request derives its own `ConversationSession` from the
+ * payload, config, and one `listParticipants` call it needs anyway. So any
+ * replica can serve any webhook — no sticky sessions, no shared datastore. A
+ * session lasts one turn, so `session.metadata` doesn't carry over to the next
+ * message; keep state across turns in your own store, keyed by
+ * `conversationId`. `conversationMetadata(session)` reads the metadata stored
+ * on Conversation Orchestrator from any instance.
  *
  * Subclasses must implement:
  * - `isDefaultAgentAddress`: fast-path check for the channel's default agent address
@@ -109,11 +133,28 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   constructor(tac: TAC, config?: MessagingChannelConfig) {
-    super(tac, config);
+    // Accepted before messaging went stateless, so rejecting "once" would break
+    // existing apps at startup. "always" keeps memory on, with the turn's
+    // query, at one recall per message.
+    const onceDeprecated = config?.memoryMode === 'once';
+    super(tac, onceDeprecated ? { ...config, memoryMode: 'always' } : config);
     if (!tac.isOrchestratorEnabled()) {
       throw new Error(
         'Messaging channels require conversationConfigurationId to be configured. ' +
           'Voice-only mode does not support SMS or Chat channels.'
+      );
+    }
+    if (onceDeprecated) {
+      const name = new.target.name;
+      warnDeprecated(
+        `memoryMode "once" on ${name}`,
+        'memoryMode "always" (it runs as "always" until then; "once" is still supported on VoiceChannel)'
+      );
+      this.logger.warn(
+        { channel: name },
+        `memoryMode "once" is deprecated on ${name} and will be removed in 3.0; running as ` +
+          '"always". It caches a recall on a session that outlives one request, which ' +
+          'messaging channels don\'t keep. ("once" is still supported on VoiceChannel.)'
       );
     }
     // Safe: orchestrator is enabled so conversationClient is guaranteed non-null
@@ -133,11 +174,55 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Return the agent-side ConversationAddress for this conversation.
    *
-   * Used by `reconcileParticipants` to identify which participant (by channel
-   * + address) represents the agent. May read from session state (e.g. chat's
-   * per-conversation channelId) to build the address.
+   * Identifies which participant represents the agent, and supplies the
+   * `from` address for outbound sends.
    */
   protected abstract getAgentAddress(conversationId: ConversationId): ConversationAddress;
+
+  /**
+   * The agent-side address for `session`; what TAC's own paths call.
+   *
+   * Defaults to `getAgentAddress(session.conversationId)`, so a subclass
+   * overriding only that keeps working. Channels whose address depends on
+   * per-conversation data (chat's `channelId`) override this to read the
+   * session directly.
+   */
+  protected agentAddressFor(session: ConversationSession): ConversationAddress {
+    return this.getAgentAddress(session.conversationId as ConversationId);
+  }
+
+  protected override isOwnCoAddress(address: string): boolean {
+    return this.isDefaultAgentAddress(address);
+  }
+
+  /**
+   * Messaging channels keep no sessions between webhooks, so there is nothing
+   * to look up: always `undefined`.
+   *
+   * @deprecated Use the session `onMessageReady` (or
+   * `initiateOutboundConversation`) hands you. Removed in 3.0.
+   */
+  public override getConversationSession(_conversationId: ConversationId): undefined {
+    warnDeprecated(
+      `${this.constructor.name}.getConversationSession()`,
+      'the session passed to onMessageReady (messaging channels keep no sessions)'
+    );
+    return undefined;
+  }
+
+  /**
+   * Messaging channels keep no sessions between webhooks: always `false`.
+   *
+   * @deprecated Messaging channels are stateless; track conversations in your
+   * own store, keyed by `conversationId`. Removed in 3.0.
+   */
+  public override isConversationActive(_conversationId: ConversationId): false {
+    warnDeprecated(
+      `${this.constructor.name}.isConversationActive()`,
+      'your own store keyed by conversationId (messaging channels keep no sessions)'
+    );
+    return false;
+  }
 
   /**
    * Report a delivered response.
@@ -156,42 +241,271 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Check if a message is from the bot itself (2-tier).
+   * Whether the author is TAC, judged from an already-fetched participant list.
    *
-   * 1. Default agent address (stateless, no API call)
-   * 2. API fallback via listParticipants (cross-process / multi-worker)
+   * The caller does the free check (author address is a configured agent
+   * address) first; this catches TAC speaking from some other address.
    */
-  private async isOwnMessage(
-    authorAddress: string,
-    conversationId: ConversationId,
-    authorParticipantId: string | undefined
-  ): Promise<boolean> {
-    if (this.isDefaultAgentAddress(authorAddress)) return true;
+  private isOwnMessage(
+    authorParticipantId: string | undefined,
+    participants: ConversationParticipant[],
+    conversationId: ConversationId
+  ): boolean {
+    if (!authorParticipantId) return false;
 
-    if (authorParticipantId) {
-      try {
-        const participants = await this.conversationClient.listParticipants(conversationId);
-        const authorParticipant = participants.find(p => p.id === authorParticipantId);
-        if (authorParticipant) {
-          if (authorParticipant.type === undefined) {
-            this.logger.warn(
-              { conversation_id: conversationId, participant_id: authorParticipantId },
-              'Participant type is undefined — cannot determine if this is an agent message'
-            );
-          }
-          if (authorParticipant.type && AGENT_TYPES.has(authorParticipant.type)) {
-            return true;
-          }
-        }
-      } catch (error) {
-        this.logger.warn(
-          { err: error, conversation_id: conversationId, participant_id: authorParticipantId },
-          'Failed to look up participant type for self-message check; falling through'
-        );
-      }
+    const author = participants.find(p => p.id === authorParticipantId);
+    if (!author) return false;
+    if (author.type === undefined) {
+      this.logger.warn(
+        { conversation_id: conversationId, participant_id: authorParticipantId },
+        'Participant type is undefined — cannot determine if this is an agent message'
+      );
+    }
+    return author.type !== undefined && AGENT_TYPES.has(author.type);
+  }
+
+  /**
+   * Fetch a conversation's participants, returning `null` on failure.
+   *
+   * One call per inbound message, shared by the self-message check,
+   * reconciliation, and profile resolution. None of them can proceed without
+   * it, so a failure is a hard stop for the caller.
+   */
+  protected async listParticipantsOrNull(
+    conversationId: ConversationId
+  ): Promise<ConversationParticipant[] | null> {
+    try {
+      return await this.conversationClient.listParticipants(conversationId);
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        'Failed to list participants'
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Build an Actions API participant reference.
+   *
+   * Conversation Orchestrator resolves by participant id or by explicit
+   * `(channel, address)`. Prefer the id — reconciliation has already
+   * established it — and fall back to the address when there isn't one.
+   */
+  protected participantRef(
+    address: string | undefined,
+    participantId: string | undefined
+  ): ActionParticipantRef {
+    const channel = this.getChannelName();
+    if (participantId) {
+      return { channel, participantId };
+    }
+    return { channel, ...(address ? { address } : {}) };
+  }
+
+  /** A fresh, empty session for one turn of `conversationId` on this channel. */
+  protected newSession(conversationId: string): ConversationSession {
+    return {
+      conversationId,
+      channel: this.channelType,
+      startedAt: new Date(),
+      metadata: {},
+    };
+  }
+
+  /** Whether `p` holds `address` on `channel`. */
+  private ownsAddress(p: ConversationParticipant, channel: string, address: string): boolean {
+    return (
+      Array.isArray(p.addresses) &&
+      p.addresses.some(a => a.channel === channel && a.address === address)
+    );
+  }
+
+  /**
+   * Build a session for a conversation from its participants.
+   *
+   * Used where no inbound webhook is in hand: a CLOSED webhook, or
+   * `sendResponse` given a bare id. Returns `null` when no participant is on
+   * this channel, which is how another channel's conversation is filtered out.
+   */
+  protected sessionFromParticipants(
+    conversationId: string,
+    participants: ConversationParticipant[]
+  ): ConversationSession | null {
+    const channel = this.getChannelName();
+    const matchesChannel = (p: ConversationParticipant): boolean =>
+      Array.isArray(p.addresses) && p.addresses.some(a => a.channel === channel);
+    if (!participants.some(matchesChannel)) {
+      return null;
     }
 
-    return false;
+    const session = this.newSession(conversationId);
+    // With several configured senders, use the one this conversation's
+    // participants hold; otherwise (or with none found) the channel default.
+    const owned = this.deriveInboundAgentFromRecipients
+      ? this.ownedAgentAddress(participants, channel)
+      : undefined;
+    const agentAddress = owned ?? this.agentAddressFor(session).address;
+
+    const agent = participants.find(
+      p =>
+        p.type !== undefined &&
+        AGENT_TYPES.has(p.type) &&
+        this.ownsAddress(p, channel, agentAddress)
+    );
+    session.aiAgentInfo = {
+      address: agentAddress,
+      ...(agent ? { participantId: agent.id } : {}),
+    };
+
+    const customer = participants.find(
+      p => p.type === 'CUSTOMER' && matchesChannel(p) && !this.ownsAddress(p, channel, agentAddress)
+    );
+    if (customer) {
+      if (customer.profileId) {
+        session.profileId = customer.profileId;
+      }
+      const customerAddress = customer.addresses.find(a => a.channel === channel)?.address;
+      if (customerAddress) {
+        session.authorInfo = { address: customerAddress, participantId: customer.id };
+      }
+    }
+    return session;
+  }
+
+  /**
+   * Resolve the session a `sendResponse` call replies within.
+   *
+   * A session is used as-is — it already carries both participants. A bare id
+   * costs a `listParticipants` call to rebuild one, since the channel keeps no
+   * session to look up.
+   *
+   * @throws If the participants can't be read, or no recipient resolves.
+   */
+  protected async resolveSendSession(
+    target: ConversationId | ConversationSession
+  ): Promise<ConversationSession & { authorInfo: AuthorInfo }> {
+    const label = this.getChannelName();
+    let session: ConversationSession | null;
+    if (typeof target === 'string') {
+      const participants = await this.listParticipantsOrNull(target);
+      if (participants === null) {
+        throw new Error(
+          `Unable to send ${label} message: could not read participants for conversation ` +
+            `${target}. Pass the ConversationSession from onMessageReady or ` +
+            'initiateOutboundConversation to avoid this lookup.'
+        );
+      }
+      session = this.sessionFromParticipants(target, participants);
+    } else {
+      session = target;
+    }
+
+    if (!session?.authorInfo) {
+      const conversationId = typeof target === 'string' ? target : target.conversationId;
+      throw new Error(
+        `Unable to send ${label} message: no recipient resolved for conversation ` +
+          `${conversationId}. Pass the ConversationSession you were handed by ` +
+          'onMessageReady or initiateOutboundConversation.'
+      );
+    }
+    return session as ConversationSession & { authorInfo: AuthorInfo };
+  }
+
+  /**
+   * The `channelSettings` for a reply within `session`, if any.
+   *
+   * Default (SMS, RCS, WhatsApp): `channelId` is optional and passed through
+   * when the session carries one. Chat overrides this, since `channelId` is
+   * required for delivery there.
+   */
+  protected buildChannelSettings(session: ConversationSession): ActionChannelSettings | undefined {
+    const channelId = session.metadata?.channelId;
+    return typeof channelId === 'string' && channelId ? { channelId } : undefined;
+  }
+
+  /**
+   * Send a text response using the Conversation Orchestrator Actions API
+   * (SEND_MESSAGE).
+   *
+   * **Pass the session, not the id.** Hand back the one `onMessageReady` gave
+   * you (or that `initiateOutboundConversation` returned) and the send costs no
+   * extra API call — it already carries both participants. A bare id still
+   * works, but the channel keeps no session to look up, so it spends a
+   * `listParticipants` call rebuilding one.
+   *
+   * @param conversationIdOrSession - The `ConversationSession` to reply within
+   * (preferred), or the conversation id.
+   * @param message - Message content.
+   * @param metadata - Optional metadata, passed to `onError` on failure.
+   * @throws If no recipient can be resolved for the conversation, or the send
+   * fails.
+   */
+  public async sendResponse(
+    conversationIdOrSession: ConversationId | ConversationSession,
+    message: string,
+    metadata?: Record<string, unknown>
+  ): Promise<void> {
+    const conversationId = (
+      typeof conversationIdOrSession === 'string'
+        ? conversationIdOrSession
+        : conversationIdOrSession.conversationId
+    ) as ConversationId;
+    const label = this.getChannelName();
+    this.logger.debug(
+      {
+        conversation_id: conversationId,
+        message_length: message.length,
+        operation: 'send_response',
+      },
+      `Sending ${label} response`
+    );
+
+    try {
+      const session = await this.resolveSendSession(conversationIdOrSession);
+      const channelSettings = this.buildChannelSettings(session);
+      const agentAddress = session.aiAgentInfo?.address ?? this.agentAddressFor(session).address;
+
+      this.logger.debug(
+        {
+          conversation_id: conversationId,
+          recipient_address: maskAddress(session.authorInfo.address),
+          recipient_participant_id: session.authorInfo.participantId,
+          agent_participant_id: session.aiAgentInfo?.participantId,
+        },
+        `Sending ${label} via Actions API`
+      );
+
+      const actionRequest: SendMessageActionRequest = {
+        type: 'SEND_MESSAGE',
+        payload: {
+          from: this.participantRef(agentAddress, session.aiAgentInfo?.participantId),
+          to: [this.participantRef(session.authorInfo.address, session.authorInfo.participantId)],
+          content: { text: message },
+          ...(channelSettings ? { channelSettings } : {}),
+        },
+      };
+
+      await this.conversationClient.createAction(conversationId, actionRequest);
+
+      this.logger.info(
+        {
+          conversation_id: conversationId,
+          recipient_address: maskAddress(session.authorInfo.address),
+        },
+        `${label} message sent successfully via Actions API`
+      );
+    } catch (error) {
+      this.logger.error({ err: error, conversation_id: conversationId }, 'Send response error');
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {
+        conversationId,
+        message,
+        metadata,
+      });
+      throw error;
+    }
+
+    this.trackResponseSent(conversationId);
   }
 
   /**
@@ -201,6 +515,13 @@ export abstract class MessagingChannel extends BaseChannel {
   public override on(event: string, callback: (...args: any[]) => void): void {
     if (event === 'messageReceived') {
       this.messagingCallbacks.onMessageReceived = callback;
+    } else if (event === 'conversationStarted') {
+      // Fired when a session was created; messaging channels no longer create
+      // one, so nothing would ever call it.
+      warnDeprecated(
+        `${this.constructor.name}.on('conversationStarted')`,
+        "tac.onMessageReady (messaging channels keep no sessions, so 'conversationStarted' never fires)"
+      );
     } else {
       // Delegate to parent for base events
       super.on(event, callback);
@@ -208,7 +529,21 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Process messaging channel webhook from Conversation Orchestrator
+   * Process messaging channel webhook from Conversation Orchestrator.
+   *
+   * Handles:
+   *
+   * - `COMMUNICATION_CREATED`: process an incoming message from the customer
+   * - `CONVERSATION_UPDATED`: fire `onConversationEnded` and report
+   *   "Conversation Ended" when the conversation closes
+   * - `PARTICIPANT_ADDED`: report "Conversation Started" when the customer
+   *   joins on this channel
+   *
+   * Any replica can handle any webhook. The idempotency cache is per-process,
+   * though, so a Twilio retry landing on a different replica is processed
+   * again, and `onMessageReady` can run twice for the same message. Retries
+   * are rare when the webhook is acknowledged before processing, as
+   * `TACServer` does.
    */
   public async processWebhook(payload: unknown, idempotencyToken?: string): Promise<void> {
     try {
@@ -221,11 +556,13 @@ export abstract class MessagingChannel extends BaseChannel {
 
       switch (eventType) {
         case 'CONVERSATION_CREATED':
-          this.logger.debug(
-            { conversation_id: conversationId, profile_id: webhookData.data?.profileId },
-            'Handling CONVERSATION_CREATED'
-          );
-          this.handleConversationCreated(webhookData);
+          // Nothing to do: messaging keeps no session to start, and the
+          // customer joining (PARTICIPANT_ADDED) reports the start.
+          this.logger.debug({ conversation_id: conversationId }, 'Ignoring CONVERSATION_CREATED');
+          break;
+
+        case 'PARTICIPANT_ADDED':
+          this.trackConversationStarted(webhookData.data);
           break;
 
         case 'COMMUNICATION_CREATED':
@@ -263,21 +600,64 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Handle conversation creation event
+   * A loader that fetches a conversation's CO metadata, for
+   * `conversationMetadata(session)`. The session keeps the result, so for its
+   * turn only.
    */
-  private handleConversationCreated(payload: ConversationWebhookPayload): void {
-    const conversationId = this.extractConversationId(payload);
+  private coMetadataLoader(
+    conversationId: string
+  ): () => Promise<Record<string, string> | undefined> {
+    return async () => {
+      try {
+        const conversation = await this.conversationClient.getConversation(conversationId);
+        return { ...(conversation.metadata ?? {}) };
+      } catch (error) {
+        this.logger.warn(
+          { err: error, conversation_id: conversationId },
+          'Failed to fetch conversation metadata'
+        );
+        return undefined;
+      }
+    };
+  }
+
+  /**
+   * Build this request's session from the webhook payload and config.
+   *
+   * Network-free — the author, the agent address and `channelId` are all in
+   * hand already. Reconciliation layers the participant ids on after.
+   * `inboundAgentAddress` is the sender the customer messaged, when the webhook
+   * names it; otherwise the channel default stands in until the caller
+   * resolves it.
+   */
+  private resolveSession(
+    conversationId: ConversationId,
+    payload: ConversationWebhookPayload,
+    inboundAgentAddress: string | undefined
+  ): ConversationSession {
+    const session = this.newSession(conversationId);
     const profileId = this.extractProfileId(payload);
-
-    if (!conversationId) {
-      this.logger.warn(
-        { operation: 'handle_conversation_created' },
-        'Missing conversation ID in conversation.created event'
-      );
-      throw new Error('Missing conversation ID in conversation.created event');
+    if (profileId) {
+      session.profileId = profileId;
     }
-
-    this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
+    if (payload.data?.serviceId) {
+      session.serviceId = payload.data.serviceId;
+    }
+    session.authorInfo = {
+      address: payload.data?.author?.address || 'unknown',
+      ...(payload.data?.author?.participantId
+        ? { participantId: payload.data.author.participantId }
+        : {}),
+    };
+    // Set before agentAddress(): chat's agent address carries channelId.
+    if (payload.data?.channelId) {
+      session.metadata.channelId = payload.data.channelId;
+    }
+    session.aiAgentInfo = {
+      address: inboundAgentAddress ?? this.agentAddressFor(session).address,
+    };
+    attachConversationMetadata(session, { loader: this.coMetadataLoader(conversationId) });
+    return session;
   }
 
   /**
@@ -315,29 +695,10 @@ export abstract class MessagingChannel extends BaseChannel {
       return;
     }
 
-    // Per-conversation communication ID dedup stored in the in-memory
-    // ConversationSession metadata. This only prevents duplicate processing
-    // within the current process/session lifetime; it does not deduplicate
-    // across horizontally-scaled instances or after a restart.
-    const communicationId = payload.data?.id;
-    if (communicationId) {
-      const session = this.getConversationSession(conversationId);
-      if (session?.metadata?.lastCommunicationId === communicationId) {
-        this.logger.debug(
-          { conversation_id: conversationId, communication_id: communicationId },
-          'Skipping already-processed communication'
-        );
-        return;
-      }
-    }
-
-    // Filter out messages from the bot itself
-    if (await this.isOwnMessage(author, conversationId, payload.data?.author?.participantId)) {
+    // TAC's own echo costs zero API calls — the address is right there.
+    if (this.isDefaultAgentAddress(author)) {
       this.logger.info(
-        {
-          conversation_id: conversationId,
-          author_address: maskAddress(author),
-        },
+        { conversation_id: conversationId, author_address: maskAddress(author) },
         'Ignoring message from AI agent'
       );
       return;
@@ -347,7 +708,7 @@ export abstract class MessagingChannel extends BaseChannel {
     // from the webhook's recipients, and validate it against this channel's
     // allowlist. Drop messages sent to a number we don't serve.
     const channelName = this.getChannelName();
-    let inboundAgentAddress: ConversationAddress | undefined;
+    let inboundAgentAddress: string | undefined;
     if (this.deriveInboundAgentFromRecipients) {
       const channelRecipients = (payload.data?.recipients ?? []).filter(
         r => r.channel === channelName
@@ -376,127 +737,47 @@ export abstract class MessagingChannel extends BaseChannel {
           });
           return;
         }
-        inboundAgentAddress = { channel: channelName, address: matched };
+        inboundAgentAddress = matched;
       }
     }
 
-    // Initialize conversation if not already active
-    if (!this.isConversationActive(conversationId)) {
-      this.logger.debug({ conversation_id: conversationId }, 'Starting new conversation');
-      this.startConversation(conversationId, profileId ?? undefined, payload.data?.serviceId);
-    } else if (payload.data?.serviceId) {
-      const session = this.getConversationSession(conversationId);
-      if (session && session.serviceId !== payload.data.serviceId) {
-        this.logger.debug(
-          {
-            conversation_id: conversationId,
-            old_service_id: session.serviceId,
-            new_service_id: payload.data.serviceId,
-          },
-          'Updating conversation configuration ID from communication.created'
-        );
-        session.serviceId = payload.data.serviceId;
-      }
+    const session = this.resolveSession(conversationId, payload, inboundAgentAddress);
+
+    // One participant fetch per message, shared by the self-message check,
+    // reconciliation, and profile resolution. All three need it, so without it
+    // the message can't be answered.
+    const participants = await this.listParticipantsOrNull(conversationId);
+    if (participants === null) {
+      const error = new Error(
+        `Could not read participants for conversation ${conversationId}; inbound message dropped.`
+      );
+      error.name = 'ParticipantLookupError';
+      this.handleError(error, {
+        conversation_id: conversationId,
+        channel: this.channelType,
+        dropped_inbound: true,
+        error_code: 'participant_lookup_failed',
+      });
+      return;
     }
 
-    // Get session and update with author info for profile lookup
-    const session = this.getConversationSession(conversationId);
-    if (session) {
-      session.authorInfo = {
-        address: author,
-        participantId: payload.data?.author?.participantId,
-      };
-
-      // Store channelId (Chat Channel SID) in session metadata for reply sending
-      if (payload.data?.channelId) {
-        if (!session.metadata) {
-          session.metadata = {};
-        }
-        session.metadata.channelId = payload.data.channelId;
-        this.logger.debug(
-          { conversation_id: conversationId, channel_id: payload.data.channelId },
-          'Stored channelId in session metadata'
-        );
-      }
-
-      // Track communication ID for cross-process dedup
-      if (communicationId) {
-        if (!session.metadata) {
-          session.metadata = {};
-        }
-        session.metadata.lastCommunicationId = communicationId;
-      }
-
-      // Reconcile participant types pre-LLM so v1-bridge's UNKNOWN gets
-      // promoted, and to stash both participant ids on the session for
-      // sendResponse. Reconcile failure means the reply would fail too —
-      // skip the callback so the LLM doesn't waste a turn on an
-      // un-replyable conversation.
-      //
-      // Gate on `aiAgentInfo` (persistent across turns) — `authorInfo` is
-      // overwritten from every webhook so it's not a reliable "already
-      // reconciled" signal.
-      if (!session.aiAgentInfo) {
-        const resolved = await this.reconcileParticipants(conversationId, inboundAgentAddress);
-        if (!resolved) {
-          // Surface via handleError (logs at error level AND fires the app's
-          // onError callback) rather than a bare warn — otherwise the dropped
-          // inbound is invisible to the app and can't be observed or retried.
-          // Set a stable error.name and error_code so consumers can classify
-          // this condition programmatically without string-matching the message.
-          const error = new Error(
-            `Participant reconciliation failed for conversation ${conversationId}; ` +
-              'inbound message dropped because no sendable participants could be resolved.'
-          );
-          error.name = 'ParticipantReconciliationError';
-          this.handleError(error, {
-            conversation_id: conversationId,
-            channel: this.channelType,
-            dropped_inbound: true,
-            error_code: 'participant_reconciliation_failed',
-          });
-          return;
-        }
-
-        const [agentParticipant, customerParticipant] = resolved;
-        // When the webhook told us which of our numbers the customer
-        // contacted, that address is authoritative — keep it as the session's
-        // active agent address so digital handoff and outbound replies send
-        // From the number the customer reached, even if the reconciled
-        // participant lists several same-channel addresses.
-        const agentAddrValue =
-          inboundAgentAddress !== undefined
-            ? inboundAgentAddress.address
-            : agentParticipant.addresses.find(a => a.channel === channelName)?.address;
-        session.aiAgentInfo = {
-          address: agentAddrValue ?? this.getAgentAddress(conversationId).address,
-          participantId: agentParticipant.id,
-        };
-        // When reconcile resolved a customer (SMS path — chat disables customer
-        // reconciliation and uses the authorInfo captured from the webhook
-        // above), use its authoritative participant id and lift any resolved
-        // profile.
-        if (customerParticipant && session.authorInfo) {
-          session.authorInfo.participantId = customerParticipant.id;
-          if (customerParticipant.profileId && !session.profileId) {
-            session.profileId = customerParticipant.profileId;
-          }
-        }
-      }
+    if (!(await this.resolveParticipants(session, payload, participants, inboundAgentAddress))) {
+      return;
     }
 
     // Retrieve user memory if enabled via memoryMode
-    const userMemory = session ? await this.retrieveMemoryIfEnabled(session, message) : undefined;
+    const userMemory = await this.retrieveMemoryIfEnabled(session, message);
 
     // Invoke message received callback with memory context
     if (this.messagingCallbacks.onMessageReceived) {
       this.logger.debug({ conversation_id: conversationId }, 'Invoking message received callback');
       this.messagingCallbacks.onMessageReceived({
         conversationId,
-        profileId: (session?.profileId as ProfileId | undefined) ?? profileId ?? undefined,
+        profileId: session.profileId as ProfileId | undefined,
         message,
         author,
         userMemory,
+        session,
       });
     }
 
@@ -508,7 +789,111 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
-   * Handle conversation updated event
+   * Resolve both sides of this turn from the participant list.
+   *
+   * Returns `false` when the message must not be answered: it's TAC's own, or
+   * reconciliation failed (dropped, surfaced through `onError`).
+   */
+  private async resolveParticipants(
+    session: ConversationSession,
+    payload: ConversationWebhookPayload,
+    participants: ConversationParticipant[],
+    inboundAgentAddress: string | undefined
+  ): Promise<boolean> {
+    const conversationId = session.conversationId as ConversationId;
+    const channel = this.getChannelName();
+
+    if (this.isOwnMessage(payload.data?.author?.participantId, participants, conversationId)) {
+      this.logger.info(
+        {
+          conversation_id: conversationId,
+          author_address: maskAddress(session.authorInfo?.address ?? ''),
+        },
+        'Ignoring message from AI agent'
+      );
+      return false;
+    }
+
+    if (inboundAgentAddress === undefined && this.deriveInboundAgentFromRecipients) {
+      // The webhook didn't say which of TAC's senders was messaged: find one
+      // the conversation's participants own, else the default.
+      session.aiAgentInfo = {
+        address: this.fallbackAgentAddress(session, participants, channel).address,
+      };
+    }
+
+    // Reconcile participant types pre-LLM so v1-bridge's UNKNOWN gets promoted
+    // to CUSTOMER (with a Conversation Memory profile attached when possible)
+    // and to resolve both participant ids for the reply. If it can't identify
+    // both sides, any eventual reply would fail too — skip the callback rather
+    // than waste an LLM turn on an un-replyable conversation. Running it every
+    // message is free: it reuses the list above, and the happy-path row issues
+    // no writes.
+    const resolved = await this.reconcileParticipants(session, participants);
+    if (!resolved) {
+      // Surface via handleError (logs at error level AND fires the app's
+      // onError callback) rather than a bare warn — otherwise the dropped
+      // inbound is invisible to the app and can't be observed or retried.
+      // Set a stable error.name and error_code so consumers can classify this
+      // condition programmatically without string-matching the message.
+      const error = new Error(
+        `Participant reconciliation failed for conversation ${conversationId}; ` +
+          'inbound message dropped because no sendable participants could be resolved.'
+      );
+      error.name = 'ParticipantReconciliationError';
+      this.handleError(error, {
+        conversation_id: conversationId,
+        channel: this.channelType,
+        dropped_inbound: true,
+        error_code: 'participant_reconciliation_failed',
+      });
+      return false;
+    }
+
+    const [agentParticipant, customerParticipant] = resolved;
+    session.aiAgentInfo = {
+      address: session.aiAgentInfo?.address ?? this.agentAddressFor(session).address,
+      participantId: agentParticipant.id,
+    };
+    // When reconcile resolved a customer (chat disables customer
+    // reconciliation and keeps the webhook author), its participant id is the
+    // authoritative reply recipient — the author of an inbound message is not
+    // necessarily the customer.
+    if (customerParticipant && session.authorInfo) {
+      session.authorInfo.participantId = customerParticipant.id;
+      if (customerParticipant.profileId) {
+        session.profileId = customerParticipant.profileId;
+      }
+    }
+
+    if (session.profileId === undefined && this.memoryMode !== 'never') {
+      // Free, and more reliable than Memory's address-based lookup, which
+      // infers the identifier type and misses on CHAT and RCS.
+      const authorParticipantId = session.authorInfo?.participantId;
+      const authorProfileId = authorParticipantId
+        ? participants.find(p => p.id === authorParticipantId)?.profileId
+        : undefined;
+      if (authorProfileId) {
+        session.profileId = authorProfileId;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Handle conversation updated event.
+   *
+   * Only CLOSED is acted on: it reports "Conversation Ended", from the payload
+   * alone and once across channels, and fires `onConversationEnded`. Only a
+   * registered handler costs a participant lookup — shared with the other
+   * channels handling the same webhook — which confirms the conversation is on
+   * this channel (a CHAT close must not fire on SMS) and lets this work on
+   * whichever replica Twilio picked.
+   *
+   * The session is rebuilt the same way on every replica. The conversation's
+   * CO metadata is read through `conversationMetadata(session)`: answered from
+   * the payload when it carries metadata, otherwise fetched on demand.
    */
   private async handleConversationUpdated(payload: ConversationWebhookPayload): Promise<void> {
     const conversationId = this.extractConversationId(payload);
@@ -517,19 +902,48 @@ export abstract class MessagingChannel extends BaseChannel {
       throw new Error('Missing conversation ID in conversation.updated event');
     }
 
-    // Check if conversation is closed
-    if (payload.data?.status === 'CLOSED') {
-      this.logger.debug(
-        { conversation_id: conversationId, status: payload.data.status },
-        'Conversation closed, cleaning up'
-      );
-      await this.endConversation(conversationId);
-    } else if (payload.data?.status === 'INACTIVE') {
-      // Invalidate cached memory ("once" mode) when the conversation becomes
-      // inactive. Memory is updated by Conversation Orchestrator on the
-      // INACTIVE transition, so the next message re-fetches fresh memory.
-      this.invalidateCachedMemory(conversationId);
+    const data = payload.data ?? {};
+    if (data.configurationId !== this.config.conversationConfigurationId) {
+      return;
     }
+    if (data.status !== 'CLOSED') {
+      return;
+    }
+    this.trackConversationEnded(
+      conversationId,
+      elapsedMs(
+        typeof data.createdAt === 'string' ? data.createdAt : undefined,
+        typeof data.updatedAt === 'string' ? data.updatedAt : undefined
+      )
+    );
+    if (!this.hasConversationEndedHandler()) {
+      return;
+    }
+
+    let participants: ConversationParticipant[];
+    try {
+      participants = await this.tac.listParticipantsShared(conversationId);
+    } catch (error) {
+      this.logger.error(
+        { err: error, conversation_id: conversationId },
+        'Failed to list participants for a closed conversation'
+      );
+      return;
+    }
+    const session = this.sessionFromParticipants(conversationId, participants);
+    if (session === null) {
+      return;
+    }
+
+    const parsed = ConversationResponseSchema.shape.metadata.safeParse(data.metadata);
+    if (parsed.success && parsed.data !== undefined) {
+      attachConversationMetadata(session, { known: parsed.data });
+    } else {
+      attachConversationMetadata(session, { loader: this.coMetadataLoader(conversationId) });
+    }
+
+    this.logger.debug({ conversation_id: conversationId }, 'Conversation closed');
+    await this.triggerConversationEnded(session);
   }
 
   /**
@@ -577,38 +991,28 @@ export abstract class MessagingChannel extends BaseChannel {
    * (via `session.authorInfo.participantId`), so promoting some other
    * `UNKNOWN` CHAT participant could pick the wrong recipient.
    *
-   * @param agentAddress - The agent address for this conversation, normally
-   * derived from the inbound webhook's recipient. When omitted, it is resolved
-   * from a participant scan (phone-like channels) or the channel default.
+   * @param session - Supplies the conversation id and the agent address to
+   * match on — the sender the customer messaged, already resolved on
+   * `session.aiAgentInfo`.
+   * @param participants - Already fetched by the caller; reusing that response
+   * is what makes running this on every message free.
    * @returns `[agent, customerOrNull]` on success. `customer` is `null` when
    * `reconcileCustomerType` is `false`. `null` overall when either the agent
    * or the customer cannot be resolved — the caller treats `null` as a hard
    * stop and skips the message-ready callback.
    */
   protected async reconcileParticipants(
-    conversationId: ConversationId,
-    agentAddress?: ConversationAddress
+    session: ConversationSession,
+    participants: ConversationParticipant[]
   ): Promise<[ConversationParticipant, ConversationParticipant | null] | null> {
-    let participants: ConversationParticipant[];
-    try {
-      participants = await this.conversationClient.listParticipants(conversationId);
-    } catch (error) {
-      this.logger.error(
-        { err: error, conversation_id: conversationId },
-        'Failed to list participants for reconciliation'
-      );
-      return null;
-    }
-
+    const conversationId = session.conversationId as ConversationId;
     const channel = this.getChannelName();
-    // The inbound webhook is the primary source of the agent address (which of
-    // TAC's numbers was messaged). When it carried none, fall back to a
-    // participant scan on phone-like channels, or the channel default otherwise.
-    if (agentAddress === undefined) {
-      agentAddress = this.deriveInboundAgentFromRecipients
-        ? this.fallbackAgentAddress(conversationId, participants, channel)
-        : this.getAgentAddress(conversationId);
-    }
+    // Keep agentAddress()'s channelId (required for CHAT); the session only
+    // overrides which sender.
+    const baseAgentAddress = this.agentAddressFor(session);
+    const agentAddress: ConversationAddress = session.aiAgentInfo
+      ? { ...baseAgentAddress, address: session.aiAgentInfo.address }
+      : baseAgentAddress;
 
     const ownsAgentAddress = (p: ConversationParticipant): boolean =>
       Array.isArray(p.addresses) &&
@@ -685,13 +1089,12 @@ export abstract class MessagingChannel extends BaseChannel {
    * Defensive path — the primary source is the webhook.
    */
   protected fallbackAgentAddress(
-    conversationId: ConversationId,
+    session: ConversationSession,
     participants: ConversationParticipant[],
     channel: ParticipantAddressType
   ): ConversationAddress {
-    const owned = participants
-      .flatMap(p => p.addresses)
-      .find(a => a.channel === channel && this.isDefaultAgentAddress(a.address))?.address;
+    const conversationId = session.conversationId;
+    const owned = this.ownedAgentAddress(participants, channel);
     if (owned !== undefined) {
       this.logger.warn(
         { conversation_id: conversationId, channel },
@@ -704,7 +1107,20 @@ export abstract class MessagingChannel extends BaseChannel {
       { conversation_id: conversationId, channel },
       'Inbound webhook had no channel recipient and no owned participant; using default agent address'
     );
-    return this.getAgentAddress(conversationId);
+    return this.agentAddressFor(session);
+  }
+
+  /**
+   * The first of TAC's configured addresses on this channel that a participant
+   * holds, if any.
+   */
+  protected ownedAgentAddress(
+    participants: ConversationParticipant[],
+    channel: ParticipantAddressType
+  ): string | undefined {
+    return participants
+      .flatMap(p => (Array.isArray(p.addresses) ? p.addresses : []))
+      .find(a => a.channel === channel && this.isDefaultAgentAddress(a.address))?.address;
   }
 
   /**
@@ -892,8 +1308,14 @@ export abstract class MessagingChannel extends BaseChannel {
   /**
    * Shared outbound conversation initiation for messaging channels (SMS/RCS/Chat/WhatsApp).
    *
-   * Handles the full flow: create conversation → find participants → start
-   * session → send initial message → error cleanup.
+   * Handles the full flow: create conversation → find participants → build
+   * session → send initial message → error cleanup. The session isn't kept by
+   * the channel; it is returned to the caller.
+   *
+   * `metadata` entries with string values that fit Conversation Orchestrator's
+   * limits are stored on the conversation (at creation; merged with a `PATCH`
+   * when an existing conversation is reused), so `conversationMetadata()` can
+   * read them on any replica. The rest stay on the returned session only.
    */
   protected async initiateOutboundMessagingConversation(params: {
     channel: 'SMS' | 'CHAT' | 'RCS' | 'WHATSAPP';
@@ -917,6 +1339,17 @@ export abstract class MessagingChannel extends BaseChannel {
     let conversationId: string | undefined;
     let conversationReused = false;
 
+    const { persisted: coMetadata, skippedKeys } = fitConversationMetadata(metadata);
+    const hasCoMetadata = Object.keys(coMetadata).length > 0;
+    if (skippedKeys.length > 0) {
+      this.logger.warn(
+        { skipped_keys: skippedKeys },
+        'Outbound metadata not stored on the conversation: Conversation Orchestrator allows ' +
+          "at most 8 keys of letters, digits, '.', '_' or '-', with string values up to 512 " +
+          'characters'
+      );
+    }
+
     try {
       const customerAddress: ConversationAddress = {
         channel,
@@ -929,15 +1362,42 @@ export abstract class MessagingChannel extends BaseChannel {
         ...(channelId ? { channelId } : {}),
       };
 
-      const result = await this.conversationClient.createOrReuseConversation([
-        { type: 'CUSTOMER', addresses: [customerAddress] },
-        { type: 'AI_AGENT', addresses: [agentAddress] },
-      ]);
+      const result = await this.conversationClient.createOrReuseConversation(
+        [
+          { type: 'CUSTOMER', addresses: [customerAddress] },
+          { type: 'AI_AGENT', addresses: [agentAddress] },
+        ],
+        // Omitted, not {}, so a send without metadata creates the conversation
+        // exactly as before.
+        hasCoMetadata ? coMetadata : undefined
+      );
       conversationId = result.conversation.id;
       conversationReused = result.reused;
 
       if (!isConversationId(conversationId)) {
         throw new Error(`Invalid conversation ID returned: ${conversationId}`);
+      }
+
+      let knownCoMetadata: Record<string, string> | undefined = coMetadata;
+      if (conversationReused && !hasCoMetadata) {
+        // Nothing to merge; what the reused conversation already holds is
+        // unknown until conversationMetadata() fetches it.
+        knownCoMetadata = undefined;
+      } else if (conversationReused) {
+        // Existing conversation: merge ours in; CO keeps keys set earlier.
+        try {
+          const patched = await this.conversationClient.patchConversationMetadata(
+            conversationId,
+            coMetadata
+          );
+          knownCoMetadata = { ...(patched.metadata ?? {}) };
+        } catch (patchError) {
+          this.logger.warn(
+            { err: patchError, conversation_id: conversationId },
+            'Failed to store outbound metadata on the reused conversation'
+          );
+          knownCoMetadata = undefined;
+        }
       }
 
       const participants = await this.conversationClient.listParticipants(conversationId);
@@ -973,11 +1433,7 @@ export abstract class MessagingChannel extends BaseChannel {
         throw new Error('Agent participant not found after conversation creation');
       }
 
-      // Start local session BEFORE sending the initial message so the
-      // COMMUNICATION_CREATED webhook (triggered by createAction) finds a
-      // correctly-configured session instead of auto-starting one with wrong
-      // metadata.
-      const session = this.startConversation(conversationId);
+      const session = this.newSession(conversationId);
       session.authorInfo = {
         address: to,
         participantId: customerParticipant.id,
@@ -992,6 +1448,10 @@ export abstract class MessagingChannel extends BaseChannel {
         direction: 'outbound',
         ...(channelId ? { channelId } : {}),
       };
+      attachConversationMetadata(session, {
+        ...(knownCoMetadata !== undefined && { known: knownCoMetadata }),
+        loader: this.coMetadataLoader(conversationId),
+      });
 
       const actionRequest: SendMessageActionRequest = {
         type: 'SEND_MESSAGE',
@@ -1012,8 +1472,22 @@ export abstract class MessagingChannel extends BaseChannel {
 
       return { conversationId, session };
     } catch (error) {
-      if (conversationId) {
-        this.activeConversations.delete(conversationId as ConversationId);
+      const cause = error instanceof Error ? (error.cause ?? error) : error;
+      const status = axios.isAxiosError(cause) ? cause.response?.status : undefined;
+      if (
+        conversationId === undefined &&
+        hasCoMetadata &&
+        status !== undefined &&
+        status >= 400 &&
+        status < 500
+      ) {
+        // TAC sends metadata at creation, and the client logs no body: name
+        // it as a possible cause.
+        this.logger.warn(
+          { status, metadata_keys: Object.keys(coMetadata).sort() },
+          'Conversation Orchestrator rejected creating the conversation; the request ' +
+            'included conversation metadata, which may be the cause'
+        );
       }
       if (conversationId && !conversationReused) {
         await this.conversationClient

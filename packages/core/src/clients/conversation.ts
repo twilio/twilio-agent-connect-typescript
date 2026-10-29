@@ -101,6 +101,8 @@ export class ConversationClient extends BaseClient {
       type: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT';
       addresses: ConversationAddress[];
     }>;
+    /** Conversation metadata (string values; CO allows at most 8 keys). */
+    metadata?: Record<string, string>;
   }): Promise<ConversationResponse> {
     const url = `/v2/Conversations`;
 
@@ -114,6 +116,10 @@ export class ConversationClient extends BaseClient {
 
     if (options?.participants) {
       requestBody.participants = options.participants;
+    }
+
+    if (options?.metadata) {
+      requestBody.metadata = options.metadata;
     }
 
     try {
@@ -133,15 +139,23 @@ export class ConversationClient extends BaseClient {
    *
    * On 409 CO returns the existing conversation ID in the
    * X-Conflicting-Resource-Id response header.
+   *
+   * @param participants - Participants to create with the conversation
+   * @param metadata - Set at creation; not applied when an existing
+   *   conversation is reused — the caller patches it
    */
   public async createOrReuseConversation(
     participants: Array<{
       type: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT';
       addresses: ConversationAddress[];
-    }>
+    }>,
+    metadata?: Record<string, string>
   ): Promise<{ conversation: { id: string }; reused: boolean }> {
     try {
-      const conversation = await this.createConversation({ participants });
+      const conversation = await this.createConversation({
+        participants,
+        ...(metadata !== undefined && { metadata }),
+      });
       return { conversation, reused: false };
     } catch (error) {
       const existingId = this.extractConversationIdFrom409(error);
@@ -350,6 +364,53 @@ export class ConversationClient extends BaseClient {
     } catch (error) {
       throw new Error(
         `Failed to update conversation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+  }
+
+  /**
+   * Fetch a conversation, including its metadata.
+   *
+   * @param conversationId - The conversation ID to fetch
+   */
+  public async getConversation(conversationId: string): Promise<ConversationResponse> {
+    const url = `/v2/Conversations/${conversationId}`;
+
+    try {
+      const data = await this.makeRequest<ConversationResponse>(url, 'GET');
+      return ConversationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch conversation: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+  }
+
+  /**
+   * Merge `metadata` into a conversation's metadata.
+   *
+   * A `PATCH` with only the given keys: other keys already on the conversation
+   * are kept. Conversation Orchestrator rejects metadata changes once the
+   * conversation is CLOSED.
+   *
+   * @param conversationId - The conversation ID to update
+   * @param metadata - Keys to set (string values)
+   * @returns The conversation, with its merged metadata
+   */
+  public async patchConversationMetadata(
+    conversationId: string,
+    metadata: Record<string, string>
+  ): Promise<ConversationResponse> {
+    const url = `/v2/Conversations/${conversationId}`;
+
+    try {
+      const data = await this.makeRequest<ConversationResponse>(url, 'PATCH', { metadata });
+      return ConversationResponseSchema.parse(data);
+    } catch (error) {
+      throw new Error(
+        `Failed to update conversation metadata: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
     }

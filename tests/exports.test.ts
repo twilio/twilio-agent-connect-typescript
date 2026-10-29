@@ -19,6 +19,17 @@ describe('package exports', () => {
     expect(tac.BaseChannel).toBeDefined();
   });
 
+  it('exports the conversationMetadata helper', () => {
+    expect(typeof tac.conversationMetadata).toBe('function');
+  });
+
+  it('keeps conversation-metadata internals private', () => {
+    const exported = tac as Record<string, unknown>;
+    expect(exported.attachConversationMetadata).toBeUndefined();
+    expect(exported.fitConversationMetadata).toBeUndefined();
+    expect(exported.ExpiringMap).toBeUndefined();
+  });
+
   it('exports client classes', () => {
     expect(tac.MemoryClient).toBeDefined();
     expect(tac.ConversationClient).toBeDefined();

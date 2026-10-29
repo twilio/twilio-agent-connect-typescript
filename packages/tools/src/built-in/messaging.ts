@@ -1,4 +1,4 @@
-import { BuiltInTools, ConversationId, BaseChannel } from '@twilio/tac-core';
+import { BuiltInTools, ConversationId, ConversationSession, BaseChannel } from '@twilio/tac-core';
 import { TACTool, defineTool } from '../lib/builder';
 
 /**
@@ -20,10 +20,20 @@ interface SendMessageResult {
 
 /**
  * Create send message tool
+ *
+ * **Pass the session, not the id.** Hand in the `ConversationSession` that
+ * `onMessageReady` gave you and every send reuses it as-is. A bare id still
+ * works, but messaging channels keep no sessions, so each send spends a
+ * `listParticipants` call rebuilding one — and on chat, where the customer
+ * stays `UNKNOWN`, that rebuild resolves no recipient and the send fails.
+ *
+ * @param channel - Channel to send through.
+ * @param conversationIdOrSession - The `ConversationSession` to reply within
+ * (preferred), or the conversation id.
  */
 export function createSendMessageTool(
   channel: BaseChannel,
-  conversationId: ConversationId
+  conversationIdOrSession: ConversationId | ConversationSession
 ): TACTool<SendMessageParams, SendMessageResult> {
   return defineTool(
     BuiltInTools.SEND_MESSAGE,
@@ -45,7 +55,7 @@ export function createSendMessageTool(
     },
     async (params: SendMessageParams) => {
       try {
-        await channel.sendResponse(conversationId, params.message, params.metadata);
+        await channel.sendResponse(conversationIdOrSession, params.message, params.metadata);
 
         return {
           success: true,
@@ -67,14 +77,17 @@ export function createSendMessageTool(
 export function createMessagingTools(): {
   forConversation: (
     channel: BaseChannel,
-    conversationId: ConversationId
+    conversationIdOrSession: ConversationId | ConversationSession
   ) => TACTool<SendMessageParams, SendMessageResult>;
 } {
   return {
     /**
-     * Create send message tool for specific channel and conversation
+     * Create send message tool for specific channel and conversation. Prefer
+     * passing the turn's `ConversationSession` (see {@link createSendMessageTool}).
      */
-    forConversation: (channel: BaseChannel, conversationId: ConversationId) =>
-      createSendMessageTool(channel, conversationId),
+    forConversation: (
+      channel: BaseChannel,
+      conversationIdOrSession: ConversationId | ConversationSession
+    ) => createSendMessageTool(channel, conversationIdOrSession),
   };
 }

@@ -159,10 +159,12 @@ export class TACServer {
     // surface on the first inbound call as a 500 — easy to miss in CI or smoke
     // tests that don't hit voice. Custom adapters (Express/etc.) constructing
     // VoiceChannel directly still get the runtime error on first request.
-    if (this.voiceChannel && !tac.getConfig().voicePublicDomain) {
+    if (this.voiceChannel && !tac.getConfig().voiceCallbackDomain) {
       throw new Error(
         'Voice channel is configured but TACConfig.voicePublicDomain is not set. ' +
-          'Set it directly or via the TWILIO_VOICE_PUBLIC_DOMAIN env var.'
+          'Set it directly or via the TWILIO_VOICE_PUBLIC_DOMAIN env var. ' +
+          '(TACConfig.instancePublicDomain also satisfies this, if each replica ' +
+          'is directly addressable.)'
       );
     }
     // Unconditional, because the call-event routes register unconditionally

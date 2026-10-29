@@ -82,10 +82,12 @@ describe('Integration Tests', () => {
       communications: [],
     } as never);
     vi.spyOn(tac.getConversationClient(), 'listCommunications').mockResolvedValue([]);
-    // reconcileParticipants uses axios under the hood — short-circuit it so
-    // inbound webhook processing reaches the message-ready callback.
-    vi.spyOn(channel as any, 'reconcileParticipants').mockImplementation(
-      async (convId: unknown) => [
+    // The conversation client uses axios, which the fetch spy doesn't
+    // intercept — stub the participant lookup (one per inbound message,
+    // shared with reconciliation) and the send at the client boundary.
+    vi.spyOn(tac.getConversationClient()!, 'createAction').mockResolvedValue(undefined as never);
+    vi.spyOn(tac.getConversationClient()!, 'listParticipants').mockImplementation(
+      async (convId: string) => [
         {
           id: 'PA111',
           conversationId: convId,
@@ -100,7 +102,7 @@ describe('Integration Tests', () => {
           type: 'CUSTOMER',
           addresses: [{ channel: 'SMS', address: '+15559876543' }],
         },
-      ]
+      ] as never
     );
   });
 
@@ -258,27 +260,26 @@ describe('Integration Tests', () => {
       expect(capturedMessages[0].message).toBe('Valid message');
     });
 
-    it('should handle conversation cleanup', async () => {
-      // Start conversation
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: {
-          conversationId: 'CHtest123456789',
-        }
-      });
+    it('should fire onConversationEnded on close with a session rebuilt from CO', async () => {
+      const ended = vi.fn();
+      tac.onConversationEnded(ended);
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
-
-      // End conversation
+      // No earlier webhook needed: the channel keeps no sessions, so any
+      // replica can handle the close.
       await channel.processWebhook({
         eventType: 'CONVERSATION_UPDATED',
         data: {
-          conversationId: 'CHtest123456789',
+          id: 'CHtest123456789',
+          configurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
           status: 'CLOSED'
         }
       });
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(ended).toHaveBeenCalledTimes(1);
+      const { session } = ended.mock.calls[0]![0];
+      expect(session.conversationId).toBe('CHtest123456789');
+      expect(session.authorInfo).toEqual({ address: '+15559876543', participantId: 'PA222' });
+      expect(session.aiAgentInfo).toEqual({ address: '+15551234567', participantId: 'PA111' });
     });
   });
 

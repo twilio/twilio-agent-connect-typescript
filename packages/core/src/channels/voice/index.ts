@@ -2,6 +2,7 @@ export { VoiceChannel } from './channel';
 export type {
   VoiceChannelEvents,
   InboundCallTwimlHandler,
+  CallEndedHandler,
   CallStatusHandler,
   AmdHandler,
   RecordingHandler,

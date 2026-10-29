@@ -44,6 +44,7 @@ Seamlessly integrate with Twilio Conversation Memory and Conversation Orchestrat
 - **Memory Management**: Automatic integration with Twilio Conversation Memory for persistent user context
 - **Conversation Lifecycle**: Automatic tracking of conversation sessions and state
 - **Human Handoff**: Built-in tool to route conversations to human agents via Twilio Studio Flows (including Flex)
+- **Horizontal Scaling**: Run N replicas behind a load balancer with no shared datastore; for voice, set `TWILIO_INSTANCE_PUBLIC_DOMAIN` to each replica's own public hostname
 
 ## Get Started
 
@@ -176,7 +177,7 @@ For detailed architecture and advanced usage, see [CLAUDE.md](https://github.com
 
 ## Telemetry
 
-The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel, a conversation ID, the SDK name and version, and timing such as conversation duration.
+The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel (when TAC already knows it — conversation ended events from Conversation Orchestrator don't carry one), a conversation ID, the SDK name and version, and timing such as conversation duration.
 
 Message content, transcripts, phone numbers, and other end-user identifiers are never collected.
 

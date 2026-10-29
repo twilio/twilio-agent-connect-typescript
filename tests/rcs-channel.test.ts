@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { RCSChannel, TAC, ConversationSession } from '@twilio/tac-core';
+import {
+  RCSChannel,
+  TAC,
+  ConversationClient,
+  ConversationParticipant,
+  ConversationSession,
+} from '@twilio/tac-core';
 import MockAdapter from 'axios-mock-adapter';
 import { createTestTAC } from './helpers/tac';
 
@@ -21,12 +27,56 @@ describe('RCS Channel', () => {
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
+  const agentParticipant = (
+    address = 'rcs:twilio_signal_test_agent',
+    id = 'PA_AGENT'
+  ): ConversationParticipant => ({
+    id,
+    conversationId: 'CHtest123456789',
+    accountId: 'ACtest123456789',
+    type: 'AI_AGENT',
+    addresses: [{ channel: 'RCS', address }],
+  });
+  const customerParticipant = (profileId?: string): ConversationParticipant => ({
+    id: 'PA_CUSTOMER',
+    conversationId: 'CHtest123456789',
+    accountId: 'ACtest123456789',
+    type: 'CUSTOMER',
+    ...(profileId ? { profileId } : {}),
+    addresses: [{ channel: 'RCS', address: 'rcs:+12345678901' }],
+  });
+
+  const closedWebhook = (conversationId: string) => ({
+    eventType: 'CONVERSATION_UPDATED',
+    data: {
+      conversationId,
+      configurationId: getTestConfig().conversationConfigurationId,
+      status: 'CLOSED',
+    },
+  });
+
+  const inboundWebhook = (recipientAddress?: string) => ({
+    eventType: 'COMMUNICATION_CREATED',
+    data: {
+      conversationId: 'CHtest123456789',
+      content: { type: 'TEXT', text: 'hello' },
+      author: { address: 'rcs:+12345678901', channel: 'RCS' },
+      recipients:
+        recipientAddress !== undefined ? [{ channel: 'RCS', address: recipientAddress }] : [],
+    },
+  });
+
   let channel: RCSChannel;
   let tac: TAC;
+  let listParticipantsSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     tac = await createTestTAC(getTestConfig());
     channel = new RCSChannel(tac);
+    // Every inbound message reads the conversation's participants once.
+    listParticipantsSpy = vi
+      .spyOn(ConversationClient.prototype, 'listParticipants')
+      .mockResolvedValue([agentParticipant(), customerParticipant()]);
     // Short-circuit memory retrieval so webhook processing tests don't hit
     // real Twilio APIs with fake credentials and spam the logs with 401s.
     vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
@@ -57,8 +107,9 @@ describe('RCS Channel', () => {
       expect(channel.channelType).toBe('rcs');
     });
 
-    it('should start with no active conversations', () => {
+    it('keeps no sessions (deprecated lookups return undefined/false)', () => {
       expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(channel.getConversationSession('CHtest123456789')).toBeUndefined();
     });
 
     it('should require rcsSenderId on TAC config', async () => {
@@ -86,7 +137,8 @@ describe('RCS Channel', () => {
 
       await expect(channel.processWebhook(webhookPayload)).resolves.not.toThrow();
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
+      // Ignored — the channel stores no sessions, so there's nothing to start.
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
     });
 
     it('should process communication.created event for RCS', async () => {
@@ -118,6 +170,8 @@ describe('RCS Channel', () => {
       expect(capturedMessage.conversationId).toBe('CHtest123456789');
       expect(capturedMessage.message).toBe('Hello from RCS');
       expect(capturedMessage.author).toBe('rcs:+12345678901');
+      expect(capturedMessage.session.authorInfo?.participantId).toBe('PA_CUSTOMER');
+      expect(capturedMessage.session.aiAgentInfo?.participantId).toBe('PA_AGENT');
     });
 
     it('should ignore messages from the configured RCS sender', async () => {
@@ -168,42 +222,51 @@ describe('RCS Channel', () => {
     });
 
     it('should process conversation.updated close', async () => {
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789' },
-      });
+      const ended = vi.fn();
+      channel.on('conversationEnded', ended);
 
-      expect(channel.isConversationActive('CHtest123456789')).toBe(true);
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
 
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: {
-          conversationId: 'CHtest123456789',
-          status: 'CLOSED',
-        },
-      });
-
-      expect(channel.isConversationActive('CHtest123456789')).toBe(false);
+      expect(ended).toHaveBeenCalledTimes(1);
+      expect(ended.mock.calls[0]![0].session.conversationId).toBe('CHtest123456789');
     });
   });
 
   describe('sendResponse', () => {
-    it('should throw if no session exists or has not been reconciled', async () => {
+    it('should throw if no recipient resolves for a bare id', async () => {
+      listParticipantsSpy.mockResolvedValue([]);
       await expect(channel.sendResponse('CHtest123456789', 'hi')).rejects.toThrow(
-        /without a reconciled session/
+        /no recipient resolved/
       );
     });
 
-    it('should send via Actions API when session is reconciled', async () => {
-      // Seed a reconciled session
-      const session = (channel as any).startConversation('CHtest123456789');
-      session.authorInfo = {
-        address: 'rcs:+12345678901',
-        participantId: 'PA_CUSTOMER',
-      };
-      session.aiAgentInfo = {
-        address: 'rcs:twilio_signal_test_agent',
-        participantId: 'PA_AGENT',
+    it('should rebuild the session from participants for a bare id', async () => {
+      const createActionSpy = vi
+        .spyOn(tac.getConversationClient()!, 'createAction')
+        .mockResolvedValue({} as any);
+
+      await channel.sendResponse('CHtest123456789', 'Hello');
+
+      expect(listParticipantsSpy).toHaveBeenCalledTimes(1);
+      expect(createActionSpy).toHaveBeenCalledWith(
+        'CHtest123456789',
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            from: { channel: 'RCS', participantId: 'PA_AGENT' },
+            to: [{ channel: 'RCS', participantId: 'PA_CUSTOMER' }],
+          }),
+        })
+      );
+    });
+
+    it('should send via Actions API when given a reconciled session', async () => {
+      const session: ConversationSession = {
+        conversationId: 'CHtest123456789',
+        channel: 'rcs',
+        startedAt: new Date(),
+        metadata: {},
+        authorInfo: { address: 'rcs:+12345678901', participantId: 'PA_CUSTOMER' },
+        aiAgentInfo: { address: 'rcs:twilio_signal_test_agent', participantId: 'PA_AGENT' },
       };
 
       const createActionSpy = vi
@@ -216,8 +279,9 @@ describe('RCS Channel', () => {
           createdAt: '2024-01-01T00:00:00Z',
         } as any);
 
-      await channel.sendResponse('CHtest123456789', 'Hello');
+      await channel.sendResponse(session, 'Hello');
 
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
       expect(createActionSpy).toHaveBeenCalledWith(
         'CHtest123456789',
         expect.objectContaining({
@@ -233,27 +297,27 @@ describe('RCS Channel', () => {
   });
 
   describe('conversation ended callback', () => {
-    it('should fire onConversationEnded callback with full session on close', async () => {
+    it('should fire onConversationEnded with a session rebuilt from participants', async () => {
       const captured: ConversationSession[] = [];
+      listParticipantsSpy.mockResolvedValue([
+        agentParticipant(),
+        customerParticipant('test_profile_123'),
+      ]);
 
       tac.onConversationEnded(({ session }) => {
         captured.push(session);
       });
       tac.registerChannel(channel);
 
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_CREATED',
-        data: { conversationId: 'CHtest123456789', profileId: 'test_profile_123' },
-      });
-
-      await channel.processWebhook({
-        eventType: 'CONVERSATION_UPDATED',
-        data: { conversationId: 'CHtest123456789', status: 'CLOSED' },
-      });
+      // The session is rebuilt from Conversation Orchestrator, so it fires on
+      // any instance — not just the one that saw the conversation.
+      await channel.processWebhook(closedWebhook('CHtest123456789'));
 
       expect(captured).toHaveLength(1);
       expect(captured[0].conversationId).toBe('CHtest123456789');
       expect(captured[0].channel).toBe('rcs');
+      expect(captured[0].profileId).toBe('test_profile_123');
+      expect(captured[0].authorInfo?.address).toBe('rcs:+12345678901');
     });
   });
 
@@ -285,6 +349,53 @@ describe('RCS Channel', () => {
       });
 
       expect(initSpy.mock.calls[0]![0].from).toBe('rcs:alt_agent');
+    });
+
+    it('inbound agent address is derived from the webhook recipient', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new RCSChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([
+        agentParticipant('rcs:alt_agent', 'PA_AGENT2'),
+        customerParticipant(),
+      ]);
+      const reconcileSpy = vi
+        .spyOn(multiChannel as any, 'reconcileParticipants')
+        .mockResolvedValue([agentParticipant('rcs:alt_agent', 'PA_AGENT2'), customerParticipant()]);
+
+      await multiChannel.processWebhook(inboundWebhook('rcs:alt_agent'));
+
+      const sessionArg = reconcileSpy.mock.calls[0]![0] as ConversationSession;
+      expect(sessionArg.aiAgentInfo?.address).toBe('rcs:alt_agent');
+    });
+
+    it('drops an inbound message addressed to an unconfigured sender without a lookup', async () => {
+      const reconcileSpy = vi.spyOn(channel as any, 'reconcileParticipants');
+      const errors: { error: Error; context?: Record<string, unknown> }[] = [];
+      channel.on('error', data => errors.push(data));
+
+      await channel.processWebhook(inboundWebhook('rcs:unconfigured'));
+
+      expect(reconcileSpy).not.toHaveBeenCalled();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]!.context?.dropped_inbound).toBe(true);
+      expect(listParticipantsSpy).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the configured sender the participants hold when the webhook has no recipient', async () => {
+      const multiTac = await createTestTAC(multiConfig());
+      const multiChannel = new RCSChannel(multiTac);
+      listParticipantsSpy.mockResolvedValue([
+        agentParticipant('rcs:alt_agent'),
+        customerParticipant(),
+      ]);
+      const reconcileSpy = vi
+        .spyOn(multiChannel as any, 'reconcileParticipants')
+        .mockResolvedValue([agentParticipant('rcs:alt_agent'), customerParticipant()]);
+
+      await multiChannel.processWebhook(inboundWebhook(undefined));
+
+      const sessionArg = reconcileSpy.mock.calls[0]![0] as ConversationSession;
+      expect(sessionArg.aiAgentInfo?.address).toBe('rcs:alt_agent');
     });
 
     it('outbound rejects a from that is not a configured sender', async () => {

@@ -77,3 +77,69 @@ export function buildProfilePrompt(
 
   return lines.join('\n');
 }
+
+/**
+ * Conversation Orchestrator metadata known for a session, and how to fetch it
+ * when it isn't known yet. Set by the channel that built the session; kept off
+ * the session object so it never shows up when the session is serialized or
+ * copied.
+ */
+interface ConversationMetadataState {
+  known?: Record<string, string>;
+  loader?: () => Promise<Record<string, string> | undefined>;
+}
+
+const conversationMetadataStates = new WeakMap<ConversationSession, ConversationMetadataState>();
+
+/**
+ * Record what a channel knows about `session`'s Conversation Orchestrator
+ * metadata: the metadata itself, a loader to fetch it on demand, or both.
+ *
+ * @internal
+ */
+export function attachConversationMetadata(
+  session: ConversationSession,
+  state: ConversationMetadataState
+): void {
+  const existing = conversationMetadataStates.get(session) ?? {};
+  conversationMetadataStates.set(session, { ...existing, ...state });
+}
+
+/**
+ * The metadata stored on a conversation in Conversation Orchestrator.
+ *
+ * `session.metadata` is the session's own data, which another replica doesn't
+ * see. This reads what's stored on the conversation itself — for example the
+ * `metadata` passed to `initiateOutboundConversation` — so it works on
+ * whichever replica handles the turn. It costs one Conversation Orchestrator
+ * request, kept for the rest of this turn, unless the session already knows
+ * it: the session `initiateOutboundConversation` returns holds what it wrote,
+ * and a CLOSED webhook's session holds the payload's copy.
+ *
+ * Returns a copy, so editing it changes nothing. Returns `{}` when the
+ * conversation has no metadata, the session didn't come from a channel, or the
+ * lookup fails; a failed lookup is retried on the next call.
+ *
+ * @example
+ * ```typescript
+ * tac.onMessageReady(async ({ session }) => {
+ *   const metadata = await conversationMetadata(session);
+ *   const appointmentId = metadata.appointment_id;
+ * });
+ * ```
+ */
+export async function conversationMetadata(
+  session: ConversationSession
+): Promise<Record<string, string>> {
+  const state = conversationMetadataStates.get(session);
+  if (state === undefined) {
+    return {};
+  }
+  if (state.known === undefined && state.loader !== undefined) {
+    const loaded = await state.loader();
+    if (loaded !== undefined) {
+      state.known = loaded;
+    }
+  }
+  return { ...(state.known ?? {}) };
+}

@@ -46,11 +46,11 @@ const voiceChannel = new VoiceChannel(tac);
 // Registering is also what puts each callback URL on the outbound call below.
 // Skip a handler and TAC omits its URL, so Twilio never posts that event.
 
-voiceChannel.onCallStatus(event => {
+voiceChannel.onCallStatus(async event => {
   console.log(`[STATUS] ${event.callSid}: ${event.callStatus}`);
-  // The conversation session — conversationId, profile, metadata. Set on the
-  // first prompt, so an early event may not resolve one yet.
-  const session = voiceChannel.getConversationSessionByCallSid(event.callSid);
+  // The call's conversation session, on any instance. An early event may not
+  // have one yet.
+  const session = await voiceChannel.resolveConversationSessionByCallSid(event.callSid);
   console.log(`[STATUS] session lookup -> ${session?.conversationId ?? 'none'}`);
 });
 

@@ -5,7 +5,13 @@ import {
   callStatusEventFromForm,
   recordingEventFromForm,
 } from '@twilio/tac-core';
-import type { AmdEvent, CallStatusEvent, ConversationId, RecordingEvent } from '@twilio/tac-core';
+import type {
+  AmdEvent,
+  CallStatusEvent,
+  ConversationId,
+  ConversationSession,
+  RecordingEvent,
+} from '@twilio/tac-core';
 import { createTestTAC } from './helpers/tac';
 
 const mockCallUpdate = vi.fn();
@@ -317,16 +323,18 @@ describe('Voice call events', () => {
     it('cleans up the session found by CallSid', async () => {
       // conversationId !== callSid in orchestrator mode; resolved by scanning sessions.
       startSession('conv_abc', 'CA1');
-      const endConversation = vi
+      const releaseSession = vi
         .spyOn(
-          channel as unknown as { endConversation: (id: ConversationId) => Promise<void> },
-          'endConversation'
+          channel as unknown as {
+            releaseSession: (id: ConversationId) => Promise<ConversationSession | undefined>;
+          },
+          'releaseSession'
         )
         .mockResolvedValue(undefined);
 
       await channel.endCall('CA1');
 
-      expect(endConversation).toHaveBeenCalledWith('conv_abc');
+      expect(releaseSession).toHaveBeenCalledWith('conv_abc');
     });
 
     it('returns false without throwing when the hangup fails', async () => {
@@ -338,32 +346,36 @@ describe('Voice call events', () => {
 
     it('cleans up the session even when the hangup fails', async () => {
       startSession('conv_abc', 'CA1');
-      const endConversation = vi
+      const releaseSession = vi
         .spyOn(
-          channel as unknown as { endConversation: (id: ConversationId) => Promise<void> },
-          'endConversation'
+          channel as unknown as {
+            releaseSession: (id: ConversationId) => Promise<ConversationSession | undefined>;
+          },
+          'releaseSession'
         )
         .mockResolvedValue(undefined);
       mockCallUpdate.mockRejectedValue(new Error('Twilio 400'));
 
       await expect(channel.endCall('CA1')).resolves.toBe(false);
 
-      expect(endConversation).toHaveBeenCalledWith('conv_abc');
+      expect(releaseSession).toHaveBeenCalledWith('conv_abc');
     });
 
     it('hangs up without a tracked session', async () => {
       // A machine may never prompt (no session); the hangup must still work.
-      const endConversation = vi
+      const releaseSession = vi
         .spyOn(
-          channel as unknown as { endConversation: (id: ConversationId) => Promise<void> },
-          'endConversation'
+          channel as unknown as {
+            releaseSession: (id: ConversationId) => Promise<ConversationSession | undefined>;
+          },
+          'releaseSession'
         )
         .mockResolvedValue(undefined);
 
       await expect(channel.endCall('CA_unknown')).resolves.toBe(true);
 
       expect(mockCallUpdate).toHaveBeenCalledWith({ status: 'completed' });
-      expect(endConversation).not.toHaveBeenCalled();
+      expect(releaseSession).not.toHaveBeenCalled();
     });
   });
 
