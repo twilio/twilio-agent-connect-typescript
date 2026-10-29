@@ -49,10 +49,10 @@ npm install
 
 ### 2. Configure Environment Variables
 
-From the `getting_started/examples/` directory:
+From this example's directory, copy the template shared by all examples in `getting_started/examples/`:
 
 ```bash
-cp .env.example .env
+cp ../.env.example ../.env
 # Edit .env with your credentials
 ```
 

@@ -31,7 +31,8 @@
     "docs:watch": "typedoc --watch",
     "setup": "tsx getting_started/twilio-setup/src/index.ts | pino-pretty",
     "example:getting-started": "cd getting_started/examples/openai && npm install && npm run dev",
-    "example:chat": "cd getting_started/examples/chat && npm install && npm run dev"
+    "example:chat": "cd getting_started/examples/chat && npm install && npm run dev",
+    "example:overview": "cd getting_started/examples/overview && npm install && npm run dev"
   },
   "keywords": [
     "twilio",

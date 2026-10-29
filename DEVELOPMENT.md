@@ -93,6 +93,7 @@ npm run setup
 
 # Run examples
 npm run example:getting-started  # OpenAI example (SMS + Voice)
+npm run example:overview         # Framework-agnostic example (no LLM SDK)
 ```
 
 ## API Reference Documentation
