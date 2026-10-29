@@ -606,8 +606,9 @@ describe('TACServer registers channels passed to it', () => {
     accountSid: 'ACtest123456789',
   });
 
-  const mockSmsParticipants = (channel: SMSChannel) =>
-    vi.spyOn(channel as any, 'reconcileParticipants').mockResolvedValue([
+  // Messaging is stateless: each inbound message makes one participant lookup.
+  const mockSmsParticipants = (tac: TAC) =>
+    vi.spyOn(tac.getConversationClient()!, 'listParticipants').mockResolvedValue([
       {
         id: 'PA111',
         conversationId: 'CHserverreg',
@@ -655,7 +656,7 @@ describe('TACServer registers channels passed to it', () => {
 
   it('fires onMessageReady for an SMS webhook without tac.registerChannel()', async () => {
     const smsChannel = new SMSChannel(tac);
-    mockSmsParticipants(smsChannel);
+    mockSmsParticipants(tac);
     const onMessageReady = vi.fn().mockReturnValue(null);
     tac.onMessageReady(onMessageReady);
 
