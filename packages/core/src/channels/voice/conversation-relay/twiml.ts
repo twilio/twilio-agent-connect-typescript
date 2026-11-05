@@ -47,6 +47,7 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
       'welcomeGreeting',
       'welcomeGreetingInterruptible',
       'conversationConfiguration',
+      'conversationId',
       'language',
       'ttsLanguage',
       'transcriptionLanguage',
