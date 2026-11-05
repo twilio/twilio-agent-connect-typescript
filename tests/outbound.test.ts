@@ -951,6 +951,36 @@ describe('Outbound Conversations', () => {
       expect(twiml).toContain('conversationConfiguration');
     });
 
+    it('pre-creates the conversation and routes the call to it by id', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CApre' });
+      const create = vi
+        .spyOn(tac.getConversationClient()!, 'createOrReuseConversation')
+        .mockResolvedValue({ conversation: { id: 'conv_conversation_out' }, reused: false } as any);
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      expect(create).toHaveBeenCalledWith([
+        { type: 'CUSTOMER', addresses: [{ channel: 'VOICE', address: '+15559876543' }] },
+        { type: 'AI_AGENT', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
+      ]);
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('conversationId="conv_conversation_out"');
+      expect(twiml).not.toContain('conversationConfiguration=');
+    });
+
+    it('still places the call with the configuration when the pre-create fails', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAfallback' });
+      vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockRejectedValue(
+        new Error('boom')
+      );
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('conversationConfiguration=');
+      expect(twiml).not.toContain('conversationId=');
+    });
+
     it('should derive the WebSocket URL from voicePublicDomain when not passed', async () => {
       mockCallCreate.mockResolvedValue({ sid: 'CAderived' });
 
