@@ -847,6 +847,105 @@ describe('Outbound Conversations', () => {
       mockAdapter.restore();
     });
 
+    describe('pre-created conversation on setup', () => {
+      const setupMessage = (customParameters?: Record<string, string>): Buffer =>
+        Buffer.from(
+          JSON.stringify({
+            type: 'setup',
+            sessionId: 'sess_pre',
+            callSid: 'CA_pre',
+            from: '+15559876543',
+            to: '+15551234567',
+            direction: 'inbound',
+            callType: 'PSTN',
+            callStatus: 'ringing',
+            accountSid: 'ACtest123456789',
+            ...(customParameters ? { customParameters } : {}),
+          })
+        );
+      const promptMessage = Buffer.from(
+        JSON.stringify({ type: 'prompt', voicePrompt: 'Hello', lang: 'en-US', last: true })
+      );
+      const listCalls = (adapter: MockAdapter): number =>
+        adapter.history.get.filter(r => /\/v2\/Conversations$/.test(r.url ?? '')).length;
+
+      it('registers the session from tacConversationId without polling', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter.onGet(/\/Participants/).reply(200, {
+          participants: [
+            {
+              id: 'PAcust',
+              conversationId: 'conv_pre',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              profileId: 'PFcust',
+              addresses: [{ channel: 'VOICE', address: '+15559876543' }],
+            },
+          ],
+        });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(listCalls(adapter)).toBe(0);
+        adapter.restore();
+      });
+
+      it('takes the VOICE customer when the conversation is grouped across channels', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        const customer = (id: string, address: string, channelName: string): object => ({
+          id,
+          conversationId: 'conv_pre',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          profileId: 'PFcust',
+          addresses: [{ channel: channelName, address }],
+        });
+        adapter.onGet(/\/Participants/).reply(200, {
+          participants: [
+            customer('PAsms', '+15550001111', 'SMS'),
+            customer('PAvoice', '+15559876543', 'VOICE'),
+          ],
+        });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(channel.getConversationSession('conv_pre')!.authorInfo?.address).toBe(
+          '+15559876543'
+        );
+        adapter.restore();
+      });
+
+      it('does not register a session when the conversation does not exist', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter.onGet(/\/Participants/).reply(404, { message: 'not found' });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_missing' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() =>
+          expect(adapter.history.get.some(r => /\/Participants/.test(r.url ?? ''))).toBe(true)
+        );
+        expect(channel.isConversationActive('conv_missing')).toBe(false);
+        adapter.restore();
+      });
+    });
+
     it('should fall back to from for authorInfo on inbound calls', async () => {
       const tac = await createTestTAC(getTestConfig());
       const channel = new VoiceChannel(tac);

@@ -334,6 +334,37 @@ describe('VoiceChannel', () => {
         expect(twiml).toContain('name="tacConversationId" value="conv_conversation_pre"');
       });
 
+      it('routes concurrent calls from one customer to the same conversation', async () => {
+        const tac = await createTestTAC(getVoiceConfig());
+        const create = vi
+          .spyOn(tac.getConversationClient()!, 'createOrReuseConversation')
+          .mockResolvedValueOnce({ conversation: { id: 'conv_shared' }, reused: false } as any)
+          .mockResolvedValueOnce({ conversation: { id: 'conv_shared' }, reused: true } as any);
+        const voiceChannel = new VoiceChannel(tac);
+
+        const [first, second] = await Promise.all([
+          voiceChannel.handleIncomingCall(request),
+          voiceChannel.handleIncomingCall({ ...request, callSid: 'CA456' }),
+        ]);
+
+        expect(create).toHaveBeenCalledTimes(2);
+        expect(first).toContain('conversationId="conv_shared"');
+        expect(second).toContain('conversationId="conv_shared"');
+      });
+
+      it('reuses a leaked empty conversation left by an earlier call', async () => {
+        const tac = await createTestTAC(getVoiceConfig());
+        vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockResolvedValue({
+          conversation: { id: 'conv_leaked' },
+          reused: true,
+        } as any);
+        const voiceChannel = new VoiceChannel(tac);
+
+        const twiml = await voiceChannel.handleIncomingCall(request);
+
+        expect(twiml).toContain('conversationId="conv_leaked"');
+      });
+
       it('falls back to the configuration when the create fails', async () => {
         const tac = await createTestTAC(getVoiceConfig());
         vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockRejectedValue(
