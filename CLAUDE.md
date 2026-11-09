@@ -24,10 +24,10 @@ npm run docs:watch     # Regenerate the docs on change
 ```
 packages/
   core/        # Central framework: TAC orchestrator, channels (SMS/WhatsApp/Chat/Voice),
-               #   API clients (Memory, Conversation, Knowledge), adapters
+               #   API clients (Memory, Conversation, Knowledge, Segment), adapters
                #   (MemoryPromptBuilder), config, types
   tools/       # Tool system: TACTool class, defineTool(), built-in tools
-               #   (memory, messaging, handoff, knowledge)
+               #   (memory, messaging, handoff, knowledge, segment)
   server/      # TACServer: Fastify wrapper with webhook + WebSocket handlers
 src/
   index.ts     # Root re-export of all three packages (single entry point)
@@ -67,12 +67,12 @@ getting_started/  # Example apps (OpenAI integration) + twilio-setup/ wizard (np
   - **Lifecycle analytics** ("Conversation Started"/"Conversation Ended") come from CO webhooks: `PARTICIPANT_ADDED` for the customer, and `CONVERSATION_UPDATED`/CLOSED with `duration_ms` = CO's `updatedAt − createdAt`. Each channel reports "Started" only for its own channel type (`BaseChannel.trackConversationStarted`). CLOSED carries no channel, and TAC makes no API call just for telemetry, so "Ended" has no `channel` (join to "Started" on `conversation_id`) and is reported once per process across channels (`TAC.reportConversationEnded`, 60 s dedupe). The CLOSED participant lookup runs only for a registered `onConversationEnded`, shared via `TAC.listParticipantsShared` (in-flight + 60 s). Relay-only and Media Streams voice report at session start/teardown instead. On chat, customers stay UNKNOWN, so each UNKNOWN non-agent participant counts as a start.
 - **API client architecture** (`packages/core/src/clients/`):
   - `BaseClient` abstract class provides common HTTP functionality using **axios**
-  - All API clients (Memory, Conversation, Knowledge) inherit from BaseClient
+  - All API clients (Memory, Conversation, Knowledge, Segment) inherit from BaseClient
   - **HTTP client**: axios with axios-retry for resilience
   - **Automatic retry**: 3 retries with exponential backoff; retries idempotent methods on 5xx responses and non-idempotent methods only on network/no-response failures
   - **Timeout**: Fixed 30-second timeout for all requests
   - **Redirect handling**: Follows up to 5 redirects; preserves Authorization header for same-origin redirects only (prevents credential leaks to malicious redirect targets)
-  - **Authentication**: Automatic Basic Auth using Twilio API credentials
+  - **Authentication**: Automatic Basic Auth using Twilio API credentials (`SegmentClient` overrides this with its Profile API token via the optional `authHeaderOverride` constructor argument, so Twilio credentials are never sent to Segment)
   - **User-Agent**: Automatic header injection (`twilio-agent-connect-typescript/{version}`)
   - **JSON handling**: Automatic serialization/deserialization
   - **Type safety**: Generic type parameters on `makeRequest<T>()` for better IDE support
@@ -83,6 +83,7 @@ getting_started/  # Example apps (OpenAI integration) + twilio-setup/ wizard (np
   - **MemoryPromptBuilder** (`prompt-builder.ts`): Builds formatted LLM prompts from memory and profile data
   - **AdapterOptions** (`options.ts`): Configuration options for profile trait filtering
   - **buildProfilePrompt** (`conversation-session-helpers.ts`): Helper to build profile section from ConversationSession
+  - **TACSegmentResponse** (`lib/tac-segment-response.ts`): Wraps Segment events and renders the "Recent Customer Activity" prompt section; `MemoryPromptBuilder` includes it when `options.segmentEvents` is set
 - **TACServer** (`packages/server/src/lib/server.ts`): Fastify-based server with default `welcomeGreeting` for voice calls; customizable via `conversationRelayConfig`
 
 ## Dependencies
@@ -143,6 +144,42 @@ const voiceChannel = new VoiceChannel(tac, { memoryMode: 'never' }); // default
 - **`"always"`**: Automatically fetches memory (using the message as query) for every inbound message. Available in `onMessageReady` callback's `memory` parameter.
 - **`"once"`** (**Voice only**): Fetches memory once at conversation start with no query and caches it on the session. Subsequent messages reuse the cache until the conversation becomes INACTIVE (Conversation Orchestrator refreshes memory on that transition), after which the next message re-fetches. The fetch also omits `conversationId`: with no query it would only trigger Memory's server-side query expansion (an LLM call — 1854ms vs 28ms measured), so results come back by recency. `"always"` still sends it. It needs a session outliving one request, which only voice has — on messaging channels it is deprecated (removed in 3.0): the `MessagingChannel` constructor warns and runs it as `"always"`.
 - `memoryConfig.communicationsLimit` therefore defaults to **0**, as in the Memory API and Python SDK. Above 0, Memory requires `conversationId` on every `/Recall`, so raising it makes `"once"` fetches fail with a 400 and fall back to the Conversations API.
+
+## Segment Event Context
+
+Segment events (page views, applications, purchases, ...) can be added to the agent's context. This is independent of Conversation Orchestrator, so it also works in voice-only mode.
+
+**Config** (all optional; the feature is off unless the first two are set):
+
+- `SEGMENT_SPACE_ID` — Engage space ID
+- `SEGMENT_PROFILE_API_TOKEN` — Profile API access token (distinct from the Segment Public API token)
+- `SEGMENT_REGION` — `us` (default) or `eu`; selects `profiles.segment.com` vs `profiles.euw1.segment.com`
+- `SEGMENT_IDENTIFIER_TYPE` — external ID type used for lookup (default `phone`; also `email`, `user_id`, ...). It must be an identifier in the space's identity resolution settings, otherwise lookups return nothing
+
+**Three ways to use it:**
+
+```typescript
+// 1. Automatic, per channel (like memoryMode). Fails open: errors and lookups slower than 2s are skipped.
+const sms = new SMSChannel(tac, { memoryMode: 'always', segmentMode: 'always' });
+tac.onMessageReady(({ memory, segmentEvents, session }) => {
+  const system = MemoryPromptBuilder.compose(base, memory, session, { segmentEvents });
+});
+
+// 2. Manual
+const events = await tac.retrieveSegmentEvents(session, { limit: 10, since: '2026-11-01T00:00:00Z' });
+
+// 3. LLM tool (on-demand detail); propertyAllowlist keeps PII out of the model
+const tool = createSegmentActivityTool(tac.getSegmentClient()!, tac.resolveSegmentIdentity(session), {
+  propertyAllowlist: ['product', 'step'],
+});
+```
+
+- `segmentMode` defaults to `'never'`. `tac.getSegmentClient()` is `null` when Segment is not configured.
+- **Identity**: `tac.resolveSegmentIdentity(session)` uses `authorInfo.address` (channel prefixes like `whatsapp:` stripped) with `SEGMENT_IDENTIFIER_TYPE`. Override with `TAC.create({ segmentIdentityResolver })` when Segment keys customers by something else.
+- **Profile API quirks**: page calls come back as `track` events named `Page Viewed` (not `type: "page"`). Event filtering (`eventNames`, `since`, exclusions) is client-side, and paging is capped at 5 pages of 100 events. An unknown profile (404) returns `[]`.
+- **Excluded by default**: Engage `Audience Entered` / `Audience Exited` events (`DEFAULT_EXCLUDED_SEGMENT_EVENTS`) are journey plumbing, not customer activity. Override with `excludeEventNames` (`[]` keeps everything); names passed in `eventNames` are never excluded.
+- **Prompt section**: repeated events collapse into counts ("Product Viewed ×3"), `identify` calls are skipped, output is capped at 10 lines, and without an allowlist only up to 5 scalar properties per event are shown.
+- Tests live in `tests/segment-*.test.ts`. Sample events can be sent with a Segment source write key to `https://api.segment.io/v1/batch`; keep write keys and tokens in the gitignored `getting_started/examples/.env`, never in chat.
 
 ## Pull Requests
 
