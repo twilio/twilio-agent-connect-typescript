@@ -102,6 +102,7 @@ export const BuiltInTools = {
   SEND_MESSAGE: 'send_message',
   HANDOFF: 'handoff',
   SEARCH_KNOWLEDGE: 'search_knowledge',
+  GET_CUSTOMER_ACTIVITY: 'get_customer_activity',
 } as const;
 
 export type BuiltInToolName = (typeof BuiltInTools)[keyof typeof BuiltInTools];

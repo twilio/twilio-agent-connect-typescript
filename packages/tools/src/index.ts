@@ -19,6 +19,7 @@ export {
   studioVoiceHandoffUrl,
   type HandoffResult,
 } from './built-in/handoff';
+export { createSegmentActivityTool, createSegmentTools } from './built-in/segment';
 export {
   createKnowledgeSearchTool,
   createKnowledgeSearchToolAsync,

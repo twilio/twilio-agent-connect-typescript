@@ -6,6 +6,8 @@ import {
   ConversationParticipantSchema,
   MemoryMode,
   MemoryModeSchema,
+  SegmentMode,
+  SegmentModeSchema,
   isConversationId,
   isProfileId,
   ProfileId,
@@ -16,6 +18,7 @@ import { Logger } from '../lib/logger';
 import { trackEvent } from '../lib/analytics';
 import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
+import { TACSegmentResponse } from '../lib/tac-segment-response';
 import { resolveOutboundSender } from '../util/outbound-sender';
 
 /**
@@ -26,6 +29,9 @@ export interface BaseChannelEvents {
   onConversationEnded?: (data: { session: ConversationSession }) => Promise<void> | void;
   onError?: (data: { error: Error; context?: Record<string, unknown> }) => void;
 }
+
+/** Max time to wait for Segment before replying without its context. */
+const SEGMENT_TIMEOUT_MS = 2000;
 
 /**
  * Base channel options
@@ -39,6 +45,14 @@ export interface BaseChannelOptions {
    * - "once" (Voice only): Memory is retrieved once at conversation start with no query (and no conversation id) and cached on the session. Subsequent prompts reuse the cache until the conversation becomes INACTIVE. Deprecated on messaging channels (removed in 3.0), which run it as "always".
    */
   memoryMode?: MemoryMode;
+
+  /**
+   * Segment event retrieval mode for this channel. Default is "never".
+   *
+   * - "never": Segment events are not automatically retrieved. Use the `get_customer_activity` tool or call `tac.retrieveSegmentEvents()` in callbacks.
+   * - "always": Recent Segment events are retrieved for every inbound message and available as `segmentEvents` in the `onMessageReady` callback. Failures and slow responses (>2s) are skipped so replies are never blocked.
+   */
+  segmentMode?: SegmentMode;
 
   /**
    * Maximum number of idempotency tokens to track for webhook deduplication.
@@ -69,6 +83,7 @@ export abstract class BaseChannel {
   /** TAC's forwarder to `tac.onConversationEnded`, while it fills the slot. */
   private tacConversationEndedForwarder: BaseChannelEvents['onConversationEnded'];
   protected readonly memoryMode: MemoryMode;
+  protected readonly segmentMode: SegmentMode;
   private readonly processedWebhookTokens: Set<string>;
   private readonly maxTrackedTokens: number;
 
@@ -89,6 +104,13 @@ export abstract class BaseChannel {
       );
     }
     this.memoryMode = parseResult.data;
+
+    const segmentToValidate = options?.segmentMode === undefined ? 'never' : options.segmentMode;
+    const segmentParse = SegmentModeSchema.safeParse(segmentToValidate);
+    if (!segmentParse.success) {
+      throw new Error(`Invalid segmentMode: "${segmentToValidate}". Must be "always" or "never".`);
+    }
+    this.segmentMode = segmentParse.data;
 
     // Validate and set deduplication capacity
     const capacity = options?.dedupCapacity ?? 10000;
@@ -528,6 +550,43 @@ export abstract class BaseChannel {
       );
       // Continue without memory rather than failing entire message processing
       return undefined;
+    }
+  }
+
+  /**
+   * Retrieve Segment events only when segmentMode === 'always'.
+   *
+   * Fails open: errors and responses slower than SEGMENT_TIMEOUT_MS resolve to undefined so the
+   * reply path is never blocked by Segment.
+   */
+  protected async retrieveSegmentEventsIfEnabled(
+    session: ConversationSession
+  ): Promise<TACSegmentResponse | undefined> {
+    if (this.segmentMode !== 'always' || !this.tac.getSegmentClient()) {
+      return undefined;
+    }
+
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const timeout = new Promise<undefined>(resolve => {
+        timer = setTimeout(() => resolve(undefined), SEGMENT_TIMEOUT_MS);
+      });
+      const events = await Promise.race([this.tac.retrieveSegmentEvents(session), timeout]);
+      if (!events) {
+        this.logger.warn(
+          { conversation_id: session.conversationId },
+          'Segment lookup timed out, continuing without Segment context'
+        );
+      }
+      return events;
+    } catch (error) {
+      this.logger.warn(
+        { err: error, conversation_id: session.conversationId },
+        'Failed to retrieve Segment events, continuing without Segment context'
+      );
+      return undefined;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

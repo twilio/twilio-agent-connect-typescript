@@ -71,6 +71,14 @@ export class TACConfig {
    * from this SID.
    */
   public readonly studioHandoffFlowSid?: string;
+  /** Segment Engage space ID (enables the Segment Profile API client together with the token). */
+  public readonly segmentSpaceId?: string;
+  /** Segment Profile API access token. */
+  public readonly segmentProfileApiToken?: string;
+  /** Segment data region (`us` or `eu`). */
+  public readonly segmentRegion: 'us' | 'eu';
+  /** External ID type used to look customers up in Segment (e.g. `phone`, `email`). */
+  public readonly segmentIdentifierType: string;
   constructor(data: TACConfigInput) {
     // Validate the configuration data
     const validatedConfig = TACConfigSchema.parse(data);
@@ -117,6 +125,14 @@ export class TACConfig {
     if (validatedConfig.studioHandoffFlowSid) {
       this.studioHandoffFlowSid = validatedConfig.studioHandoffFlowSid;
     }
+    if (validatedConfig.segmentSpaceId) {
+      this.segmentSpaceId = validatedConfig.segmentSpaceId;
+    }
+    if (validatedConfig.segmentProfileApiToken) {
+      this.segmentProfileApiToken = validatedConfig.segmentProfileApiToken;
+    }
+    this.segmentRegion = validatedConfig.segmentRegion;
+    this.segmentIdentifierType = validatedConfig.segmentIdentifierType;
   }
 
   /**
@@ -143,6 +159,10 @@ export class TACConfig {
    * - TWILIO_VOICE_CALL_EVENT_PATH: Base path for the call-event callbacks — status, async AMD, recording (default: /twilio/call-events)
    * - TWILIO_REGION: Twilio region subdomain for API routing (e.g. transforms base URLs to `https://{product}.{region}.twilio.com`)
    * - TWILIO_STUDIO_HANDOFF_FLOW_SID: Studio Flow SID used by createStudioHandoffTool for human handoff
+   * - SEGMENT_SPACE_ID: Segment Engage space ID (enables Segment event context with the token below)
+   * - SEGMENT_PROFILE_API_TOKEN: Segment Profile API access token
+   * - SEGMENT_REGION: Segment data region, 'us' (default) or 'eu'
+   * - SEGMENT_IDENTIFIER_TYPE: Segment external ID type for customer lookup (default 'phone')
    *
    * Multi-Value Senders:
    * - Each singular env var (TWILIO_PHONE_NUMBER, TWILIO_RCS_SENDER_ID,
@@ -318,6 +338,15 @@ export class TACConfig {
         process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
       region: process.env[EnvironmentVariables.TWILIO_REGION],
       studioHandoffFlowSid: process.env[EnvironmentVariables.TWILIO_STUDIO_HANDOFF_FLOW_SID],
+      segmentSpaceId: process.env[EnvironmentVariables.SEGMENT_SPACE_ID] || undefined,
+      segmentProfileApiToken:
+        process.env[EnvironmentVariables.SEGMENT_PROFILE_API_TOKEN] || undefined,
+      // Cast so the Zod enum rejects invalid values with a clear error
+      segmentRegion: (process.env[EnvironmentVariables.SEGMENT_REGION] || undefined) as
+        | 'us'
+        | 'eu'
+        | undefined,
+      segmentIdentifierType: process.env[EnvironmentVariables.SEGMENT_IDENTIFIER_TYPE] || undefined,
     };
 
     return new TACConfig(rawConfig);

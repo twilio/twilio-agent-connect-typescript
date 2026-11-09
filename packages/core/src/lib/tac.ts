@@ -7,12 +7,16 @@ import {
   ChannelType,
   OperatorProcessingResult,
   ConversationParticipant,
+  SegmentEventsOptions,
+  SegmentIdentity,
 } from '../types';
 import { TACMemoryResponse } from './tac-memory-response';
+import { TACSegmentResponse } from './tac-segment-response';
 import { TACConfig } from './config';
 import { MemoryClient } from '../clients/memory';
 import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
+import { SegmentClient } from '../clients/segment';
 import { BaseChannel } from '../channels/base';
 import { Logger, createLogger } from './logger';
 import { shutdownAnalytics, trackEvent } from './analytics';
@@ -37,6 +41,12 @@ const ENDED_REPORT_TTL_MS = 60_000;
 export interface TACOptions {
   config?: TACConfig | TACConfigInput;
   logger?: Logger;
+  /**
+   * Maps a session to the customer's Segment identity. Defaults to the session's
+   * `authorInfo.address` combined with the configured `segmentIdentifierType`.
+   * Use it when Segment keys customers by something else (email, user_id, ...).
+   */
+  segmentIdentityResolver?: (session: ConversationSession) => SegmentIdentity | undefined;
 }
 
 /**
@@ -48,6 +58,8 @@ export type MessageReadyCallback = (params: {
   message: string;
   author: string;
   memory: TACMemoryResponse | undefined;
+  /** Segment events for the customer; only set when the channel has `segmentMode: 'always'`. */
+  segmentEvents?: TACSegmentResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
   abortSignal?: AbortSignal;
@@ -91,6 +103,10 @@ export class TAC {
   public readonly logger: Logger;
   private memoryClient: MemoryClient | null = null;
   private knowledgeClient: KnowledgeClient | null = null;
+  private segmentClient: SegmentClient | null = null;
+  private readonly segmentIdentityResolver:
+    | ((session: ConversationSession) => SegmentIdentity | undefined)
+    | undefined;
   private conversationClient: ConversationClient | null = null;
   private readonly channels: Map<ChannelType, BaseChannel>;
   private cintelProcessor?: OperatorResultProcessor;
@@ -128,11 +144,17 @@ export class TAC {
 
     this.config = finalConfig;
     this.logger = finalLogger;
+    this.segmentIdentityResolver = options.segmentIdentityResolver;
     this.channels = new Map();
   }
 
   public static async create(options: TACOptions = {}): Promise<TAC> {
     const tac = new TAC(TAC.FACTORY_TOKEN, options);
+
+    // Segment is independent of Conversation Orchestrator, so it is available in voice-only mode too
+    if (SegmentClient.isConfigured(tac.config)) {
+      tac.segmentClient = new SegmentClient(tac.config, tac.logger.child({ component: 'segment' }));
+    }
 
     if (!tac.config.isOrchestratorEnabled()) {
       tac.logger.info(
@@ -241,6 +263,7 @@ export class TAC {
         message: string;
         author: string;
         userMemory: TACMemoryResponse | undefined;
+        segmentEvents?: TACSegmentResponse | undefined;
         session?: ConversationSession;
       }): Promise<void> => {
         await this.handleMessageReady({ ...data, channelType: channel.channelType });
@@ -255,12 +278,14 @@ export class TAC {
         conversationId,
         transcript,
         userMemory,
+        segmentEvents,
         session,
         abortSignal,
       }: {
         conversationId: ConversationId;
         transcript: string;
         userMemory?: TACMemoryResponse;
+        segmentEvents?: TACSegmentResponse;
         session?: ConversationSession;
         abortSignal: AbortSignal;
       }): Promise<void> => {
@@ -273,6 +298,7 @@ export class TAC {
             message: transcript,
             author: 'user',
             userMemory,
+            segmentEvents,
             channelType: channel.channelType,
             session: eventSession,
             abortSignal,
@@ -340,6 +366,7 @@ export class TAC {
     message: string;
     author: string;
     userMemory: TACMemoryResponse | undefined;
+    segmentEvents?: TACSegmentResponse | undefined;
     channelType: ChannelType;
     /**
      * The turn's session. Messaging channels keep no session store, so they
@@ -398,6 +425,7 @@ export class TAC {
           message: data.message,
           author: data.author,
           memory: memory ?? undefined,
+          ...(data.segmentEvents !== undefined && { segmentEvents: data.segmentEvents }),
           session,
           channel: channel.channelType,
           ...(data.abortSignal !== undefined && { abortSignal: data.abortSignal }),
@@ -606,6 +634,14 @@ export class TAC {
   }
 
   /**
+   * Get Segment Profile API client for customer event history.
+   * Returns null when `SEGMENT_SPACE_ID` / `SEGMENT_PROFILE_API_TOKEN` are not configured.
+   */
+  public getSegmentClient(): SegmentClient | null {
+    return this.segmentClient;
+  }
+
+  /**
    * Get knowledge client for knowledge base operations.
    * Returns null in voice-only mode.
    */
@@ -767,6 +803,48 @@ export class TAC {
         throw fallbackError;
       }
     }
+  }
+
+  /**
+   * Retrieve the customer's recent Segment events for a session.
+   *
+   * Returns an empty response when Segment is not configured or no identity can be derived
+   * from the session. Throws if the Segment request itself fails.
+   *
+   * @param session - Conversation session identifying the customer
+   * @param options - Limit and filters (see `SegmentEventsOptions`)
+   */
+  public async retrieveSegmentEvents(
+    session: ConversationSession,
+    options?: SegmentEventsOptions
+  ): Promise<TACSegmentResponse> {
+    if (!this.segmentClient) {
+      return new TACSegmentResponse([]);
+    }
+
+    const identity = this.resolveSegmentIdentity(session);
+    if (!identity) {
+      this.logger.debug(
+        { conversation_id: session.conversationId },
+        'No Segment identity available for session, skipping Segment lookup'
+      );
+      return new TACSegmentResponse([]);
+    }
+
+    const events = await this.segmentClient.getProfileEvents(identity, options);
+    return new TACSegmentResponse(events);
+  }
+
+  /**
+   * Resolve the Segment identity for a session: custom resolver first, otherwise the
+   * author address (channel prefixes like `whatsapp:` stripped) as the configured identifier type.
+   */
+  public resolveSegmentIdentity(session: ConversationSession): SegmentIdentity | undefined {
+    if (this.segmentIdentityResolver) {
+      return this.segmentIdentityResolver(session);
+    }
+    const address = session.authorInfo?.address?.replace(/^(whatsapp|rcs|sms):/i, '');
+    return address ? { type: this.config.segmentIdentifierType, value: address } : undefined;
   }
 
   /**

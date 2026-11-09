@@ -32,6 +32,7 @@ import { warnDeprecated } from '../../lib/deprecation';
 import { trackEvent } from '../../lib/analytics';
 import type { Logger } from '../../lib/logger';
 import type { TACMemoryResponse } from '../../lib/tac-memory-response';
+import type { TACSegmentResponse } from '../../lib/tac-segment-response';
 import { ConversationRelayProviderConfig } from './conversation-relay/config';
 import type { ConversationRelayProviderConfigOptions } from './conversation-relay/config';
 import { ConversationRelayProvider } from './conversation-relay/provider';
@@ -113,6 +114,7 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
     conversationId: ConversationId;
     transcript: string;
     userMemory?: TACMemoryResponse;
+    segmentEvents?: TACSegmentResponse;
     session?: ConversationSession;
     abortSignal: AbortSignal;
   }) => Promise<void> | void;
@@ -485,6 +487,18 @@ export class VoiceChannel extends BaseChannel {
     query?: string
   ): Promise<TACMemoryResponse | undefined> {
     return this.retrieveMemoryIfEnabled(session, query);
+  }
+
+  /**
+   * Retrieve Segment events when `segmentMode` calls for it. Forwards to
+   * `BaseChannel.retrieveSegmentEventsIfEnabled`.
+   *
+   * @internal
+   */
+  public retrieveSegmentEventsInternal(
+    session: ConversationSession
+  ): Promise<TACSegmentResponse | undefined> {
+    return this.retrieveSegmentEventsIfEnabled(session);
   }
 
   /**

@@ -485,10 +485,13 @@ export class ConversationRelayProvider extends VoiceProvider {
     // Get session for memory retrieval
     const session = this.channel.getConversationSession(conversationId);
 
-    // Retrieve memory if enabled via memoryMode
-    const userMemory = session
-      ? await this.channel.retrieveMemoryInternal(session, transcript)
-      : undefined;
+    // Retrieve memory and Segment events (in parallel) if enabled via memoryMode / segmentMode
+    const [userMemory, segmentEvents] = session
+      ? await Promise.all([
+          this.channel.retrieveMemoryInternal(session, transcript),
+          this.channel.retrieveSegmentEventsInternal(session),
+        ])
+      : [undefined, undefined];
 
     const voiceCallbacks = this.channel.getVoiceCallbacks();
     if (voiceCallbacks.onPrompt) {
@@ -497,6 +500,7 @@ export class ConversationRelayProvider extends VoiceProvider {
         transcript,
         abortSignal: streamTask.controller.signal,
         ...(userMemory !== undefined && { userMemory }),
+        ...(segmentEvents !== undefined && { segmentEvents }),
         ...(session !== undefined && { session }),
       });
     }

@@ -35,11 +35,12 @@ export class MemoryPromptBuilder {
    * combining memory with your system prompt. Use `build()` only if you need the raw
    * memory content without a system prompt.
    *
-   * Generates a structured prompt with up to four sections:
+   * Generates a structured prompt with up to five sections:
    * - **Customer Profile**: Profile traits (filtered by options if provided)
    * - **Key Observations**: Important notes from previous interactions
    * - **Past Conversation Summaries**: Summaries of previous conversations
    * - **Recent Message History**: Recent communications with the customer
+   * - **Recent Customer Activity**: Segment events (via `options.segmentEvents`)
    *
    * Sections with no data are omitted. If no data is available at all, returns an empty string.
    *
@@ -69,7 +70,8 @@ export class MemoryPromptBuilder {
     context?: ConversationSession | null,
     options?: AdapterOptions
   ): string {
-    if (!memoryResponse && (!context || !context.profile)) {
+    const segmentEvents = options?.segmentEvents;
+    if (!memoryResponse && (!context || !context.profile) && !segmentEvents) {
       return '';
     }
 
@@ -86,6 +88,18 @@ export class MemoryPromptBuilder {
     if (memoryResponse) {
       const memorySections = memoryResponse.buildMemoryPrompts();
       sections.push(...memorySections);
+    }
+
+    if (segmentEvents) {
+      const segmentSection = segmentEvents.buildPrompt({
+        ...(options.segmentMaxLines !== undefined && { maxLines: options.segmentMaxLines }),
+        ...(options.segmentPropertyAllowlist !== undefined && {
+          propertyAllowlist: options.segmentPropertyAllowlist,
+        }),
+      });
+      if (segmentSection) {
+        sections.push(segmentSection);
+      }
     }
 
     if (sections.length === 0) {

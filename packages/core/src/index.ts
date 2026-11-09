@@ -30,6 +30,7 @@ export { BaseClient } from './clients/base';
 export { MemoryClient } from './clients/memory';
 export { ConversationClient } from './clients/conversation';
 export { KnowledgeClient } from './clients/knowledge';
+export { SegmentClient } from './clients/segment';
 
 // Channel implementations
 export { BaseChannel } from './channels/base';
@@ -116,6 +117,10 @@ export { OperatorResultProcessor } from './lib/operator-result-processor';
 
 // TAC Memory Response wrapper
 export { TACMemoryResponse } from './lib/tac-memory-response';
+
+// TAC Segment Response wrapper
+export { TACSegmentResponse } from './lib/tac-segment-response';
+export type { SegmentPromptOptions } from './lib/tac-segment-response';
 
 // Conversation session helpers
 export { conversationMetadata } from './lib/conversation-session-helpers';

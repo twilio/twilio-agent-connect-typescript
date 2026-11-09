@@ -50,5 +50,8 @@ export * from './tac';
 // Knowledge types
 export * from './knowledge';
 
+// Segment types
+export * from './segment';
+
 // Re-export Zod for convenience
 export { z } from 'zod';

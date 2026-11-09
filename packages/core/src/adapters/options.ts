@@ -1,7 +1,21 @@
+import { TACSegmentResponse } from '../lib/tac-segment-response';
+
 /**
  * Configuration options for adapter utilities like MemoryPromptBuilder.
  */
 export interface AdapterOptions {
+  /**
+   * Segment events from `TAC.retrieveSegmentEvents()` (or the `segmentEvents` callback param).
+   * When non-empty, a "Recent Customer Activity" section is added to the prompt.
+   */
+  segmentEvents?: TACSegmentResponse | null;
+
+  /** Maximum activity lines in the Segment section (default 10). */
+  segmentMaxLines?: number;
+
+  /** Event properties shown in the Segment section. Omit to show up to 5 scalar properties. */
+  segmentPropertyAllowlist?: string[];
+
   /**
    * Optional array of profile trait group names to include in the output.
    *

@@ -24,6 +24,7 @@ import { warnDeprecated } from '../lib/deprecation';
 import { maskAddress } from '../util/log-redaction';
 import { fitConversationMetadata } from '../util/conversation-metadata';
 import { elapsedMs } from '../util/timestamps';
+import type { TACSegmentResponse } from '../lib/tac-segment-response';
 
 /**
  * Participant types that represent TAC itself at TAC's (channel, address).
@@ -69,6 +70,8 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
     author: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Memory structure is dynamic and defined by user
     userMemory: any;
+    /** Recent Segment events; set only when `segmentMode` is "always". */
+    segmentEvents?: TACSegmentResponse | undefined;
     /** This turn's session, derived from the webhook. */
     session: ConversationSession;
   }) => void;
@@ -765,8 +768,11 @@ export abstract class MessagingChannel extends BaseChannel {
       return;
     }
 
-    // Retrieve user memory if enabled via memoryMode
-    const userMemory = await this.retrieveMemoryIfEnabled(session, message);
+    // Retrieve user memory and Segment events (in parallel) if enabled via memoryMode / segmentMode
+    const [userMemory, segmentEvents] = await Promise.all([
+      this.retrieveMemoryIfEnabled(session, message),
+      this.retrieveSegmentEventsIfEnabled(session),
+    ]);
 
     // Invoke message received callback with memory context
     if (this.messagingCallbacks.onMessageReceived) {
@@ -777,6 +783,7 @@ export abstract class MessagingChannel extends BaseChannel {
         message,
         author,
         userMemory,
+        segmentEvents,
         session,
       });
     }

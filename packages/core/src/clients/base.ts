@@ -25,12 +25,17 @@ export abstract class BaseClient {
   protected readonly logger: Logger;
   protected readonly axiosInstance: AxiosInstance;
 
-  constructor(baseUrl: string, config: TACConfig, logger?: Logger) {
+  /**
+   * @param authHeaderOverride - Full `Authorization` header value for services that do not use
+   *   Twilio API credentials (e.g. Segment). Defaults to Basic Auth with the Twilio API key/secret.
+   */
+  constructor(baseUrl: string, config: TACConfig, logger?: Logger, authHeaderOverride?: string) {
     this.baseUrl = baseUrl;
     this.logger = logger || createLogger({ name: this.constructor.name });
 
     // Create Authorization header for Basic Auth
     const authHeader =
+      authHeaderOverride ??
       'Basic ' + Buffer.from(`${config.apiKey}:${config.apiSecret}`).toString('base64');
 
     // Extract origin from baseUrl for same-origin check

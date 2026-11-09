@@ -242,6 +242,23 @@ export const TACConfigSchema = z
         'Invalid Studio Flow SID format (expected FW followed by 32 hex chars)'
       )
       .optional(),
+    /**
+     * Segment Engage space ID. Together with `segmentProfileApiToken` this enables the
+     * Segment Profile API client (customer event history as agent context).
+     */
+    segmentSpaceId: z.string().min(1).optional(),
+    /** Segment Profile API access token (distinct from the Segment Public API token). */
+    segmentProfileApiToken: z.string().min(1).optional(),
+    /** Segment data region; selects the Profile API host. Defaults to `us`. */
+    segmentRegion: z.enum(['us', 'eu']).default('us'),
+    /**
+     * Segment external ID type used to look up a customer (e.g. `phone`, `email`, `user_id`).
+     * Must be an identifier configured in the space's identity resolution settings.
+     */
+    segmentIdentifierType: z
+      .string()
+      .regex(/^[a-z_][a-z0-9_.]*$/i, 'Invalid Segment identifier type')
+      .default('phone'),
   })
   // Reconcile each `(default, allowlist)` sender pair: back-fill whichever side
   // is missing, keep the default first, de-duplicate. `phoneNumber` requires at
@@ -321,4 +338,8 @@ export const EnvironmentVariables = {
   TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: 'TWILIO_TAC_CI_SUMMARY_OPERATOR_SID',
   TWILIO_REGION: 'TWILIO_REGION',
   TWILIO_STUDIO_HANDOFF_FLOW_SID: 'TWILIO_STUDIO_HANDOFF_FLOW_SID',
+  SEGMENT_SPACE_ID: 'SEGMENT_SPACE_ID',
+  SEGMENT_PROFILE_API_TOKEN: 'SEGMENT_PROFILE_API_TOKEN',
+  SEGMENT_REGION: 'SEGMENT_REGION',
+  SEGMENT_IDENTIFIER_TYPE: 'SEGMENT_IDENTIFIER_TYPE',
 } as const;
