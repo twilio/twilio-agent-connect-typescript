@@ -14,6 +14,8 @@ import {
   SMSChannel,
   ConversationSession,
   TACMemoryResponse,
+  TACSegmentResponse,
+  createSegmentActivityTool,
   ConversationId,
   ChannelType,
   ProfileId,
@@ -30,8 +32,10 @@ const openai = new OpenAI({
 });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
-const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once' });
-const smsChannel = new SMSChannel(tac, { memoryMode: 'always' });
+// segmentMode only takes effect when SEGMENT_SPACE_ID / SEGMENT_PROFILE_API_TOKEN are set;
+// otherwise the channels skip the Segment lookup.
+const voiceChannel = new VoiceChannel(tac, { memoryMode: 'once', segmentMode: 'always' });
+const smsChannel = new SMSChannel(tac, { memoryMode: 'always', segmentMode: 'always' });
 
 // Store conversation history per conversation
 const conversationMessages: Record<string, OpenAI.Chat.ChatCompletionMessageParam[]> = {};
@@ -42,10 +46,17 @@ async function handleMessageReady(params: {
   message: string;
   author: string;
   memory: TACMemoryResponse | undefined;
+  segmentEvents?: TACSegmentResponse | undefined;
   session: ConversationSession;
   channel: ChannelType;
 }): Promise<string> {
-  const { conversationId, message, memory: memoryResponse, session: context } = params;
+  const {
+    conversationId,
+    message,
+    memory: memoryResponse,
+    segmentEvents,
+    session: context,
+  } = params;
   const convId = conversationId as string;
 
   try {
@@ -63,17 +74,52 @@ async function handleMessageReady(params: {
       'Keep responses short and conversational — a sentence or two. ' +
       'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
       'spoken aloud or sent as plain text.';
-    const systemContent = MemoryPromptBuilder.compose(basePrompt, memoryResponse, context);
+    const systemContent = MemoryPromptBuilder.compose(basePrompt, memoryResponse, context, {
+      segmentEvents,
+    });
+
+    // Let the LLM dig deeper into Segment activity on demand (only when Segment is configured)
+    const segmentClient = tac.getSegmentClient();
+    const activityTool = segmentClient
+      ? createSegmentActivityTool(segmentClient, tac.resolveSegmentIdentity(context))
+      : undefined;
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemContent },
       ...conversationMessages[convId],
     ];
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-5.4-mini',
-      messages,
-    });
+    const tools = activityTool ? [activityTool.toOpenAIFormat()] : undefined;
+    const createCompletion = (): Promise<OpenAI.Chat.ChatCompletion> =>
+      openai.chat.completions.create({
+        model: 'gpt-5.4-mini',
+        messages,
+        ...(tools && { tools: tools as OpenAI.Chat.ChatCompletionTool[] }),
+      });
+
+    let response = await createCompletion();
+
+    // Tool-call loop (bounded): run requested tools, feed results back, ask again
+    for (let round = 0; round < 3 && activityTool; round++) {
+      const assistantMessage = response.choices[0]?.message;
+      const toolCalls = assistantMessage?.tool_calls?.filter(call => call.type === 'function');
+      if (!assistantMessage || !toolCalls?.length) break;
+
+      messages.push(assistantMessage);
+      for (const call of toolCalls) {
+        let result: string;
+        try {
+          const args = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
+          result = JSON.stringify(await activityTool.implementation(args));
+        } catch (toolError) {
+          result = JSON.stringify({
+            error: toolError instanceof Error ? toolError.message : String(toolError),
+          });
+        }
+        messages.push({ role: 'tool', tool_call_id: call.id, content: result });
+      }
+      response = await createCompletion();
+    }
 
     const llmResponse = response.choices[0]?.message?.content ?? '';
 

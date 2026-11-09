@@ -7,6 +7,7 @@ This example demonstrates how to use OpenAI with Twilio Agent Connect (TAC) to b
 - **Multi-Channel Support**: Handles both SMS and Voice conversations in a single application
 - **OpenAI Integration**: Uses GPT-4o-mini for intelligent, context-aware responses
 - **Memory Integration**: Automatically retrieves user profiles and conversation history from Twilio Memory
+- **Segment Activity (optional)**: When Segment is configured, adds the customer's recent Segment events (page views, applications, ...) to the prompt and lets the model look up more detail with the `get_customer_activity` tool
 - **Profile Personalization**: Incorporates user profile traits into responses for personalized interactions
 - **Conversation History**: Maintains context across multiple message exchanges
 
@@ -153,6 +154,10 @@ The example uses `MemoryPromptBuilder` to automatically format memory data into 
 - **Recent Message History**: Recent communications with the customer
 
 This context is injected as a system message to help the AI provide context-aware responses.
+
+### Segment Event Context (optional)
+
+Set `SEGMENT_SPACE_ID` and `SEGMENT_PROFILE_API_TOKEN` in `../.env` (see `../.env.example`) to turn this on. Both channels use `segmentMode: 'always'`, so every inbound message fetches the customer's recent events from the Segment Profile API, looked up by the caller's phone number (`SEGMENT_IDENTIFIER_TYPE=phone`). `MemoryPromptBuilder` renders them as a "Recent Customer Activity" section, and `createSegmentActivityTool` lets the model query more detail on demand. Lookups fail open: if Segment is slow or down, the reply is sent without them. Without the Segment variables the example behaves as before.
 
 ### Conversation History
 
