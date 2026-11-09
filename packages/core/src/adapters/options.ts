@@ -8,7 +8,7 @@ export interface AdapterOptions {
    * Segment events from `TAC.retrieveSegmentEvents()` (or the `segmentEvents` callback param).
    * When non-empty, a "Recent Customer Activity" section is added to the prompt.
    */
-  segmentEvents?: TACSegmentResponse | null;
+  segmentEvents?: TACSegmentResponse | null | undefined;
 
   /** Maximum activity lines in the Segment section (default 10). */
   segmentMaxLines?: number;
