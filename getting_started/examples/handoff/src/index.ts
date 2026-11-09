@@ -10,7 +10,7 @@
  */
 
 import { config } from 'dotenv';
-import { Agent, AgentInputItem, run, setTracingDisabled } from '@openai/agents';
+import { Agent, AgentInputItem, Tool, run, setTracingDisabled } from '@openai/agents';
 import {
   TAC,
   TACConfig,
@@ -70,7 +70,7 @@ async function handleMessageReady(params: {
     name: 'Customer Service Agent',
     instructions: SYSTEM_INSTRUCTIONS,
     model: 'gpt-5.4-mini',
-    tools: [await handoffTool.toOpenAIAgentsSDKTool()],
+    tools: [(await handoffTool.toOpenAIAgentsSDKTool()) as Tool],
   });
 
   const history = conversationHistory[convId] ?? [];

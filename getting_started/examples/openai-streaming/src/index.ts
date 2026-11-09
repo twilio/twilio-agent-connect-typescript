@@ -56,14 +56,14 @@ tac.onMessageReady(async ({ conversationId, message, memory, session, channel, a
     });
 
     if (channel === 'voice') {
-      if (abortSignal?.aborted) return;
+      if (abortSignal?.aborted) return null;
 
       const streamedResult = await run(agent, conversationHistory[convId], {
         stream: true,
-        signal: abortSignal,
+        ...(abortSignal && { signal: abortSignal }),
       });
 
-      async function* tokenStream() {
+      async function* tokenStream(): AsyncGenerator<string> {
         for await (const chunk of streamedResult.toTextStream()) {
           console.debug('[stream] token:', chunk);
           yield chunk;
@@ -82,23 +82,27 @@ tac.onMessageReady(async ({ conversationId, message, memory, session, channel, a
         conversationHistory[convId].push({
           type: 'message',
           role: 'assistant',
+          status: 'completed',
           content: [{ type: 'output_text', text: fullResponse }],
         });
       }
+      return null;
     } else {
       const result = await run(agent, conversationHistory[convId]);
 
       conversationHistory[convId].push({
         type: 'message',
         role: 'assistant',
-        content: [{ type: 'output_text', text: result.finalOutput }],
+        status: 'completed',
+        content: [{ type: 'output_text', text: result.finalOutput ?? '' }],
       });
 
-      return result.finalOutput;
+      return result.finalOutput ?? '';
     }
   } catch (error) {
-    if (abortSignal?.aborted) return;
+    if (abortSignal?.aborted) return null;
     console.error(`Error processing message for conversation ${convId}:`, error);
+    return null;
   }
 });
 
@@ -113,6 +117,7 @@ tac.onInterrupt(({ conversationId, utteranceUntilInterrupt }) => {
       history[i] = {
         type: 'message',
         role: 'assistant',
+        status: 'completed',
         content: [{ type: 'output_text', text: utteranceUntilInterrupt }],
       };
       history.splice(i + 1);
