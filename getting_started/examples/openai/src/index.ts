@@ -48,6 +48,8 @@ async function handleMessageReady(params: {
   const { conversationId, message, memory: memoryResponse, session: context } = params;
   const convId = conversationId as string;
 
+  console.log('PARAMS:', { ...params });
+
   try {
     if (!conversationMessages[convId]) {
       conversationMessages[convId] = [];
@@ -58,11 +60,24 @@ async function handleMessageReady(params: {
       content: message,
     });
 
-    const basePrompt =
-      'You are a customer service agent speaking with a user over voice or SMS. ' +
-      'Keep responses short and conversational — a sentence or two. ' +
-      'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
-      'spoken aloud or sent as plain text.';
+    let basePrompt: string;
+
+    if (context.channel === 'voice') {
+      basePrompt =
+        'You are a customer service agent speaking with a user over voice. ' +
+        'Keep responses short and conversational — a sentence or two. ' +
+        'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
+        'spoken aloud or sent as plain text. Be sure to reference that this ' +
+        'response is AI-generated and spoken back through the voice channel';
+    } else {
+      basePrompt =
+        'You are a customer service agent speaking with a user over SMS. ' +
+        'Keep responses short and conversational — a sentence or two. ' +
+        'Do not use markdown, asterisks, bullets, or emojis; your words will be ' +
+        'spoken aloud or sent as plain text.  Be sure to reference that this ' +
+        'response is AI-generated and sent back through the SMS channel';
+    }
+
     const systemContent = MemoryPromptBuilder.compose(basePrompt, memoryResponse, context);
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -94,6 +109,10 @@ tac.onMessageReady(handleMessageReady);
 
 // Create and start server
 const server = new TACServer(tac, { voiceChannel, messagingChannels: [smsChannel] });
+
+server.fastify.post('/intelligence', req => {
+  console.log('intelligence hit req:', { ...(req.body as object) });
+});
 
 server
   .start()
