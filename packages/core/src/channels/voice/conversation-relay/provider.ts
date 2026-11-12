@@ -40,6 +40,9 @@ const POLL_ATTEMPTS = 10;
 const POLL_BASE_DELAY_MS = 250;
 const POLL_MAX_DELAY_MS = 1500;
 
+/** `<Parameter>` carrying a pre-created conversation ID to the WebSocket `setup` message. */
+const PRECREATED_CONVERSATION_PARAMETER = 'tacConversationId';
+
 /**
  * A single in-flight streaming response, with the {@link AbortController} that
  * cancels it and whether any token has been written to the transport yet.
@@ -162,8 +165,28 @@ export class ConversationRelayProvider extends VoiceProvider {
       );
     }
 
-    const conversation = conversations[0]!;
-    const conversationId = conversation.id as ConversationId;
+    return this.registerOrchestratedConversation(
+      conversations[0]!.id as ConversationId,
+      callSid,
+      fromNumber,
+      ws
+    );
+  }
+
+  /**
+   * Register the local session and WebSocket for a known orchestrated
+   * conversation, reading the caller's address and profile from its participants.
+   */
+  private async registerOrchestratedConversation(
+    conversationId: ConversationId,
+    callSid: string,
+    fromNumber: string | null,
+    ws: WebSocket
+  ): Promise<ConversationId> {
+    const conversationClient = this.channel.getConversationClientInternal();
+    if (!conversationClient) {
+      throw new Error('Conversation client is required in orchestrated mode');
+    }
 
     const participants = await conversationClient.listParticipants(conversationId);
 
@@ -340,7 +363,16 @@ export class ConversationRelayProvider extends VoiceProvider {
                   { call_sid: callSid },
                   'Starting background conversation initialization'
                 );
-                initPromise = this.initializeOrchestratedConversation(callSid, fromNumber, ws);
+                const preCreatedId = message.customParameters?.[PRECREATED_CONVERSATION_PARAMETER];
+                initPromise =
+                  typeof preCreatedId === 'string' && preCreatedId.length > 0
+                    ? this.registerOrchestratedConversation(
+                        preCreatedId as ConversationId,
+                        callSid,
+                        fromNumber,
+                        ws
+                      )
+                    : this.initializeOrchestratedConversation(callSid, fromNumber, ws);
                 // Marks it handled; whoever claims it still sees the rejection.
                 void initPromise.catch(() => undefined);
               }
@@ -913,10 +945,86 @@ export class ConversationRelayProvider extends VoiceProvider {
       );
     }
 
-    return this.twimlBuilder.build('handleIncomingCall', {
-      host,
-      perCall: customized,
-    });
+    const preCreatedId =
+      customized?.conversationId === undefined && host?.conversationId === undefined
+        ? await this.preCreateConversation(
+            twimlRequest?.callSid,
+            twimlRequest?.from,
+            twimlRequest?.to
+          )
+        : undefined;
+    const perCall = preCreatedId
+      ? this.withPreCreatedConversation(customized, preCreatedId)
+      : customized;
+
+    return this.twimlBuilder.build('handleIncomingCall', { host, perCall });
+  }
+
+  /**
+   * TwiML options that route the call to `conversationId`. The configuration is
+   * dropped because ConversationRelay applies its grouping rules and ignores
+   * `conversationId` when both are present; the conversation already carries
+   * the configuration it was created with.
+   */
+  private withPreCreatedConversation(
+    options: VoiceTwiMLOptionsConversationRelay | undefined,
+    conversationId: ConversationId
+  ): VoiceTwiMLOptionsConversationRelay {
+    return {
+      ...options,
+      conversationId,
+      conversationConfiguration: undefined,
+      customParameters: {
+        ...options?.customParameters,
+        [PRECREATED_CONVERSATION_PARAMETER]: conversationId,
+      },
+    };
+  }
+
+  /**
+   * Create (or reuse, on a 409) the conversation for a call before its TwiML is
+   * returned, so ConversationRelay routes to it instead of creating one on the
+   * first communication. Returns undefined outside orchestrated mode or on
+   * failure, leaving ConversationRelay to create it.
+   */
+  private async preCreateConversation(
+    callSid: string | undefined,
+    customerAddress: string | undefined,
+    agentAddress: string | undefined
+  ): Promise<ConversationId | undefined> {
+    const conversationClient = this.channel.getConversationClientInternal();
+    if (
+      !this.channel.isOrchestratorEnabledInternal() ||
+      !conversationClient ||
+      !customerAddress ||
+      !agentAddress
+    ) {
+      return undefined;
+    }
+
+    const startedAt = Date.now();
+    try {
+      const { conversation, reused } = await conversationClient.createOrReuseConversation([
+        { type: 'CUSTOMER', addresses: [{ channel: 'VOICE', address: customerAddress }] },
+        { type: 'AI_AGENT', addresses: [{ channel: 'VOICE', address: agentAddress }] },
+      ]);
+      this.logger.info(
+        {
+          call_sid: callSid,
+          conversation_id: conversation.id,
+          reused,
+          create_ms: Date.now() - startedAt,
+        },
+        'Pre-created voice conversation'
+      );
+      return conversation.id as ConversationId;
+    } catch (err) {
+      this.logger.warn(
+        { err, call_sid: callSid },
+        'Voice conversation pre-create failed, ConversationRelay will create it on the first communication'
+      );
+      return undefined;
+    }
   }
 
   /**
@@ -1008,9 +1116,11 @@ export class ConversationRelayProvider extends VoiceProvider {
    * Initiate an outbound voice conversation
    *
    * Places an outbound call with inline TwiML that connects to ConversationRelay.
-   * The conversationConfiguration attribute tells CO to create and manage the
-   * conversation during passive hydration. The session is initialized when the
-   * background callSid lookup started at WebSocket setup finds it.
+   * In orchestrated mode the conversation is created (or reused) first and the
+   * TwiML routes the call to it by `conversationId`; if that create fails, the
+   * TwiML carries `conversationConfiguration` instead and CO creates the
+   * conversation on the call's first communication, found by the background
+   * callSid lookup started at WebSocket setup.
    *
    * TwiML fields are merged per-field, highest precedence first:
    *   1. `options.twimlOptions` — per-call overrides
@@ -1048,8 +1158,11 @@ export class ConversationRelayProvider extends VoiceProvider {
       // dedicated per-call outbound override and wins over any websocketUrl
       // that came through the layered twimlOptions merge; both fall back to the
       // TACConfig-derived URL.
+      const preCreatedId = await this.preCreateConversation(undefined, validated.to, fromNumber);
       const twiml = this.twimlBuilder.build('initiateOutboundConversation', {
-        perCall: validated.twimlOptions,
+        perCall: preCreatedId
+          ? this.withPreCreatedConversation(validated.twimlOptions, preCreatedId)
+          : validated.twimlOptions,
         websocketUrl: validated.websocketUrl,
       });
       const callParams = this.buildCallParams(validated.callOptions);
