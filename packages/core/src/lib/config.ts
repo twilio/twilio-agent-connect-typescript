@@ -28,13 +28,14 @@ export class TACConfig {
   public readonly apiSecret: string;
   /**
    * Default Twilio phone number for Voice and SMS — the sender used for
-   * outbound when a call does not specify `from`. Always populated and always a
-   * member of {@link phoneNumbers}.
+   * outbound when a call does not specify `from`. Optional; when set, always a
+   * member of {@link phoneNumbers}. Required (this or `phoneNumbers`) by the
+   * Voice and SMS channels.
    */
-  public readonly phoneNumber: string;
+  public readonly phoneNumber?: string;
   /**
    * Full set of Twilio phone numbers this instance serves for Voice and SMS
-   * (the inbound allowlist). Always includes {@link phoneNumber} as the first,
+   * (the inbound allowlist). When {@link phoneNumber} is set, it is the first,
    * default sender.
    */
   public readonly phoneNumbers: string[];
@@ -80,7 +81,9 @@ export class TACConfig {
     this.authToken = validatedConfig.authToken;
     this.apiKey = validatedConfig.apiKey;
     this.apiSecret = validatedConfig.apiSecret;
-    this.phoneNumber = validatedConfig.phoneNumber;
+    if (validatedConfig.phoneNumber) {
+      this.phoneNumber = validatedConfig.phoneNumber;
+    }
     this.phoneNumbers = validatedConfig.phoneNumbers;
     if (validatedConfig.rcsSenderId) {
       this.rcsSenderId = validatedConfig.rcsSenderId;
@@ -127,10 +130,10 @@ export class TACConfig {
    * - TWILIO_AUTH_TOKEN: Twilio Auth Token for API authentication
    * - TWILIO_API_KEY: Twilio API Key SID (starts with SK)
    * - TWILIO_API_SECRET: Twilio API Secret for API Key authentication
-   * - TWILIO_PHONE_NUMBER and/or TWILIO_PHONE_NUMBERS: at least one is required.
-   *   Phone number(s) for voice and SMS channels — see **Multi-Value Senders** below.
    *
    * Optional environment variables:
+   * - TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS: Phone number(s) for the Voice and
+   *   SMS channels, which require at least one — see **Multi-Value Senders** below.
    * - TWILIO_WHATSAPP_NUMBER / TWILIO_WHATSAPP_NUMBERS: WhatsApp number(s) for the
    *   WhatsApp channel (e.g., 'whatsapp:+1234567890')
    * - TWILIO_RCS_SENDER_ID / TWILIO_RCS_SENDER_IDS: RCS Sender ID(s) for the RCS channel
@@ -151,8 +154,8 @@ export class TACConfig {
    *   e.g. `TWILIO_PHONE_NUMBERS=+1555,+1444`. Whichever side is set back-fills
    *   the other: the singular becomes the default sender and the plural the full
    *   allowlist. Entries are whitespace-trimmed and de-duplicated, with the
-   *   default kept first. `phoneNumber` requires at least one of the two; the RCS
-   *   and WhatsApp pairs stay optional.
+   *   default kept first. All three pairs are optional here; each channel
+   *   requires its own pair at construction.
    *
    * Memory Configuration (defaults defined in TwilioMemoryConfigSchema):
    * - TWILIO_MEMORY_PROFILE_TRAIT_GROUPS: Trait groups to include (comma-separated, e.g., "Contact,Preferences")
@@ -176,9 +179,8 @@ export class TACConfig {
    */
   public static fromEnv(): TACConfig {
     // Check for required environment variables
-    // TWILIO_PHONE_NUMBER is intentionally NOT hard-required here: the schema
-    // requires at least one of TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS and
-    // back-fills the default, so either env var satisfies it.
+    // TWILIO_PHONE_NUMBER(S) are intentionally NOT required here: only the
+    // Voice and SMS channels need them, and they check at construction.
     const requiredVars = [
       { key: EnvironmentVariables.TWILIO_ACCOUNT_SID, name: 'TWILIO_ACCOUNT_SID' },
       { key: EnvironmentVariables.TWILIO_AUTH_TOKEN, name: 'TWILIO_AUTH_TOKEN' },
