@@ -70,9 +70,6 @@ npm run build
 # Clean all build outputs
 npm run clean
 
-# Watch mode (rebuilds on changes)
-npm run dev
-
 # Type checking
 npm run typecheck
 
