@@ -168,6 +168,15 @@ export class VoiceChannel extends BaseChannel {
    */
   constructor(tac: TAC, options?: VoiceProviderConfig | ConversationRelayProviderConfigOptions) {
     super(tac, VoiceChannel.toBaseOptions(options));
+
+    if (this.config.phoneNumbers.length === 0) {
+      throw new Error(
+        'phoneNumber(s) is required for Voice channel. ' +
+          'Set TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS or provide ' +
+          'phoneNumber / phoneNumbers in TACConfig.'
+      );
+    }
+
     this.voiceCallbacks = {};
     this.activeConversations = new Map();
     this.closedWhileLive = new Set();
@@ -990,13 +999,11 @@ export class VoiceChannel extends BaseChannel {
     if (customer && customerAddress) {
       session.authorInfo = { address: customerAddress, participantId: customer.id };
     }
-    if (agent) {
-      session.aiAgentInfo = {
-        address:
-          agent.addresses.find(a => a.channel === CO_VOICE_CHANNEL)?.address ??
-          this.config.phoneNumber,
-        participantId: agent.id,
-      };
+    const agentAddress =
+      agent?.addresses.find(a => a.channel === CO_VOICE_CHANNEL)?.address ??
+      this.config.phoneNumber;
+    if (agent && agentAddress) {
+      session.aiAgentInfo = { address: agentAddress, participantId: agent.id };
     }
     return session;
   }
