@@ -85,14 +85,11 @@ const WHATSAPP_NUMBER_MESSAGE = 'WhatsApp number must be in format: whatsapp:+12
  * Mirrors the Python SDK's `TACConfig._normalize_sender_pair` — keep the two in
  * step. Strips entries, back-fills whichever side is missing, guarantees the
  * default is a member of the allowlist (and kept first), and de-duplicates.
- * When `required` and both sides are empty, returns an `error` message instead
- * of a resolved pair.
  */
 function normalizeSenderPair(
   defaultValue: string | undefined,
-  plural: readonly string[],
-  options: { required: boolean; field: string }
-): { default: string | undefined; plural: string[]; error?: string } {
+  plural: readonly string[]
+): { default: string | undefined; plural: string[] } {
   const trimmedDefault =
     typeof defaultValue === 'string' && defaultValue.trim().length > 0
       ? defaultValue.trim()
@@ -107,13 +104,6 @@ function normalizeSenderPair(
   }
 
   if (trimmedDefault === undefined && cleaned.length === 0) {
-    if (options.required) {
-      return {
-        default: undefined,
-        plural: [],
-        error: `At least one of \`${options.field}\` / \`${options.field}s\` must be set.`,
-      };
-    }
     return { default: undefined, plural: [] };
   }
 
@@ -133,9 +123,10 @@ export const TACConfigSchema = z
     apiKey: z.string().min(1, 'Twilio API Key is required'),
     apiSecret: z.string().min(1, 'Twilio API Secret is required'),
     /**
-     * Default Twilio phone number for Voice (inbound) and SMS. Optional if
-     * `phoneNumbers` is set; at least one of the two is required. After
-     * validation this is always populated and is a member of `phoneNumbers`.
+     * Default Twilio phone number for Voice (inbound) and SMS. Optional;
+     * back-filled from `phoneNumbers` when omitted, and always a member of
+     * `phoneNumbers` when set. Required (this or `phoneNumbers`) by the Voice
+     * and SMS channels.
      */
     phoneNumber: z.string().min(1, 'Twilio Phone Number is required').optional(),
     /**
@@ -244,31 +235,18 @@ export const TACConfigSchema = z
       .optional(),
   })
   // Reconcile each `(default, allowlist)` sender pair: back-fill whichever side
-  // is missing, keep the default first, de-duplicate. `phoneNumber` requires at
-  // least one of the two; RCS/WhatsApp stay optional. Mirrors the Python SDK's
-  // `_normalize_sender_sets` model validator.
-  .transform((data, ctx) => {
-    const phone = normalizeSenderPair(data.phoneNumber, data.phoneNumbers ?? [], {
-      required: true,
-      field: 'phoneNumber',
-    });
-    if (phone.error) {
-      ctx.addIssue({ code: 'custom', message: phone.error, path: ['phoneNumber'] });
-      return z.NEVER;
-    }
-    const rcs = normalizeSenderPair(data.rcsSenderId, data.rcsSenderIds ?? [], {
-      required: false,
-      field: 'rcsSenderId',
-    });
-    const whatsapp = normalizeSenderPair(data.whatsappNumber, data.whatsappNumbers ?? [], {
-      required: false,
-      field: 'whatsappNumber',
-    });
+  // is missing, keep the default first, de-duplicate. All three pairs are
+  // optional here; the SMS and Voice channels require `phoneNumber(s)` at
+  // construction. Mirrors the Python SDK's `_normalize_sender_sets` model
+  // validator.
+  .transform(data => {
+    const phone = normalizeSenderPair(data.phoneNumber, data.phoneNumbers ?? []);
+    const rcs = normalizeSenderPair(data.rcsSenderId, data.rcsSenderIds ?? []);
+    const whatsapp = normalizeSenderPair(data.whatsappNumber, data.whatsappNumbers ?? []);
 
     return {
       ...data,
-      // Guaranteed populated: the required check above returned early otherwise.
-      phoneNumber: phone.default!,
+      phoneNumber: phone.default,
       phoneNumbers: phone.plural,
       rcsSenderId: rcs.default,
       rcsSenderIds: rcs.plural,

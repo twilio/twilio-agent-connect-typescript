@@ -87,6 +87,12 @@ describe('Chat Channel', () => {
   });
 
   describe('initialization', () => {
+    it('does not require a phone number', async () => {
+      const { phoneNumber: _omitted, ...configWithoutPhone } = getTestConfig();
+      const tacWithoutPhone = await createTestTAC(configWithoutPhone);
+      expect(new ChatChannel(tacWithoutPhone).channelType).toBe('chat');
+    });
+
     it('should create chat channel with default config', () => {
       expect(channel).toBeInstanceOf(ChatChannel);
       expect(channel.channelType).toBe('chat');

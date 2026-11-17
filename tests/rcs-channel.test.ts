@@ -118,6 +118,14 @@ describe('RCS Channel', () => {
       expect(() => new RCSChannel(tacWithoutSender)).toThrow(/rcsSenderId\(s\) is required/);
     });
 
+    it('does not require a phone number', async () => {
+      const { phoneNumber: _omitted, ...configWithoutPhone } = getTestConfig();
+      const tacWithoutPhone = await createTestTAC(configWithoutPhone);
+      const rcs = new RCSChannel(tacWithoutPhone);
+      expect(rcs.channelType).toBe('rcs');
+      expect(tacWithoutPhone.getConfig().phoneNumber).toBeUndefined();
+    });
+
     it('should reject zero dedupCapacity', () => {
       expect(() => new RCSChannel(tac, { dedupCapacity: 0 })).toThrow(
         'dedupCapacity must be a positive integer'

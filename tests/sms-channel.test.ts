@@ -119,6 +119,14 @@ describe('SMS Channel', () => {
       expect(channel.channelType).toBe('sms');
     });
 
+    it('requires phoneNumber(s) on TAC config', async () => {
+      const { phoneNumber: _omitted, ...configWithoutPhone } = getTestConfig();
+      const tacWithoutPhone = await createTestTAC(configWithoutPhone);
+      expect(() => new SMSChannel(tacWithoutPhone)).toThrow(
+        /phoneNumber\(s\) is required for SMS channel/
+      );
+    });
+
     it('keeps no sessions: deprecated lookups return undefined/false even after a message', async () => {
       await channel.processWebhook({
         eventType: 'COMMUNICATION_CREATED',
