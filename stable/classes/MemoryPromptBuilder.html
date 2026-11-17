@@ -184,7 +184,7 @@ providing context about the customer from previous interactions.</p>
 
 </div></div></section><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/adapters/prompt-builder.ts#L30">core/src/adapters/prompt-builder.ts:30</a></li></ul></aside>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/core/src/adapters/prompt-builder.ts#L30">core/src/adapters/prompt-builder.ts:30</a></li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -251,7 +251,8 @@ summaries, and communications. Optional.</p>
 <div class="tsd-comment tsd-typography"><p>Twilio Call SID on the Voice channel, unset on messaging. The correlation
 key for call events (<code>VoiceChannel.onCallStatus</code> / <code>onAmd</code> / <code>onRecording</code>)
 and <code>endCall</code>. Equals <code>conversationId</code> in relay-only mode; look the session
-up the other way with <code>VoiceChannel.getConversationSessionByCallSid</code>.</p>
+up the other way with <code>VoiceChannel.getConversationSessionByCallSid</code>, or,
+from another instance, <code>VoiceChannel.resolveConversationSessionByCallSid</code>.</p>
 </div></li>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">profileId</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
@@ -272,7 +273,13 @@ send time.</p>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">profile</span><span class="tsd-signature-symbol">?: </span><a href="../interfaces/Profile.html" class="tsd-signature-type tsd-kind-interface">Profile</a></h5></li>
 <li class="tsd-parameter">
-<h5><span class="tsd-kind-property">metadata</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5></li>
+<h5><span class="tsd-kind-property">metadata</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5>
+<div class="tsd-comment tsd-typography"><p>Generic metadata storage for session-specific data. On messaging channels
+a session lasts one turn, so nothing here carries over to the next
+message; keep cross-turn state in your own store, keyed by
+<code>conversationId</code>. To read metadata stored on the conversation itself (from
+any instance), use <code>conversationMetadata(session)</code>.</p>
+</div></li>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">pendingHandoffData</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">type</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">&quot;end&quot;</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">handoffData</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">}</span></h5>
 <div class="tsd-comment tsd-typography"><p>Pending handoff payload set by the handoff tool. Voice channel sends
@@ -299,7 +306,7 @@ Returns empty string if no memory or profile data is available.</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/adapters/prompt-builder.ts#L67">core/src/adapters/prompt-builder.ts:67</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/core/src/adapters/prompt-builder.ts#L67">core/src/adapters/prompt-builder.ts:67</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="compose"><code class="tsd-tag">Static</code><span>compose</span><a href="#compose" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -335,7 +342,8 @@ null, and undefined are all treated as &quot;no system prompt&quot;. Optional.</
 <div class="tsd-comment tsd-typography"><p>Twilio Call SID on the Voice channel, unset on messaging. The correlation
 key for call events (<code>VoiceChannel.onCallStatus</code> / <code>onAmd</code> / <code>onRecording</code>)
 and <code>endCall</code>. Equals <code>conversationId</code> in relay-only mode; look the session
-up the other way with <code>VoiceChannel.getConversationSessionByCallSid</code>.</p>
+up the other way with <code>VoiceChannel.getConversationSessionByCallSid</code>, or,
+from another instance, <code>VoiceChannel.resolveConversationSessionByCallSid</code>.</p>
 </div></li>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">profileId</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
@@ -356,7 +364,13 @@ send time.</p>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">profile</span><span class="tsd-signature-symbol">?: </span><a href="../interfaces/Profile.html" class="tsd-signature-type tsd-kind-interface">Profile</a></h5></li>
 <li class="tsd-parameter">
-<h5><span class="tsd-kind-property">metadata</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5></li>
+<h5><span class="tsd-kind-property">metadata</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5>
+<div class="tsd-comment tsd-typography"><p>Generic metadata storage for session-specific data. On messaging channels
+a session lasts one turn, so nothing here carries over to the next
+message; keep cross-turn state in your own store, keyed by
+<code>conversationId</code>. To read metadata stored on the conversation itself (from
+any instance), use <code>conversationMetadata(session)</code>.</p>
+</div></li>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">pendingHandoffData</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">type</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">&quot;end&quot;</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">handoffData</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">}</span></h5>
 <div class="tsd-comment tsd-typography"><p>Pending handoff payload set by the handoff tool. Voice channel sends
@@ -381,7 +395,7 @@ if both systemPrompt and memory are empty/null/undefined.</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/adapters/prompt-builder.ts#L130">core/src/adapters/prompt-builder.ts:130</a></li></ul></aside></div></li></ul></section></section></details></div>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/core/src/adapters/prompt-builder.ts#L130">core/src/adapters/prompt-builder.ts:130</a></li></ul></aside></div></li></ul></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>

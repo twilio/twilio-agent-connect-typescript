@@ -175,9 +175,13 @@
 <div class="tsd-signature"><span class="tsd-kind-type-alias">MessagingChannelConfig</span><span class="tsd-signature-symbol">:</span> <a href="../interfaces/BaseChannelOptions.html" class="tsd-signature-type tsd-kind-interface">BaseChannelOptions</a></div>
 <div class="tsd-comment tsd-typography"><p>Messaging channel configuration options.
 Alias for BaseChannelOptions that can be extended by specific channel implementations.</p>
+<p><code>memoryMode: &quot;once&quot;</code> is <strong>deprecated</strong> on messaging channels and removed in
+3.0. It caches a recall on a session that outlives one request, which
+messaging channels don't keep, so it logs a warning and runs as <code>&quot;always&quot;</code>.
+It's still supported on the Voice channel.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/core/src/channels/messaging.ts#L46">core/src/channels/messaging.ts:46</a></li></ul></aside></div>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/core/src/channels/messaging.ts#L59">core/src/channels/messaging.ts:59</a></li></ul></aside></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>

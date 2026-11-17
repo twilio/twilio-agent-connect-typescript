@@ -195,10 +195,11 @@
 </div>
 <p>Seamlessly integrate with Twilio Conversation Memory and Conversation Orchestrator to build LLM-powered agents with persistent memory and conversation context.</p>
 <div class="tsd-alert tsd-alert-tip"><div class="tsd-alert-title"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><use href="assets/icons.svg#icon-alertTip"></use></svg><span>Tip</span></div><p>
-<strong>Building AI agents on AWS or Microsoft?</strong> Connect them to Twilio's voice, messaging, and conversation context with these dedicated packages:</p>
+<strong>Building AI agents on AWS, Microsoft, or Google?</strong> Connect them to Twilio's voice, messaging, and conversation context with these dedicated packages:</p>
 <ul>
 <li><strong><a href="https://github.com/twilio/twilio-agent-connect-aws">TAC for AWS</a></strong> — Strands, Bedrock Agents, Bedrock AgentCore</li>
 <li><strong><a href="https://github.com/twilio/twilio-agent-connect-microsoft">TAC for Microsoft</a></strong> — Microsoft Agent Framework, Azure AI Foundry (incl. Voice Live), Azure OpenAI</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-google">TAC for Google</a></strong> — ADK and Agent Studio on Agent Engine, CX Agent Studio, Conversational Agents (Dialogflow CX)</li>
 </ul>
 </div>
 <hr>
@@ -211,6 +212,7 @@
 <li><strong>Memory Management</strong>: Automatic integration with Twilio Conversation Memory for persistent user context</li>
 <li><strong>Conversation Lifecycle</strong>: Automatic tracking of conversation sessions and state</li>
 <li><strong>Human Handoff</strong>: Built-in tool to route conversations to human agents via Twilio Studio Flows (including Flex)</li>
+<li><strong>Horizontal Scaling</strong>: Run N replicas behind a load balancer with no shared datastore; for voice, set <code>TWILIO_INSTANCE_PUBLIC_DOMAIN</code> to each replica's own public hostname</li>
 </ul>
 <h2 id="get-started" class="tsd-anchor-link">Get Started<a href="#get-started" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
 <p>To get started, set up your Node.js environment (Node.js 22.13.0 or newer required), and then install the <a href="https://www.npmjs.com/package/twilio-agent-connect">TAC SDK package</a>:</p>
@@ -263,7 +265,7 @@
 </ol>
 <p>For detailed architecture and advanced usage, see <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md">CLAUDE.md</a>.</p>
 <h2 id="telemetry" class="tsd-anchor-link">Telemetry<a href="#telemetry" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
-<p>The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel, a conversation ID, the SDK name and version, and timing such as conversation duration.</p>
+<p>The SDK reports usage events to help improve the product — conversation started and ended, messages received, responses sent, and voice connection and interrupt events. Each event includes your Twilio account SID, the channel (when TAC already knows it — conversation ended events from Conversation Orchestrator don't carry one), a conversation ID, the SDK name and version, and timing such as conversation duration.</p>
 <p>Message content, transcripts, phone numbers, and other end-user identifiers are never collected.</p>
 <p>Telemetry is on by default. To disable it, set the following environment variable:</p>
 <pre><code class="bash"><span class="hl-5">TAC_ANALYTICS_DISABLED</span><span class="hl-1">=</span><span class="hl-2">true</span>
@@ -286,10 +288,11 @@
 <li><strong><a href="https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-dtmf/">Voice DTMF</a></strong> - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context</li>
 <li>More examples coming soon</li>
 </ul>
-<p><strong>AWS and Microsoft connectors:</strong></p>
+<p><strong>AWS, Microsoft, and Google connectors:</strong></p>
 <ul>
 <li><strong><a href="https://github.com/twilio/twilio-agent-connect-aws">TAC for AWS</a></strong> — <code>StrandsConnector</code>, <code>BedrockConnector</code>, <code>BedrockAgentCoreConnector</code> for AWS Strands, Bedrock Agents, and Bedrock AgentCore</li>
 <li><strong><a href="https://github.com/twilio/twilio-agent-connect-microsoft">TAC for Microsoft</a></strong> — <code>AgentFrameworkConnector</code> and <code>VoiceLiveConnector</code> for Microsoft Agent Framework, Azure AI Foundry (including Voice Live), and Azure OpenAI</li>
+<li><strong><a href="https://github.com/twilio/twilio-agent-connect-google">TAC for Google</a></strong> — <code>ADKAgentEngineConnector</code>, <code>StudioAgentEngineConnector</code>, <code>CXAgentStudioConnector</code>, <code>ConversationalAgentsConnector</code> for Google ADK, Agent Studio, CX Agent Studio, and Conversational Agents (Dialogflow CX)</li>
 </ul>
 <p><strong>Documentation:</strong></p>
 <ul>

@@ -196,7 +196,8 @@ can reference it via <code>{{flow.data.HandoffData.*}}</code>.</p>
 <div class="tsd-comment tsd-typography"><p>Twilio Call SID on the Voice channel, unset on messaging. The correlation
 key for call events (<code>VoiceChannel.onCallStatus</code> / <code>onAmd</code> / <code>onRecording</code>)
 and <code>endCall</code>. Equals <code>conversationId</code> in relay-only mode; look the session
-up the other way with <code>VoiceChannel.getConversationSessionByCallSid</code>.</p>
+up the other way with <code>VoiceChannel.getConversationSessionByCallSid</code>, or,
+from another instance, <code>VoiceChannel.resolveConversationSessionByCallSid</code>.</p>
 </div></li>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">profileId</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-type">string</span></h5></li>
@@ -217,7 +218,13 @@ send time.</p>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">profile</span><span class="tsd-signature-symbol">?: </span><a href="../interfaces/Profile.html" class="tsd-signature-type tsd-kind-interface">Profile</a></h5></li>
 <li class="tsd-parameter">
-<h5><span class="tsd-kind-property">metadata</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5></li>
+<h5><span class="tsd-kind-property">metadata</span><span class="tsd-signature-symbol">: </span><span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></h5>
+<div class="tsd-comment tsd-typography"><p>Generic metadata storage for session-specific data. On messaging channels
+a session lasts one turn, so nothing here carries over to the next
+message; keep cross-turn state in your own store, keyed by
+<code>conversationId</code>. To read metadata stored on the conversation itself (from
+any instance), use <code>conversationMetadata(session)</code>.</p>
+</div></li>
 <li class="tsd-parameter">
 <h5><code class="tsd-tag">Optional</code><span class="tsd-kind-property">pendingHandoffData</span><span class="tsd-signature-symbol">?: </span><span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">type</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">&quot;end&quot;</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">handoffData</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">}</span></h5>
 <div class="tsd-comment tsd-typography"><p>Pending handoff payload set by the handoff tool. Voice channel sends
@@ -231,7 +238,7 @@ the conversation becomes INACTIVE. Not persisted/serialized.</p>
 <li><span><span class="tsd-kind-parameter">options</span>: <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">handoffUrl</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">fromAddress</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">apiKey</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">apiSecret</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span> <span class="tsd-signature-symbol">}</span></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/tools/src/built-in/handoff.ts#L50">tools/src/built-in/handoff.ts:50</a></li></ul></aside></div></li></ul></section></div>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/tools/src/built-in/handoff.ts#L83">tools/src/built-in/handoff.ts:83</a></li></ul></aside></div></li></ul></section></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>

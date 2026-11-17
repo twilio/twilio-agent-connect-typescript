@@ -177,7 +177,7 @@
 </div></section>
 <div class="tsd-signature"><span class="tsd-signature-keyword">interface</span> <span class="tsd-kind-interface">TACServerConfig</span> <span class="tsd-signature-symbol">{</span><br/>    <a class="tsd-kind-property" href="#fastify">fastify</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">FastifyServerOptions</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#fastifyinstance">fastifyInstance</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">FastifyInstance</span><span class="tsd-signature-symbol">&lt;</span><br/>        <span class="tsd-signature-type">RawServerDefault</span><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-signature-type">IncomingMessage</span><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-signature-type">ServerResponse</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">IncomingMessage</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-signature-type">FastifyBaseLogger</span><span class="tsd-signature-symbol">,</span><br/>        <span class="tsd-signature-type">FastifyTypeProviderDefault</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#host">host</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#port">port</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#webhookpaths">webhookPaths</a><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>        <span class="tsd-kind-property">messaging</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">conversation</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">twiml</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>        <span class="tsd-kind-property">cintel</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#voicechannel">voiceChannel</a><span class="tsd-signature-symbol">?:</span> <a href="../classes/VoiceChannel.html" class="tsd-signature-type tsd-kind-class">VoiceChannel</a><span class="tsd-signature-symbol">;</span><br/>    <a class="tsd-kind-property" href="#messagingchannels">messagingChannels</a><span class="tsd-signature-symbol">?:</span> <a href="../classes/MessagingChannel.html" class="tsd-signature-type tsd-kind-class">MessagingChannel</a><span class="tsd-signature-symbol">[]</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L19">server/src/lib/server.ts:19</a></li></ul></aside>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L19">server/src/lib/server.ts:19</a></li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -202,7 +202,7 @@
 <div class="tsd-comment tsd-typography"><p>Fastify server options (ignored if <code>fastifyInstance</code> is provided)</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L21">server/src/lib/server.ts:21</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L21">server/src/lib/server.ts:21</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="fastifyinstance"><code class="tsd-tag">Optional</code><span>fastify<wbr/>Instance</span><a href="#fastifyinstance" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">fastifyInstance</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">FastifyInstance</span><span class="tsd-signature-symbol">&lt;</span><br/>    <span class="tsd-signature-type">RawServerDefault</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-type">IncomingMessage</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-type">ServerResponse</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">IncomingMessage</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-type">FastifyBaseLogger</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-signature-type">FastifyTypeProviderDefault</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">&gt;</span></div>
@@ -213,21 +213,21 @@ routes are set up. If provided, the <code>fastify</code> options field is
 ignored.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L31">server/src/lib/server.ts:31</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L31">server/src/lib/server.ts:31</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="host"><code class="tsd-tag">Optional</code><span>host</span><a href="#host" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">host</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span></div>
 <div class="tsd-comment tsd-typography"><p>Host to bind the server to (default: '0.0.0.0')</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L34">server/src/lib/server.ts:34</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L34">server/src/lib/server.ts:34</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="port"><code class="tsd-tag">Optional</code><span>port</span><a href="#port" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">port</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span></div>
 <div class="tsd-comment tsd-typography"><p>Port to bind the server to (default: 8000)</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L37">server/src/lib/server.ts:37</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L37">server/src/lib/server.ts:37</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="webhookpaths"><code class="tsd-tag">Optional</code><span>webhook<wbr/>Paths</span><a href="#webhookpaths" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">webhookPaths</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span><br/>    <span class="tsd-kind-property">messaging</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">conversation</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">twiml</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/>    <span class="tsd-kind-property">cintel</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">;</span><br/><span class="tsd-signature-symbol">}</span></div>
@@ -255,7 +255,7 @@ If both <code>messaging</code> and <code>conversation</code> are set, <code>conv
 <div class="tsd-comment tsd-typography"><p>Path for Conversation Intelligence webhook (optional - only registered if provided)</p>
 </div></li></ul></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L45">server/src/lib/server.ts:45</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L45">server/src/lib/server.ts:45</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="voicechannel"><code class="tsd-tag">Optional</code><span>voice<wbr/>Channel</span><a href="#voicechannel" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">voiceChannel</span><span class="tsd-signature-symbol">?:</span> <a href="../classes/VoiceChannel.html" class="tsd-signature-type tsd-kind-class">VoiceChannel</a></div>
@@ -264,7 +264,7 @@ If both <code>messaging</code> and <code>conversation</code> are set, <code>conv
 Defaults to the voice channel already registered on TAC, if any.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L62">server/src/lib/server.ts:62</a></li></ul></aside></section>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L62">server/src/lib/server.ts:62</a></li></ul></aside></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="messagingchannels"><code class="tsd-tag">Optional</code><span>messaging<wbr/>Channels</span><a href="#messagingchannels" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <div class="tsd-signature"><span class="tsd-kind-property">messagingChannels</span><span class="tsd-signature-symbol">?:</span> <a href="../classes/MessagingChannel.html" class="tsd-signature-type tsd-kind-class">MessagingChannel</a><span class="tsd-signature-symbol">[]</span></div>
@@ -274,7 +274,7 @@ they don't need registering separately. Defaults to the SMS, RCS, Chat and
 WhatsApp channels already registered on TAC.</p>
 </div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/3c5c0add5c428b67cefa2fcee85ce51c3a330faa/packages/server/src/lib/server.ts#L70">server/src/lib/server.ts:70</a></li></ul></aside></section></section></details></div>
+<li>Defined in <a href="https://github.com/twilio/twilio-agent-connect-typescript/blob/a44556e62c9e4b2aee2ae7daf825aab76c093bbd/packages/server/src/lib/server.ts#L70">server/src/lib/server.ts:70</a></li></ul></aside></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-ext-version-select"><label class="settings-label" for="plugin-versions-select">Version</label><select id="plugin-versions-select" name="versions"></select></div>
