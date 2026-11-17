@@ -85,14 +85,11 @@ const WHATSAPP_NUMBER_MESSAGE = 'WhatsApp number must be in format: whatsapp:+12
  * Mirrors the Python SDK's `TACConfig._normalize_sender_pair` — keep the two in
  * step. Strips entries, back-fills whichever side is missing, guarantees the
  * default is a member of the allowlist (and kept first), and de-duplicates.
- * When `required` and both sides are empty, returns an `error` message instead
- * of a resolved pair.
  */
 function normalizeSenderPair(
   defaultValue: string | undefined,
-  plural: readonly string[],
-  options: { required: boolean; field: string }
-): { default: string | undefined; plural: string[]; error?: string } {
+  plural: readonly string[]
+): { default: string | undefined; plural: string[] } {
   const trimmedDefault =
     typeof defaultValue === 'string' && defaultValue.trim().length > 0
       ? defaultValue.trim()
@@ -107,13 +104,6 @@ function normalizeSenderPair(
   }
 
   if (trimmedDefault === undefined && cleaned.length === 0) {
-    if (options.required) {
-      return {
-        default: undefined,
-        plural: [],
-        error: `At least one of \`${options.field}\` / \`${options.field}s\` must be set.`,
-      };
-    }
     return { default: undefined, plural: [] };
   }
 
@@ -250,18 +240,9 @@ export const TACConfigSchema = z
   // construction. Mirrors the Python SDK's `_normalize_sender_sets` model
   // validator.
   .transform(data => {
-    const phone = normalizeSenderPair(data.phoneNumber, data.phoneNumbers ?? [], {
-      required: false,
-      field: 'phoneNumber',
-    });
-    const rcs = normalizeSenderPair(data.rcsSenderId, data.rcsSenderIds ?? [], {
-      required: false,
-      field: 'rcsSenderId',
-    });
-    const whatsapp = normalizeSenderPair(data.whatsappNumber, data.whatsappNumbers ?? [], {
-      required: false,
-      field: 'whatsappNumber',
-    });
+    const phone = normalizeSenderPair(data.phoneNumber, data.phoneNumbers ?? []);
+    const rcs = normalizeSenderPair(data.rcsSenderId, data.rcsSenderIds ?? []);
+    const whatsapp = normalizeSenderPair(data.whatsappNumber, data.whatsappNumbers ?? []);
 
     return {
       ...data,

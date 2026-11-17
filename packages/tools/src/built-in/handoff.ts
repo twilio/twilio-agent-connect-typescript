@@ -231,20 +231,31 @@ export function createStudioHandoffTool(
       // (e.g. "ai-assistant"), not a Twilio sender, so it keeps the configured
       // default phone number.
       //
-      // Resolve it BEFORE touching the conversation: once it's INACTIVE with
-      // status callbacks cleared, TAC no longer receives its webhooks, so a
-      // handoff that can't be delivered must fail first.
-      const fromAddress =
-        session.channel !== 'chat' && session.aiAgentInfo?.address
-          ? session.aiAgentInfo.address
-          : config.phoneNumber;
-      if (!fromAddress) {
-        const error = `No Studio \`From\` sender for ${session.channel} handoff: set phoneNumber in TACConfig.`;
+      // Resolve both addresses BEFORE touching the conversation: once it's
+      // INACTIVE with status callbacks cleared, TAC no longer receives its
+      // webhooks, so a handoff that can't be delivered must fail first.
+      const failUndeliverable = (error: string): HandoffResult => {
         tac.logger.error(
           { conversation_id: session.conversationId },
           `Failed to deliver handoff payload: ${error}`
         );
         return { status: 'handoff_failed', channel: session.channel, error };
+      };
+
+      const toAddress = session.authorInfo?.address;
+      if (!toAddress) {
+        return failUndeliverable(
+          `No Studio \`To\` address for ${session.channel} handoff: the session has no customer address.`
+        );
+      }
+      const fromAddress =
+        session.channel !== 'chat' && session.aiAgentInfo?.address
+          ? session.aiAgentInfo.address
+          : config.phoneNumber;
+      if (!fromAddress) {
+        return failUndeliverable(
+          `No Studio \`From\` sender for ${session.channel} handoff: set phoneNumber in TACConfig.`
+        );
       }
 
       await stopTacRouting(tac, coClient, session.conversationId);

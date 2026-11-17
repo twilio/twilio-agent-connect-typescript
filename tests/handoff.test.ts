@@ -43,6 +43,10 @@ function makeSession(overrides: Partial<ConversationSession> = {}): Conversation
   };
 }
 
+function makeDigitalSession(overrides: Partial<ConversationSession> = {}): ConversationSession {
+  return makeSession({ authorInfo: { address: '+15559998888' }, ...overrides });
+}
+
 describe('Studio URL helpers', () => {
   it('studioExecutionsUrl builds the correct URL', () => {
     expect(studioExecutionsUrl(FLOW_SID)).toBe(
@@ -102,9 +106,7 @@ describe('createStudioHandoffTool factory', () => {
 
   it('throws when studioHandoffFlowSid is not configured', async () => {
     const tac = await createTestTAC(getTestConfig({ studioHandoffFlowSid: undefined }));
-    expect(() => createStudioHandoffTool(tac, makeSession())).toThrowError(
-      /studioHandoffFlowSid/
-    );
+    expect(() => createStudioHandoffTool(tac, makeSession())).toThrowError(/studioHandoffFlowSid/);
   });
 
   it('throws in voice-only mode (no Conversation Orchestrator)', async () => {
@@ -214,7 +216,7 @@ describe('handoff tool execution — digital channels', () => {
     vi.spyOn(tac.getConversationClient(), 'updateConversation').mockResolvedValue({} as never);
     vi.spyOn(tac.getConversationClient(), 'clearStatusCallbacks').mockResolvedValue();
 
-    const session = makeSession({ channel: 'sms' });
+    const session = makeDigitalSession({ channel: 'sms' });
     const tool = createStudioHandoffTool(tac, session);
     const result = await tool.implementation({ reason: 'Customer wants human' });
 
@@ -258,7 +260,7 @@ describe('handoff tool execution — digital channels', () => {
       vi.spyOn(tac.getConversationClient(), 'clearStatusCallbacks').mockResolvedValue();
 
       // The customer is talking to a non-default configured sender.
-      const session = makeSession({
+      const session = makeDigitalSession({
         channel,
         aiAgentInfo: { address: agentAddress, participantId: 'p_agent' },
       });
@@ -284,7 +286,7 @@ describe('handoff tool execution — digital channels', () => {
 
     // Chat's agent address is an identity (e.g. "ai-assistant"), not a Twilio
     // number. Studio's From must be a phone number, so Chat keeps the default.
-    const session = makeSession({
+    const session = makeDigitalSession({
       channel: 'chat',
       aiAgentInfo: { address: 'ai-assistant', participantId: 'p_agent' },
     });
@@ -310,7 +312,7 @@ describe('handoff tool execution — digital channels', () => {
       .spyOn(tac.getConversationClient(), 'clearStatusCallbacks')
       .mockResolvedValue();
 
-    const session = makeSession({
+    const session = makeDigitalSession({
       channel: 'chat',
       aiAgentInfo: { address: 'ai-assistant', participantId: 'p_agent' },
     });
@@ -325,6 +327,27 @@ describe('handoff tool execution — digital channels', () => {
     expect(result.error).toContain('phoneNumber');
   });
 
+  it('returns handoff_failed without touching the conversation when no To address exists', async () => {
+    const tac = await createTestTAC(getTestConfig());
+    const updateSpy = vi
+      .spyOn(tac.getConversationClient(), 'updateConversation')
+      .mockResolvedValue({} as never);
+    const clearSpy = vi
+      .spyOn(tac.getConversationClient(), 'clearStatusCallbacks')
+      .mockResolvedValue();
+
+    const session = makeSession({ channel: 'sms' });
+    const tool = createStudioHandoffTool(tac, session);
+    const result = await tool.implementation({ reason: 'Customer wants human' });
+
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(result.status).toBe('handoff_failed');
+    expect(result.error).toContain('sms');
+    expect(result.error).toContain('`To`');
+  });
+
   it('returns handoff_failed when Studio POST raises (not a silent success)', async () => {
     (axios.post as unknown as { mockReset: () => void }).mockReset();
     vi.spyOn(axios, 'post').mockRejectedValue(new Error('boom'));
@@ -333,7 +356,7 @@ describe('handoff tool execution — digital channels', () => {
     vi.spyOn(tac.getConversationClient(), 'updateConversation').mockResolvedValue({} as never);
     vi.spyOn(tac.getConversationClient(), 'clearStatusCallbacks').mockResolvedValue();
 
-    const session = makeSession({ channel: 'sms' });
+    const session = makeDigitalSession({ channel: 'sms' });
     const tool = createStudioHandoffTool(tac, session);
     const result = await tool.implementation({ reason: 'Customer wants human' });
 

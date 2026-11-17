@@ -30,7 +30,8 @@ export class TACConfig {
    * Default Twilio phone number for Voice and SMS — the sender used for
    * outbound when a call does not specify `from`. Undefined when no phone
    * number is configured (the Voice and SMS channels then refuse to
-   * construct); otherwise a member of {@link phoneNumbers}.
+   * construct, and Studio handoff from Chat returns `handoff_failed`);
+   * otherwise a member of {@link phoneNumbers}.
    */
   public readonly phoneNumber?: string;
   /**
