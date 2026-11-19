@@ -739,9 +739,17 @@ export class TAC {
       }
 
       if (this.config.memoryConfig.fetchProfileTraits && !session.profile) {
-        const profile = await this.fetchProfile(session.profileId);
-        if (profile) {
+        try {
+          const profile = await this.memoryClient.getProfile(
+            session.profileId,
+            this.config.memoryConfig.traitGroups
+          );
           session.profile = { profileId: profile.id, traits: profile.traits };
+        } catch (error) {
+          this.logger.warn(
+            { err: error },
+            `Failed to fetch profile for ${session.profileId}. Continuing without profile data.`
+          );
         }
       }
 
