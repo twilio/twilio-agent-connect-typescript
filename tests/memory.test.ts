@@ -472,6 +472,22 @@ describe('Memory Functionality', () => {
       expect(session.profile).toEqual({ profileId: profile.id, traits: profile.traits });
     });
 
+    it('fetches the profile when fetchProfileTraits is explicitly true', async () => {
+      const tac = await createTestTACWithMemory({
+        ...getTestConfigWithoutMemory(),
+        memoryConfig: { fetchProfileTraits: true },
+      });
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
+      vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(profile);
+      const session = newSession();
+
+      await tac.retrieveMemory(session);
+
+      expect(memoryClient.getProfile).toHaveBeenCalledWith('mem_profile_existing', undefined);
+      expect(session.profile).toEqual({ profileId: profile.id, traits: profile.traits });
+    });
+
     it('skips the profile request when fetchProfileTraits is false', async () => {
       const tac = await createTestTACWithMemory({
         ...getTestConfigWithoutMemory(),
