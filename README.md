@@ -29,9 +29,10 @@
 Seamlessly integrate with Twilio Conversation Memory and Conversation Orchestrator to build LLM-powered agents with persistent memory and conversation context.
 
 > [!TIP]
-> **Building AI agents on AWS or Microsoft?** Connect them to Twilio's voice, messaging, and conversation context with these dedicated packages:
+> **Building AI agents on AWS, Microsoft, or Google?** Connect them to Twilio's voice, messaging, and conversation context with these dedicated packages:
 > - **[TAC for AWS](https://github.com/twilio/twilio-agent-connect-aws)** — Strands, Bedrock Agents, Bedrock AgentCore
 > - **[TAC for Microsoft](https://github.com/twilio/twilio-agent-connect-microsoft)** — Microsoft Agent Framework, Azure AI Foundry (incl. Voice Live), Azure OpenAI
+> - **[TAC for Google](https://github.com/twilio/twilio-agent-connect-google)** — ADK and Agent Studio on Agent Engine, CX Agent Studio, Conversational Agents (Dialogflow CX)
 
 ---
 
@@ -204,9 +205,10 @@ TAC_ANALYTICS_DISABLED=true
 - **[Voice DTMF](https://github.com/twilio/twilio-agent-connect-typescript/tree/main/getting_started/examples/voice-dtmf/)** - Keypad input over ConversationRelay — collect an account number digit by digit and hand it to the agent as context
 - More examples coming soon
 
-**AWS and Microsoft connectors:**
+**AWS, Microsoft, and Google connectors:**
 - **[TAC for AWS](https://github.com/twilio/twilio-agent-connect-aws)** — `StrandsConnector`, `BedrockConnector`, `BedrockAgentCoreConnector` for AWS Strands, Bedrock Agents, and Bedrock AgentCore
 - **[TAC for Microsoft](https://github.com/twilio/twilio-agent-connect-microsoft)** — `AgentFrameworkConnector` and `VoiceLiveConnector` for Microsoft Agent Framework, Azure AI Foundry (including Voice Live), and Azure OpenAI
+- **[TAC for Google](https://github.com/twilio/twilio-agent-connect-google)** — `ADKAgentEngineConnector`, `StudioAgentEngineConnector`, `CXAgentStudioConnector`, `ConversationalAgentsConnector` for Google ADK, Agent Studio, CX Agent Studio, and Conversational Agents (Dialogflow CX)
 
 **Documentation:**
 - **[CLAUDE.md](https://github.com/twilio/twilio-agent-connect-typescript/blob/main/CLAUDE.md)** - Architecture, development guide, and API reference

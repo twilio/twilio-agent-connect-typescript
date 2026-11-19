@@ -6,7 +6,8 @@ import {
   InitiateMessagingConversationOptionsSchema,
   InitiateConversationResult,
 } from '../types/index';
-import { MessagingChannel } from './messaging';
+import { MessagingChannel, MessagingChannelConfig } from './messaging';
+import type { TAC } from '../lib/tac';
 import { maskAddress } from '../util/log-redaction';
 
 /**
@@ -16,6 +17,18 @@ import { maskAddress } from '../util/log-redaction';
  * Automatically retrieves user memory and manages conversation lifecycle.
  */
 export class SMSChannel extends MessagingChannel {
+  constructor(tac: TAC, config?: MessagingChannelConfig) {
+    super(tac, config);
+
+    if (this.config.phoneNumbers.length === 0) {
+      throw new Error(
+        'phoneNumber(s) is required for SMS channel. ' +
+          'Set TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS or provide ' +
+          'phoneNumber / phoneNumbers in TACConfig.'
+      );
+    }
+  }
+
   public get channelType(): ChannelType {
     return 'sms';
   }
@@ -25,6 +38,13 @@ export class SMSChannel extends MessagingChannel {
   }
 
   protected getAgentAddress(_conversationId: ConversationId): ConversationAddress {
+    if (!this.config.phoneNumber) {
+      throw new Error(
+        'phoneNumber is required for SMS channel. ' +
+          'Set TWILIO_PHONE_NUMBER / TWILIO_PHONE_NUMBERS or provide ' +
+          'phoneNumber / phoneNumbers in TACConfig.'
+      );
+    }
     return { channel: 'SMS', address: this.config.phoneNumber };
   }
 

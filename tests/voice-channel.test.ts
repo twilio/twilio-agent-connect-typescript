@@ -25,6 +25,14 @@ describe('VoiceChannel', () => {
     conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
   });
 
+  it('requires phoneNumber(s) on TAC config', async () => {
+    const { phoneNumber: _omitted, ...configWithoutPhone } = getTestConfig();
+    const tacWithoutPhone = await createTestTAC(configWithoutPhone);
+    expect(() => new VoiceChannel(tacWithoutPhone)).toThrow(
+      /phoneNumber\(s\) is required for Voice channel/
+    );
+  });
+
   describe('connectConversationRelay()', () => {
     it('should generate TwiML without welcomeGreeting', async () => {
       const tac = await createTestTAC(getTestConfig());
