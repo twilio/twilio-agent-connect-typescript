@@ -650,7 +650,16 @@ export class TAC {
   /**
    * Retrieve memories from Memory API with automatic fallback to Conversations API
    *
-   * @param session - Conversation session context
+   * Also resolves the profile and loads its traits: if `session.profileId` is unset it is
+   * looked up from `session.authorInfo.address`, and the profile's traits (limited to
+   * `memoryConfig.traitGroups` when set) are fetched into `session.profile`, where
+   * `buildProfilePrompt()` and `MemoryPromptBuilder` render them. The recall
+   * endpoint itself never returns traits, so this is a second API call, skipped when
+   * `session.profile` is already set or `memoryConfig.fetchProfileTraits` is `false`. A failed
+   * trait fetch is logged and retrieval continues without traits.
+   *
+   * @param session - Conversation session context. Mutated: `profileId` and `profile` are set
+   *   when resolved.
    * @param query - Optional semantic search query
    * @param conversationId - Passed through to `/Recall` as-is. Sending one
    *   without a `query` makes Memory infer one from that conversation's history
