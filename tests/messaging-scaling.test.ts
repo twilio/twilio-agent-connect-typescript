@@ -242,9 +242,18 @@ class CallCounter {
 const coOf = (tac: TAC): ConversationClient => tac.getConversationClient() as ConversationClient;
 
 const makeSmsChannel = async (
-  opts: { mode?: 'never' | 'always' | 'once'; profileId?: string } = {}
+  opts: {
+    mode?: 'never' | 'always' | 'once';
+    profileId?: string;
+    fetchProfileTraits?: boolean;
+  } = {}
 ): Promise<{ tac: TAC; channel: SMSChannel; counter: CallCounter }> => {
-  const tac = await createTestTAC(getTestConfig());
+  const tac = await createTestTAC({
+    ...getTestConfig(),
+    ...(opts.fetchProfileTraits === undefined
+      ? {}
+      : { memoryConfig: { fetchProfileTraits: opts.fetchProfileTraits } }),
+  });
   const channel = new SMSChannel(tac, { memoryMode: opts.mode ?? 'never' });
   tac.registerChannel(channel);
   return { tac, channel, counter: new CallCounter(tac, opts.profileId) };
@@ -771,12 +780,28 @@ describe('Messaging horizontal scaling', () => {
       expect(counter.count('listParticipants')).toBe(3);
     });
 
-    it('memory "always" costs three calls', async () => {
-      // Python adds a get_profile trait fetch here; TS has no profile-trait
-      // fetch, so the budget is one call lower.
+    it('memory "always" costs four calls: the trait fetch is one more', async () => {
       const { tac, channel, counter } = await makeSmsChannel({
         mode: 'always',
         profileId: 'profile_1',
+      });
+      tac.onMessageReady(() => 'reply');
+
+      await deliver(channel, inbound());
+
+      expect(counter.calls).toEqual([
+        'listParticipants',
+        'getProfile',
+        'retrieveMemories',
+        'createAction',
+      ]);
+    });
+
+    it('disabling the trait fetch returns to three calls', async () => {
+      const { tac, channel, counter } = await makeSmsChannel({
+        mode: 'always',
+        profileId: 'profile_1',
+        fetchProfileTraits: false,
       });
       tac.onMessageReady(() => 'reply');
 

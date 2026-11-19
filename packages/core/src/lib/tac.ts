@@ -738,6 +738,13 @@ export class TAC {
         throw new Error('Memory client is not available');
       }
 
+      if (this.config.memoryConfig.fetchProfileTraits && !session.profile) {
+        const profile = await this.fetchProfile(session.profileId);
+        if (profile) {
+          session.profile = { profileId: profile.id, traits: profile.traits };
+        }
+      }
+
       const memoryResponse = await this.memoryClient.retrieveMemories(session.profileId, {
         conversationId,
         query,

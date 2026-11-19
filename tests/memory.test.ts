@@ -420,6 +420,82 @@ describe('Memory Functionality', () => {
     });
   });
 
+  describe('retrieveMemory() profile traits', () => {
+    const emptyRecall: MemoryRetrievalResponse = {
+      observations: [],
+      summaries: [],
+      communications: [],
+    };
+    const profile: ProfileResponse = {
+      id: 'mem_profile_existing',
+      createdAt: '2024-01-01T00:00:00Z',
+      traits: { Contact: { firstName: 'Ada' } },
+    };
+    const newSession = (): ConversationSession => ({
+      conversationId: 'conv_test_123',
+      profileId: 'mem_profile_existing',
+      channel: 'sms',
+      startedAt: new Date(),
+    });
+
+    it('populates session.profile with the configured trait groups', async () => {
+      const tac = await createTestTACWithMemory({
+        ...getTestConfigWithoutMemory(),
+        memoryConfig: { traitGroups: ['Contact'] },
+      });
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
+      vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(profile);
+      const session = newSession();
+
+      await tac.retrieveMemory(session);
+
+      expect(memoryClient.getProfile).toHaveBeenCalledWith('mem_profile_existing', ['Contact']);
+      expect(session.profile).toEqual({ profileId: profile.id, traits: profile.traits });
+    });
+
+    it('skips the profile request when fetchProfileTraits is false', async () => {
+      const tac = await createTestTACWithMemory({
+        ...getTestConfigWithoutMemory(),
+        memoryConfig: { fetchProfileTraits: false },
+      });
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
+      vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(profile);
+      const session = newSession();
+
+      await tac.retrieveMemory(session);
+
+      expect(memoryClient.getProfile).not.toHaveBeenCalled();
+      expect(session.profile).toBeUndefined();
+    });
+
+    it('does not refetch when session.profile is already set', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
+      vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(profile);
+      const session = { ...newSession(), profile };
+
+      await tac.retrieveMemory(session);
+
+      expect(memoryClient.getProfile).not.toHaveBeenCalled();
+    });
+
+    it('still returns memory when the profile fetch fails', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
+      vi.spyOn(memoryClient, 'getProfile').mockRejectedValue(new Error('boom'));
+      const session = newSession();
+
+      const result = await tac.retrieveMemory(session);
+
+      expect(result.rawData).toEqual(emptyRecall);
+      expect(session.profile).toBeUndefined();
+    });
+  });
+
   describe('TACCommunication conversion', () => {
     it('should populate Memory-only fields from Memory communication', () => {
       const memoryCommunications: MemoryCommunication[] = [
