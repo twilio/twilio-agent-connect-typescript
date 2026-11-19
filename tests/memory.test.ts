@@ -509,11 +509,13 @@ describe('Memory Functionality', () => {
       const memoryClient = tac.getMemoryClient()!;
       vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
       vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(profile);
-      const session = { ...newSession(), profile };
+      const existingProfile = { profileId: profile.id, traits: profile.traits };
+      const session: ConversationSession = { ...newSession(), profile: existingProfile };
 
       await tac.retrieveMemory(session);
 
       expect(memoryClient.getProfile).not.toHaveBeenCalled();
+      expect(session.profile).toBe(existingProfile);
     });
 
     it('still returns memory when the profile fetch fails', async () => {
