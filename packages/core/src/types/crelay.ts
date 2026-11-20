@@ -100,6 +100,8 @@ export const ConversationRelayAttributesSchema = z.object({
   // Conversation orchestrator
   /** Twilio Conversation Orchestrator configuration ID */
   conversationConfiguration: z.string().optional(),
+  /** Existing Conversation Orchestrator conversation to route the call to */
+  conversationId: z.string().optional(),
 });
 
 export type ConversationRelayAttributes = z.infer<typeof ConversationRelayAttributesSchema>;
@@ -348,6 +350,12 @@ export const VoiceTwiMLOptionsConversationRelaySchema = VoiceTwiMLOptionsBase.ex
    * conversation creation and participants.
    */
   conversationConfiguration: z.string().optional(),
+  /**
+   * Existing Conversation Orchestrator conversation ID. Routes the call
+   * directly to that conversation, bypassing the configuration's grouping
+   * rules; wins over `conversationConfiguration` for routing.
+   */
+  conversationId: z.string().optional(),
 
   // Language, TTS, STT
   /**
@@ -495,6 +503,7 @@ const VoiceTwiMLOptionsConversationRelayShape = {
   welcomeGreetingInterruptible: true,
   actionUrl: true,
   conversationConfiguration: true,
+  conversationId: true,
   websocketUrl: true,
   language: true,
   ttsLanguage: true,
