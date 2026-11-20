@@ -650,8 +650,8 @@ export class TAC {
   /**
    * Retrieve memories from Memory API with automatic fallback to Conversations API
    *
-   * Also fetches the profile's traits into `session.profile` unless
-   * `memoryConfig.fetchProfileTraits` is `false`.
+   * Also fetches the profile's traits into `session.profile`, in parallel with
+   * the recall, unless `memoryConfig.fetchProfileTraits` is `false`.
    *
    * @param session - Conversation session context
    * @param query - Optional semantic search query
@@ -741,29 +741,35 @@ export class TAC {
         throw new Error('Memory client is not available');
       }
 
-      if (this.config.memoryConfig.fetchProfileTraits && !session.profile) {
-        try {
-          const profile = await this.memoryClient.getProfile(
-            session.profileId,
-            this.config.memoryConfig.traitGroups
-          );
-          session.profile = { profileId: profile.id, traits: profile.traits };
-        } catch (error) {
-          this.logger.warn(
-            { err: error },
-            `Failed to fetch profile for ${session.profileId}. Continuing without profile data.`
-          );
-        }
-      }
+      const { profileId } = session;
+      // Recall never returns traits, so they need their own request. It runs
+      // alongside the recall and its failure is swallowed so it can't fail the recall.
+      const profileFetch =
+        !this.config.memoryConfig.fetchProfileTraits || session.profile
+          ? Promise.resolve()
+          : this.memoryClient
+              .getProfile(profileId, this.config.memoryConfig.traitGroups)
+              .then(profile => {
+                session.profile = { profileId: profile.id, traits: profile.traits };
+              })
+              .catch((error: unknown) => {
+                this.logger.warn(
+                  { err: error },
+                  `Failed to fetch profile for ${profileId}. Continuing without profile data.`
+                );
+              });
 
-      const memoryResponse = await this.memoryClient.retrieveMemories(session.profileId, {
-        conversationId,
-        query,
-        observationsLimit: this.config.memoryConfig.observationsLimit,
-        summariesLimit: this.config.memoryConfig.summariesLimit,
-        communicationsLimit: this.config.memoryConfig.communicationsLimit,
-        relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
-      });
+      const [memoryResponse] = await Promise.all([
+        this.memoryClient.retrieveMemories(profileId, {
+          conversationId,
+          query,
+          observationsLimit: this.config.memoryConfig.observationsLimit,
+          summariesLimit: this.config.memoryConfig.summariesLimit,
+          communicationsLimit: this.config.memoryConfig.communicationsLimit,
+          relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+        }),
+        profileFetch,
+      ]);
       return new TACMemoryResponse(memoryResponse);
     } catch (error) {
       this.logger.warn(

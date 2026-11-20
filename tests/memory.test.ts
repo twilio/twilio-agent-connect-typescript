@@ -504,6 +504,27 @@ describe('Memory Functionality', () => {
       expect(session.profile).toBeUndefined();
     });
 
+    it('fetches the profile and the recall in parallel', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+      const memoryClient = tac.getMemoryClient()!;
+      let releaseProfile!: () => void;
+      vi.spyOn(memoryClient, 'getProfile').mockReturnValue(
+        new Promise(resolve => {
+          releaseProfile = () => resolve(profile);
+        })
+      );
+      vi.spyOn(memoryClient, 'retrieveMemories').mockResolvedValue(emptyRecall);
+      const session = newSession();
+
+      const pending = tac.retrieveMemory(session);
+      await vi.waitFor(() => expect(memoryClient.retrieveMemories).toHaveBeenCalled());
+      expect(session.profile).toBeUndefined();
+      releaseProfile();
+      await pending;
+
+      expect(session.profile).toEqual({ profileId: profile.id, traits: profile.traits });
+    });
+
     it('does not refetch when session.profile is already set', async () => {
       const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
       const memoryClient = tac.getMemoryClient()!;
