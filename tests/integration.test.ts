@@ -81,6 +81,11 @@ describe('Integration Tests', () => {
       summaries: [],
       communications: [],
     } as never);
+    vi.spyOn(memoryClient, 'getProfile').mockResolvedValue({
+      id: 'mem_profile_test',
+      createdAt: '2024-01-01T00:00:00Z',
+      traits: {},
+    } as never);
     vi.spyOn(tac.getConversationClient(), 'listCommunications').mockResolvedValue([]);
     // The conversation client uses axios, which the fetch spy doesn't
     // intercept — stub the participant lookup (one per inbound message,

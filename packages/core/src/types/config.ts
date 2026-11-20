@@ -11,6 +11,12 @@ export type ChannelType = z.infer<typeof ChannelTypeSchema>;
  */
 export const TwilioMemoryConfigSchema = z.object({
   traitGroups: z.array(z.string()).optional(),
+  /**
+   * Whether `retrieveMemory` also fetches profile traits into `session.profile`.
+   * Recall returns observations, summaries and communications but never traits,
+   * so this is a second API call. Set to false if your prompts don't use traits.
+   */
+  fetchProfileTraits: z.boolean().default(true),
   observationsLimit: z.number().int().min(0).max(100).default(20),
   summariesLimit: z.number().int().min(0).max(100).default(5),
   // 0 matches the Memory API and Python SDK. Above 0, Memory requires a
