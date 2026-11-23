@@ -434,7 +434,7 @@ describe('TACServer Webhook Validation', () => {
 
     await server.start();
 
-    const response = await fetch(`http://localhost:${currentPort}/webhook`, {
+    const response = await fetch(`http://localhost:${currentPort}/webhook?bodySHA256=abc123`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -447,7 +447,7 @@ describe('TACServer Webhook Validation', () => {
     expect(mockValidateRequest).toHaveBeenCalledWith(
       'test_token_123',
       'test-sig',
-      expect.stringContaining('/webhook'),
+      expect.stringContaining('/webhook?bodySHA256=abc123'),
       { From: '+15551234567', Body: 'Hello' }
     );
     expect(mockValidateRequestWithBody).not.toHaveBeenCalled();
