@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { Writable } from 'node:stream';
 import axios from 'axios';
+import pino from 'pino';
 import {
   ConversationSession,
   HandoffPayload,
@@ -452,5 +456,69 @@ describe('postStudioHandoff', () => {
     const parsed = new URLSearchParams(body);
     expect(parsed.get('To')).toBe('');
     expect(parsed.get('From')).toBe('+15551234567');
+  });
+});
+
+describe('handoff failure logging', () => {
+  let server: Server;
+  let serverUrl: string;
+
+  beforeEach(async () => {
+    vi.restoreAllMocks();
+    server = createServer((_req, res) => {
+      res.statusCode = 500;
+      res.end('upstream error');
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    serverUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v2/Flows/${FLOW_SID}/Executions`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  });
+
+  it('logs only the message, code and status of a failed Studio request', async () => {
+    const realPost = axios.post.bind(axios);
+    vi.spyOn(axios, 'post').mockImplementation((_url, data, config) =>
+      realPost(serverUrl, data, config)
+    );
+
+    const tac = await createTestTAC(getTestConfig());
+    vi.spyOn(tac.getConversationClient(), 'updateConversation').mockResolvedValue({} as never);
+    vi.spyOn(tac.getConversationClient(), 'clearStatusCallbacks').mockResolvedValue();
+
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        lines.push(chunk.toString());
+        callback();
+      },
+    });
+    const captureLogger = pino({ level: 'debug' }, stream);
+    vi.spyOn(tac.logger, 'error').mockImplementation((...args: Parameters<pino.LogFn>) =>
+      captureLogger.error(...args)
+    );
+
+    const session = makeDigitalSession({ channel: 'sms' });
+    const tool = createStudioHandoffTool(tac, session);
+    const result = await tool.implementation({ reason: 'Customer wants human' });
+
+    expect(result.status).toBe('handoff_failed');
+    const line = lines.find(l => l.includes('Failed to deliver handoff payload'));
+    expect(line).toBeDefined();
+
+    const output = lines.join('');
+    expect(output).not.toContain('test_api_secret');
+    expect(output).not.toContain(Buffer.from('SK123:test_api_secret').toString('base64'));
+    expect(output).not.toContain('15559998888');
+    expect(output).not.toContain('HandoffData');
+    expect(output).not.toContain('Customer');
+
+    const entry = JSON.parse(line!) as Record<string, unknown>;
+    expect(entry.conversation_id).toBe('conv_123');
+    expect(entry.err).toBeUndefined();
+    expect(entry.error).toBe('Request failed with status code 500');
+    expect(entry.code).toBe('ERR_BAD_RESPONSE');
+    expect(entry.status).toBe(500);
   });
 });

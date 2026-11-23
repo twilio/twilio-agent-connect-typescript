@@ -28,6 +28,7 @@ import {
 } from '../../../types/index';
 import type { InitiateVoiceConversationResult } from '../../../types/conversation';
 import { maskAddress, redactTwimlParameters } from '../../../util/log-redaction';
+import { errorLogFields } from '../../../util/error-log-fields';
 import type { VoiceChannel } from '../channel';
 import { VoiceProvider } from '../provider';
 import { trackEvent } from '../../../lib/analytics';
@@ -1080,7 +1081,7 @@ export class ConversationRelayProvider extends VoiceProvider {
       return { callSid: call.sid };
     } catch (error) {
       this.logger.error(
-        { err: error, to: maskAddress(validated.to) },
+        { ...errorLogFields(error), to: maskAddress(validated.to) },
         'Failed to initiate outbound call'
       );
       this.channel.handleErrorInternal(error instanceof Error ? error : new Error(String(error)), {
