@@ -532,8 +532,10 @@ describe('TACServer messaging channel auto-discovery', () => {
     tac.registerChannel(smsChannel);
     tac.registerChannel(rcsChannel);
 
-    const rcsSpy = vi.spyOn(rcsChannel, 'processWebhook');
-    const smsSpy = vi.spyOn(smsChannel, 'processWebhook');
+    // Only the fan-out is under test; stubbing keeps the channels from
+    // fetching participants for the turn.
+    const rcsSpy = vi.spyOn(rcsChannel, 'processWebhook').mockResolvedValue();
+    const smsSpy = vi.spyOn(smsChannel, 'processWebhook').mockResolvedValue();
 
     server = new TACServer(tac, {
       development: true,
