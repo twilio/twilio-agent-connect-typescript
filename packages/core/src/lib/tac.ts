@@ -16,7 +16,7 @@ import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
 import { Logger, createLogger, withScrubbing } from './logger';
 import { shutdownAnalytics, trackEvent } from './analytics';
-import { maskAddress, redactErrorContext } from '../util/log-redaction';
+import { maskAddress, redactErrorContext, redactErrorForLog } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
 import { ExpiringMap } from '../util/expiring-map';
 
@@ -39,6 +39,7 @@ export interface TACOptions {
   /**
    * Logger for TAC and its channels and clients. Phone numbers and emails in
    * its log calls, and its children's, are masked as in {@link createLogger}.
+   * Bindings already on the logger when it is passed in are logged as they are.
    */
   logger?: Logger;
 }
@@ -233,7 +234,10 @@ export class TAC {
     channel.on(
       'error',
       ({ error, context }: { error: Error; context?: Record<string, unknown> }) => {
-        this.logger.error({ err: error, ...redactErrorContext(context) }, 'Channel error');
+        this.logger.error(
+          { err: redactErrorForLog(error), ...redactErrorContext(context) },
+          'Channel error'
+        );
       }
     );
 

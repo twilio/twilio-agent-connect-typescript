@@ -116,3 +116,11 @@ export function redactErrorContext(context?: Record<string, unknown>): Record<st
   }
   return out;
 }
+
+/**
+ * Prepare a channel error for logging. A `SyntaxError` from `JSON.parse`
+ * quotes the input it failed on, so only its type is logged.
+ */
+export function redactErrorForLog(error: Error): Error | { type: string } {
+  return error instanceof SyntaxError ? { type: error.name } : error;
+}

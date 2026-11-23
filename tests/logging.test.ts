@@ -97,6 +97,28 @@ describe('logging hygiene', () => {
     expect(JSON.stringify(context)).not.toContain('hunter2');
   });
 
+  it('logs only the type of a JSON parse error, which quotes its input', async () => {
+    const tac = await createTestTAC(getTestConfig());
+    const channel = new VoiceChannel(tac);
+    tac.registerChannel(channel);
+    const tacErrorSpy = vi.spyOn(tac.logger, 'error');
+    const channelErrorSpy = vi.spyOn(channel.getLoggerInternal(), 'error');
+    let parseError: Error | undefined;
+    try {
+      JSON.parse('hunter2 is my password');
+    } catch (err) {
+      parseError = err as Error;
+    }
+    expect(parseError?.message).toContain('hunter2');
+
+    channel.handleErrorInternal(parseError!, { conversationId: 'conv_1' });
+
+    expect(loggedArgs(tacErrorSpy)).toContain('SyntaxError');
+    expect(loggedArgs(tacErrorSpy)).not.toContain('hunter2');
+    expect(loggedArgs(channelErrorSpy)).toContain('SyntaxError');
+    expect(loggedArgs(channelErrorSpy)).not.toContain('hunter2');
+  });
+
   it('masks phone numbers and emails in an app-supplied logger and its children', async () => {
     const { stream, output } = captureStream();
     const tac = await TAC.create({
@@ -124,11 +146,17 @@ describe('logging hygiene', () => {
     });
 
     server.fastify.log.info({ from: CUSTOMER }, 'server');
-    await server.fastify.inject({ method: 'GET', url: '/log-test' });
+    await server.fastify.inject({
+      method: 'GET',
+      url: '/log-test?email=user@example.com&From=%2B15559998888',
+    });
     await server.fastify.close();
 
     expect(output()).toContain('server');
     expect(output()).toContain('caller +1***8888');
+    expect(output()).toContain('"url":"/log-test"');
     expect(output()).not.toContain(CUSTOMER);
+    expect(output()).not.toContain('15559998888');
+    expect(output()).not.toContain('user@example.com');
   });
 });
