@@ -159,4 +159,23 @@ describe('logging hygiene', () => {
     expect(output()).not.toContain('15559998888');
     expect(output()).not.toContain('user@example.com');
   });
+
+  it('masks addresses in the URL path of Fastify request logs', async () => {
+    const tac = await createTestTAC(getTestConfig());
+    const server = new TACServer(tac);
+    const { stream, output } = captureStream();
+    (server.fastify.log as any)[pino.symbols.streamSym] = stream;
+    server.fastify.get('/log-test/:phone/:email', async () => 'ok');
+
+    await server.fastify.inject({ method: 'GET', url: `/log-test/${CUSTOMER}/user@example.com` });
+    await server.fastify.close();
+
+    const requestLog = output()
+      .split('\n')
+      .find(line => line.includes('incoming request'));
+    expect(requestLog).toBeDefined();
+    expect(requestLog).toContain('"url":"/log-test/+1***8888/u***@example.com"');
+    expect(output()).not.toContain(CUSTOMER);
+    expect(output()).not.toContain('user@example.com');
+  });
 });
