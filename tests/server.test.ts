@@ -27,7 +27,11 @@ vi.mock('twilio', () => {
 
 // Use different ports for parallel test execution
 let testPort = 4000;
-const getNextPort = () => testPort++;
+// fetch refuses port 4045 (on its blocked-port list)
+const getNextPort = () => {
+  if (testPort === 4045) testPort++;
+  return testPort++;
+};
 
 describe('TACServer Webhook Validation', () => {
   const getTestConfig = () => ({
@@ -376,7 +380,7 @@ describe('TACServer Webhook Validation', () => {
 
     const jsonBody = '{"key":"value","number":42}';
 
-    await fetch(`http://localhost:${currentPort}/webhook?bodySHA256=abc123`, {
+    const response = await fetch(`http://localhost:${currentPort}/webhook?bodySHA256=abc123`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -385,12 +389,68 @@ describe('TACServer Webhook Validation', () => {
       body: jsonBody,
     });
 
+    expect(response.status).toBe(200);
     expect(mockValidateRequestWithBody).toHaveBeenCalledWith(
       'test_token_123',
       'test-sig',
       expect.stringContaining('/webhook?bodySHA256=abc123'),
       jsonBody
     );
+    expect(mockValidateRequest).not.toHaveBeenCalled();
+  });
+
+  it('should reject a JSON body without a bodySHA256 query parameter', async () => {
+    mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
+
+    server = new TACServer(tac, {
+      development: true,
+      port: currentPort,
+    });
+
+    await server.start();
+
+    const response = await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Twilio-Signature': 'test-sig',
+      },
+      body: '{"key":"value"}',
+    });
+
+    expect(response.status).toBe(403);
+    expect(mockValidateRequest).not.toHaveBeenCalled();
+    expect(mockValidateRequestWithBody).not.toHaveBeenCalled();
+  });
+
+  it('should validate a form-encoded body as signed parameters', async () => {
+    mockValidateRequest.mockReturnValue(true);
+
+    server = new TACServer(tac, {
+      development: true,
+      port: currentPort,
+    });
+
+    await server.start();
+
+    const response = await fetch(`http://localhost:${currentPort}/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Twilio-Signature': 'test-sig',
+      },
+      body: 'From=%2B15551234567&Body=Hello',
+    });
+
+    expect(response.status).toBe(200);
+    expect(mockValidateRequest).toHaveBeenCalledWith(
+      'test_token_123',
+      'test-sig',
+      expect.stringContaining('/webhook'),
+      { From: '+15551234567', Body: 'Hello' }
+    );
+    expect(mockValidateRequestWithBody).not.toHaveBeenCalled();
   });
 });
 
@@ -414,6 +474,7 @@ describe('TACServer idempotency token', () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
 
     currentPort = getNextPort();
 
@@ -443,7 +504,7 @@ describe('TACServer idempotency token', () => {
 
     await server.start();
 
-    await fetch(`http://localhost:${currentPort}/webhook`, {
+    await fetch(`http://localhost:${currentPort}/webhook?bodySHA256=test`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -473,7 +534,7 @@ describe('TACServer idempotency token', () => {
 
     await server.start();
 
-    await fetch(`http://localhost:${currentPort}/webhook`, {
+    await fetch(`http://localhost:${currentPort}/webhook?bodySHA256=test`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -513,6 +574,7 @@ describe('TACServer messaging channel auto-discovery', () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
     currentPort = getNextPort();
 
     const config = new TACConfig(getTestConfig());
@@ -542,7 +604,7 @@ describe('TACServer messaging channel auto-discovery', () => {
 
     await server.start();
 
-    await fetch(`http://localhost:${currentPort}/webhook`, {
+    await fetch(`http://localhost:${currentPort}/webhook?bodySHA256=test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -626,7 +688,7 @@ describe('TACServer registers channels passed to it', () => {
     ]);
 
   const postWebhook = (port: number, body: unknown) =>
-    fetch(`http://localhost:${port}/webhook`, {
+    fetch(`http://localhost:${port}/webhook?bodySHA256=test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -925,6 +987,7 @@ describe('TACServer call event routes', () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
 
     currentPort = getNextPort();
 
@@ -1516,6 +1579,7 @@ describe('TACServer webhookPaths.messaging deprecation', () => {
     mockValidateRequest.mockReset();
     mockValidateRequestWithBody.mockReset();
     mockValidateRequest.mockReturnValue(true);
+    mockValidateRequestWithBody.mockReturnValue(true);
 
     currentPort = getNextPort();
 
