@@ -14,9 +14,9 @@ import { MemoryClient } from '../clients/memory';
 import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
-import { Logger, createLogger } from './logger';
+import { Logger, createLogger, withScrubbing } from './logger';
 import { shutdownAnalytics, trackEvent } from './analytics';
-import { maskAddress } from '../util/log-redaction';
+import { maskAddress, redactErrorContext } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
 import { ExpiringMap } from '../util/expiring-map';
 
@@ -36,6 +36,10 @@ const ENDED_REPORT_TTL_MS = 60_000;
 
 export interface TACOptions {
   config?: TACConfig | TACConfigInput;
+  /**
+   * Logger for TAC and its channels and clients. Phone numbers and emails in
+   * its log calls, and its children's, are masked as in {@link createLogger}.
+   */
   logger?: Logger;
 }
 
@@ -124,7 +128,9 @@ export class TAC {
         ? options.config
         : new TACConfig(options.config)
       : TACConfig.fromEnv();
-    const finalLogger = options.logger ?? createLogger({ name: 'tac' });
+    const finalLogger = options.logger
+      ? withScrubbing(options.logger)
+      : createLogger({ name: 'tac' });
 
     this.config = finalConfig;
     this.logger = finalLogger;
@@ -227,7 +233,7 @@ export class TAC {
     channel.on(
       'error',
       ({ error, context }: { error: Error; context?: Record<string, unknown> }) => {
-        this.logger.error({ err: error, ...context }, 'Channel error');
+        this.logger.error({ err: error, ...redactErrorContext(context) }, 'Channel error');
       }
     );
 

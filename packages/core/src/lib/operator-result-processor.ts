@@ -6,7 +6,7 @@ import {
   ConversationIntelligenceConfig,
 } from '../types/index';
 import { MemoryClient } from '../clients/memory';
-import { Logger, createLogger } from './logger';
+import { Logger, createLogger, withScrubbing } from './logger';
 
 /**
  * Extract profile IDs from operator result execution details
@@ -89,7 +89,7 @@ export class OperatorResultProcessor {
   constructor(memoryClient: MemoryClient, config: ConversationIntelligenceConfig, logger?: Logger) {
     this.memoryClient = memoryClient;
     this.config = config;
-    this.logger = logger ?? createLogger({ name: 'cintel-processor' });
+    this.logger = logger ? withScrubbing(logger) : createLogger({ name: 'cintel-processor' });
   }
 
   /**

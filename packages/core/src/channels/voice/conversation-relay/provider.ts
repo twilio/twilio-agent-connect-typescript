@@ -1038,7 +1038,7 @@ export class ConversationRelayProvider extends VoiceProvider {
     const fromNumber = this.resolveFromNumber(validated.from);
 
     this.logger.info(
-      { to: validated.to, from: fromNumber },
+      { to: maskAddress(validated.to), from: maskAddress(fromNumber) },
       'Initiating outbound voice conversation'
     );
 

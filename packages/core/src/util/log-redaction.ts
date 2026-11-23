@@ -99,3 +99,20 @@ export function redactTwimlParameters(twiml: string | undefined | null): string 
     return `${prefix}${quote}***${quote}`;
   });
 }
+
+const CONTENT_CONTEXT_KEYS = new Set(['message', 'payload', 'metadata']);
+const ADDRESS_CONTEXT_KEYS = new Set(['to', 'from']);
+
+/**
+ * Prepare a channel error context for logging: drop message text, raw
+ * payloads and metadata, and mask `to` / `from`.
+ */
+export function redactErrorContext(context?: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(context ?? {})) {
+    if (CONTENT_CONTEXT_KEYS.has(key)) continue;
+    out[key] =
+      ADDRESS_CONTEXT_KEYS.has(key) && typeof value === 'string' ? maskAddress(value) : value;
+  }
+  return out;
+}

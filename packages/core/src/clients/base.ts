@@ -1,4 +1,4 @@
-import { Logger, createLogger } from '../lib/logger';
+import { Logger, createLogger, withScrubbing } from '../lib/logger';
 import { TACConfig } from '../lib/config';
 import packageJson from '../../../../package.json' with { type: 'json' };
 import axios, { AxiosInstance } from 'axios';
@@ -27,7 +27,7 @@ export abstract class BaseClient {
 
   constructor(baseUrl: string, config: TACConfig, logger?: Logger) {
     this.baseUrl = baseUrl;
-    this.logger = logger || createLogger({ name: this.constructor.name });
+    this.logger = logger ? withScrubbing(logger) : createLogger({ name: this.constructor.name });
 
     // Create Authorization header for Basic Auth
     const authHeader =
