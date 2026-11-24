@@ -158,6 +158,21 @@ describe('ConversationClient', () => {
       });
     });
 
+    it('createOrReuseConversation aborts the request through the given signal', async () => {
+      mockAdapter.onPost('/v2/Conversations').reply(200, conversation());
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        conversationClient.createOrReuseConversation(
+          [{ type: 'CUSTOMER', addresses: [{ channel: 'VOICE', address: '+15559876543' }] }],
+          undefined,
+          { signal: controller.signal }
+        )
+      ).rejects.toThrow('Failed to create conversation');
+      expect(mockAdapter.history.post).toHaveLength(0);
+    });
+
     it('getConversation fetches a conversation with its metadata', async () => {
       mockAdapter.onGet('/v2/Conversations/CH125').reply(200, conversation({ a: '1' }));
 

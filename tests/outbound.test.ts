@@ -5,6 +5,7 @@ import {
   ChatChannel,
   VoiceChannel,
   TAC,
+  ConversationClient,
   CallOptionsSchema,
   conversationMetadata,
   VoiceTwiMLOptionsSchema,
@@ -81,6 +82,16 @@ describe('Outbound Conversations', () => {
       createdAt: '2024-01-01T00:00:00Z',
     });
   };
+
+  /**
+   * Fail the voice pre-create for tests that don't cover it, so the call takes the
+   * `conversationConfiguration` fallback. Spies on the prototype because some tests
+   * build their TAC inside the test; a per-instance spy in a test still wins.
+   */
+  const failVoicePreCreate = () =>
+    vi
+      .spyOn(ConversationClient.prototype, 'createOrReuseConversation')
+      .mockRejectedValue(new Error('pre-create not mocked in this test'));
 
   beforeEach(() => {
     mockCallCreate.mockReset();
@@ -847,6 +858,182 @@ describe('Outbound Conversations', () => {
       mockAdapter.restore();
     });
 
+    describe('pre-created conversation on setup', () => {
+      const setupMessage = (
+        customParameters?: Record<string, string>,
+        call: { from: string; to: string; direction: string } = {
+          from: '+15559876543',
+          to: '+15551234567',
+          direction: 'inbound',
+        }
+      ): Buffer =>
+        Buffer.from(
+          JSON.stringify({
+            type: 'setup',
+            sessionId: 'sess_pre',
+            callSid: 'CA_pre',
+            ...call,
+            callType: 'PSTN',
+            callStatus: 'ringing',
+            accountSid: 'ACtest123456789',
+            ...(customParameters ? { customParameters } : {}),
+          })
+        );
+      const promptMessage = Buffer.from(
+        JSON.stringify({ type: 'prompt', voicePrompt: 'Hello', lang: 'en-US', last: true })
+      );
+      const listCalls = (adapter: MockAdapter): number =>
+        adapter.history.get.filter(r => /\/v2\/Conversations$/.test(r.url ?? '')).length;
+
+      it('registers the session from tacConversationId without polling', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter.onGet(/\/Participants/).reply(200, {
+          participants: [
+            {
+              id: 'PAcust',
+              conversationId: 'conv_pre',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              profileId: 'PFcust',
+              addresses: [{ channel: 'VOICE', address: '+15559876543' }],
+            },
+          ],
+        });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(listCalls(adapter)).toBe(0);
+        adapter.restore();
+      });
+
+      it('takes the VOICE customer when the conversation is grouped across channels', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        const customer = (id: string, address: string, channelName: string): object => ({
+          id,
+          conversationId: 'conv_pre',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          profileId: 'PFcust',
+          addresses: [{ channel: channelName, address }],
+        });
+        adapter.onGet(/\/Participants/).reply(200, {
+          participants: [
+            customer('PAsms', '+15550001111', 'SMS'),
+            customer('PAvoice', '+15559876543', 'VOICE'),
+          ],
+        });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(channel.getConversationSession('conv_pre')!.authorInfo?.address).toBe(
+          '+15559876543'
+        );
+        adapter.restore();
+      });
+
+      it('retries a failed registration with the pre-created id, without polling', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter
+          .onGet(/\/Participants/)
+          .replyOnce(404, { message: 'not found' })
+          .onGet(/\/Participants/)
+          .reply(200, {
+            participants: [
+              {
+                id: 'PAcust',
+                conversationId: 'conv_pre',
+                accountId: 'ACtest123456789',
+                type: 'CUSTOMER',
+                profileId: 'PFcust',
+                addresses: [{ channel: 'VOICE', address: '+15559876543' }],
+              },
+            ],
+          });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+        await vi.waitFor(() =>
+          expect(adapter.history.get.filter(r => /\/Participants/.test(r.url ?? ''))).toHaveLength(
+            1
+          )
+        );
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(listCalls(adapter)).toBe(0);
+        adapter.restore();
+      });
+
+      it('uses the callee as the caller on an outbound call reusing a text-only conversation', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter.onGet(/\/Participants/).reply(200, {
+          participants: [
+            {
+              id: 'PAsms',
+              conversationId: 'conv_pre',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              profileId: 'PFcust',
+              addresses: [{ channel: 'SMS', address: '+15559876543' }],
+            },
+          ],
+        });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit(
+          'message',
+          setupMessage(
+            { tacConversationId: 'conv_pre' },
+            { from: '+15551234567', to: '+15559876543', direction: 'outbound' }
+          )
+        );
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(channel.getConversationSession('conv_pre')!.authorInfo?.address).toBe(
+          '+15559876543'
+        );
+        adapter.restore();
+      });
+
+      it('does not register a session when the conversation does not exist', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter.onGet(/\/Participants/).reply(404, { message: 'not found' });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_missing' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() =>
+          expect(adapter.history.get.some(r => /\/Participants/.test(r.url ?? ''))).toBe(true)
+        );
+        expect(channel.isConversationActive('conv_missing')).toBe(false);
+        adapter.restore();
+      });
+    });
+
     it('should fall back to from for authorInfo on inbound calls', async () => {
       const tac = await createTestTAC(getTestConfig());
       const channel = new VoiceChannel(tac);
@@ -924,6 +1111,7 @@ describe('Outbound Conversations', () => {
     let channel: VoiceChannel;
 
     beforeEach(async () => {
+      failVoicePreCreate();
       tac = await createTestTAC(getVoiceConfig());
       channel = new VoiceChannel(tac);
     });
@@ -949,6 +1137,72 @@ describe('Outbound Conversations', () => {
       // Verify TwiML contains conversationConfiguration
       const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
       expect(twiml).toContain('conversationConfiguration');
+    });
+
+    it('pre-creates the conversation and routes the call to it by id', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CApre' });
+      const create = vi
+        .spyOn(tac.getConversationClient()!, 'createOrReuseConversation')
+        .mockResolvedValue({ conversation: { id: 'conv_conversation_out' }, reused: false } as any);
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      expect(create).toHaveBeenCalledWith(
+        [
+          { type: 'CUSTOMER', addresses: [{ channel: 'VOICE', address: '+15559876543' }] },
+          { type: 'AI_AGENT', addresses: [{ channel: 'VOICE', address: '+15551234567' }] },
+        ],
+        undefined,
+        { signal: expect.any(AbortSignal) }
+      );
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('conversationId="conv_conversation_out"');
+      expect(twiml).not.toContain('conversationConfiguration=');
+    });
+
+    it('routes to an explicit twimlOptions.conversationId without pre-creating', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAexplicit' });
+      const create = vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation');
+
+      await channel.initiateOutboundConversation({
+        to: '+15559876543',
+        twimlOptions: { conversationId: 'conv_conversation_mine' },
+      });
+
+      expect(create).not.toHaveBeenCalled();
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('conversationId="conv_conversation_mine"');
+      expect(twiml).not.toContain('conversationConfiguration=');
+    });
+
+    it('keeps channel-default customParameters alongside tacConversationId', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAparams' });
+      vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockResolvedValue({
+        conversation: { id: 'conv_conversation_out' },
+        reused: false,
+      } as any);
+      const defaultsChannel = new VoiceChannel(tac, {
+        defaultTwimlOptions: { customParameters: { tenant: 'acme' } },
+      });
+
+      await defaultsChannel.initiateOutboundConversation({ to: '+15559876543' });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('name="tenant" value="acme"');
+      expect(twiml).toContain('name="tacConversationId" value="conv_conversation_out"');
+    });
+
+    it('still places the call with the configuration when the pre-create fails', async () => {
+      mockCallCreate.mockResolvedValue({ sid: 'CAfallback' });
+      vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockRejectedValue(
+        new Error('boom')
+      );
+
+      await channel.initiateOutboundConversation({ to: '+15559876543' });
+
+      const twiml = mockCallCreate.mock.calls[0]![0].twiml as string;
+      expect(twiml).toContain('conversationConfiguration=');
+      expect(twiml).not.toContain('conversationId=');
     });
 
     it('should derive the WebSocket URL from voicePublicDomain when not passed', async () => {
@@ -1098,6 +1352,10 @@ describe('Outbound Conversations', () => {
 
   describe('VoiceChannel callOptions', () => {
     const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    beforeEach(() => {
+      failVoicePreCreate();
+    });
 
     /** Place a call and return the arguments handed to calls.create. */
     const placeCall = async (
@@ -1299,6 +1557,10 @@ describe('Outbound Conversations', () => {
   // custom server or non-default routes supply their own callback URLs.
   describe('VoiceChannel defaultCallOptions', () => {
     const getVoiceConfig = () => ({ ...getTestConfig(), voicePublicDomain: 'example.com' });
+
+    beforeEach(() => {
+      failVoicePreCreate();
+    });
 
     const makeChannel = async (defaultCallOptions: CallOptions): Promise<VoiceChannel> =>
       new VoiceChannel(await createTestTAC(getVoiceConfig()), { defaultCallOptions });

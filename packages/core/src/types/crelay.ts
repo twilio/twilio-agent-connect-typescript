@@ -348,6 +348,14 @@ export const VoiceTwiMLOptionsConversationRelaySchema = VoiceTwiMLOptionsBase.ex
    * conversation creation and participants.
    */
   conversationConfiguration: z.string().optional(),
+  /**
+   * Existing Conversation Orchestrator conversation ID. Routes the call
+   * directly to that conversation, bypassing the configuration's grouping
+   * rules. When set, `conversationConfiguration` is omitted from the TwiML,
+   * since ConversationRelay ignores the ID when both are present. An empty
+   * string counts as unset.
+   */
+  conversationId: z.string().optional(),
 
   // Language, TTS, STT
   /**
@@ -495,6 +503,7 @@ const VoiceTwiMLOptionsConversationRelayShape = {
   welcomeGreetingInterruptible: true,
   actionUrl: true,
   conversationConfiguration: true,
+  conversationId: true,
   websocketUrl: true,
   language: true,
   ttsLanguage: true,

@@ -41,6 +41,16 @@ const POLL_BASE_DELAY_MS = 250;
 const POLL_MAX_DELAY_MS = 1500;
 
 /**
+ * Limit on the whole conversation pre-create, retries included. Twilio waits
+ * about 15s for inbound TwiML, so a hung create must give up well before that
+ * and fall back, leaving time for the app's `onInboundCallTwiml` customizer.
+ */
+const PRE_CREATE_TIMEOUT_MS = 5000;
+
+/** `<Parameter>` carrying a pre-created conversation ID to the WebSocket `setup` message. */
+const PRECREATED_CONVERSATION_PARAMETER = 'tacConversationId';
+
+/**
  * A single in-flight streaming response, with the {@link AbortController} that
  * cancels it and whether any token has been written to the transport yet.
  */
@@ -127,7 +137,7 @@ export class ConversationRelayProvider extends VoiceProvider {
    */
   private async initializeOrchestratedConversation(
     callSid: string,
-    fromNumber: string | null,
+    callerAddress: string | null,
     ws: WebSocket
   ): Promise<ConversationId> {
     const conversationClient = this.channel.getConversationClientInternal();
@@ -162,8 +172,28 @@ export class ConversationRelayProvider extends VoiceProvider {
       );
     }
 
-    const conversation = conversations[0]!;
-    const conversationId = conversation.id as ConversationId;
+    return this.registerOrchestratedConversation(
+      conversations[0]!.id as ConversationId,
+      callSid,
+      callerAddress,
+      ws
+    );
+  }
+
+  /**
+   * Register the local session and WebSocket for a known orchestrated
+   * conversation, reading the caller's address and profile from its participants.
+   */
+  private async registerOrchestratedConversation(
+    conversationId: ConversationId,
+    callSid: string,
+    callerAddress: string | null,
+    ws: WebSocket
+  ): Promise<ConversationId> {
+    const conversationClient = this.channel.getConversationClientInternal();
+    if (!conversationClient) {
+      throw new Error('Conversation client is required in orchestrated mode');
+    }
 
     const participants = await conversationClient.listParticipants(conversationId);
 
@@ -174,7 +204,7 @@ export class ConversationRelayProvider extends VoiceProvider {
     );
     const customerAddress =
       customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
-      fromNumber ??
+      callerAddress ??
       undefined;
     const profileId: ProfileId | undefined = customerParticipant?.profileId
       ? (customerParticipant.profileId as ProfileId)
@@ -207,11 +237,19 @@ export class ConversationRelayProvider extends VoiceProvider {
   public override handleWebSocket(ws: WebSocket): void {
     let conversationId: ConversationId | null = null;
     let callSid: string | null = null;
-    let fromNumber: string | null = null;
+    let callerAddress: string | null = null;
+    // From the `tacConversationId` parameter; kept so a retry registers the
+    // same conversation instead of polling for it.
+    let preCreatedId: ConversationId | null = null;
     let initializationFailed = false;
     // Background conversation lookup started on `setup`; cleared once claimed,
     // by the first message that needs a conversation or by the close handler.
     let initPromise: Promise<ConversationId> | null = null;
+
+    const startOrchestratedInit = (sid: string): Promise<ConversationId> =>
+      preCreatedId
+        ? this.registerOrchestratedConversation(preCreatedId, sid, callerAddress, ws)
+        : this.initializeOrchestratedConversation(sid, callerAddress, ws);
 
     /**
      * Resolve this connection's conversation, creating it on first use.
@@ -257,8 +295,8 @@ export class ConversationRelayProvider extends VoiceProvider {
           // Relay-only: conversationId === callSid.
           session.callSid = sid;
 
-          if (fromNumber) {
-            session.authorInfo = { address: fromNumber };
+          if (callerAddress) {
+            session.authorInfo = { address: callerAddress };
           }
 
           const voiceCallbacks = this.channel.getVoiceCallbacks();
@@ -270,7 +308,7 @@ export class ConversationRelayProvider extends VoiceProvider {
           // Stays visible to the close handler while awaited, so a
           // hangup mid-lookup still cleans up; cleared after so a
           // retry starts fresh and `close` uses conversationId.
-          initPromise ??= this.initializeOrchestratedConversation(sid, fromNumber, ws);
+          initPromise ??= startOrchestratedInit(sid);
           try {
             conversationId = await initPromise;
           } finally {
@@ -330,17 +368,23 @@ export class ConversationRelayProvider extends VoiceProvider {
           switch (message.type) {
             case 'setup':
               callSid = message.callSid;
-              fromNumber = message.from;
+              // The remote party: on an outbound call `from` is TAC's own number.
+              callerAddress =
+                message.direction.toLowerCase() === 'outbound' ? message.to : message.from;
 
-              // ConversationRelay creates the conversation at call-connect, so
-              // start the lookup now and let it overlap the wait for the
-              // caller's first utterance instead of delaying it.
+              // Start initialization now so it overlaps the wait for the
+              // caller's first utterance instead of delaying it. A pre-created
+              // conversation is registered by id; otherwise poll by call SID for
+              // the call's conversation.
               if (this.channel.isOrchestratorEnabledInternal()) {
                 this.logger.debug(
                   { call_sid: callSid },
                   'Starting background conversation initialization'
                 );
-                initPromise = this.initializeOrchestratedConversation(callSid, fromNumber, ws);
+                const param = message.customParameters?.[PRECREATED_CONVERSATION_PARAMETER];
+                preCreatedId =
+                  typeof param === 'string' && param.length > 0 ? (param as ConversationId) : null;
+                initPromise = startOrchestratedInit(callSid);
                 // Marks it handled; whoever claims it still sees the rejection.
                 void initPromise.catch(() => undefined);
               }
@@ -913,10 +957,107 @@ export class ConversationRelayProvider extends VoiceProvider {
       );
     }
 
-    return this.twimlBuilder.build('handleIncomingCall', {
-      host,
-      perCall: customized,
-    });
+    const resolved = await this.withPreCreatedConversation(
+      this.twimlBuilder.resolveOptions(host, customized),
+      twimlRequest?.callSid,
+      twimlRequest?.from,
+      twimlRequest?.to
+    );
+
+    return this.twimlBuilder.buildResolved('handleIncomingCall', resolved);
+  }
+
+  /**
+   * Pre-create the call's conversation and route the TwiML to it by
+   * `conversationId`, appending `tacConversationId` to the resolved
+   * `customParameters`.
+   *
+   * Skipped, returning `resolved` unchanged, when the options already select a
+   * conversation or use a `conversationConfiguration` other than TAC's: the
+   * conversation would be created under TAC's configuration, so ConversationRelay
+   * creates it from the selected one instead.
+   */
+  private async withPreCreatedConversation(
+    resolved: VoiceTwiMLOptionsConversationRelay,
+    callSid: string | undefined,
+    customerAddress: string | undefined,
+    agentAddress: string | undefined
+  ): Promise<VoiceTwiMLOptionsConversationRelay> {
+    if (
+      resolved.conversationId ||
+      resolved.conversationConfiguration === undefined ||
+      resolved.conversationConfiguration !== this.tacConfig.conversationConfigurationId
+    ) {
+      return resolved;
+    }
+
+    const conversationId = await this.preCreateConversation(callSid, customerAddress, agentAddress);
+    if (!conversationId) {
+      return resolved;
+    }
+    return {
+      ...resolved,
+      conversationId,
+      customParameters: {
+        ...resolved.customParameters,
+        [PRECREATED_CONVERSATION_PARAMETER]: conversationId,
+      },
+    };
+  }
+
+  /**
+   * Create (or reuse, on a 409) the conversation for a call before its TwiML is
+   * returned, so ConversationRelay routes to it instead of creating one on the
+   * first communication. Returns undefined outside orchestrated mode, on
+   * failure, or after {@link PRE_CREATE_TIMEOUT_MS}, leaving ConversationRelay
+   * to create it.
+   */
+  private async preCreateConversation(
+    callSid: string | undefined,
+    customerAddress: string | undefined,
+    agentAddress: string | undefined
+  ): Promise<ConversationId | undefined> {
+    const conversationClient = this.channel.getConversationClientInternal();
+    if (
+      !this.channel.isOrchestratorEnabledInternal() ||
+      !conversationClient ||
+      !customerAddress ||
+      !agentAddress
+    ) {
+      return undefined;
+    }
+
+    const startedAt = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PRE_CREATE_TIMEOUT_MS);
+    try {
+      const { conversation, reused } = await conversationClient.createOrReuseConversation(
+        [
+          { type: 'CUSTOMER', addresses: [{ channel: 'VOICE', address: customerAddress }] },
+          { type: 'AI_AGENT', addresses: [{ channel: 'VOICE', address: agentAddress }] },
+        ],
+        undefined,
+        { signal: controller.signal }
+      );
+      this.logger.info(
+        {
+          call_sid: callSid,
+          conversation_id: conversation.id,
+          reused,
+          create_ms: Date.now() - startedAt,
+        },
+        'Pre-created voice conversation'
+      );
+      return conversation.id as ConversationId;
+    } catch (err) {
+      this.logger.warn(
+        { err, call_sid: callSid, timed_out: controller.signal.aborted },
+        'Voice conversation pre-create failed, ConversationRelay will create it on the first communication'
+      );
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -1008,9 +1149,11 @@ export class ConversationRelayProvider extends VoiceProvider {
    * Initiate an outbound voice conversation
    *
    * Places an outbound call with inline TwiML that connects to ConversationRelay.
-   * The conversationConfiguration attribute tells CO to create and manage the
-   * conversation during passive hydration. The session is initialized when the
-   * background callSid lookup started at WebSocket setup finds it.
+   * In orchestrated mode the conversation is created (or reused) first and the
+   * TwiML routes the call to it by `conversationId`; if that create fails, the
+   * TwiML carries `conversationConfiguration` instead and CO creates the
+   * conversation on the call's first communication, found by the background
+   * callSid lookup started at WebSocket setup.
    *
    * TwiML fields are merged per-field, highest precedence first:
    *   1. `options.twimlOptions` — per-call overrides
@@ -1048,10 +1191,17 @@ export class ConversationRelayProvider extends VoiceProvider {
       // dedicated per-call outbound override and wins over any websocketUrl
       // that came through the layered twimlOptions merge; both fall back to the
       // TACConfig-derived URL.
-      const twiml = this.twimlBuilder.build('initiateOutboundConversation', {
-        perCall: validated.twimlOptions,
-        websocketUrl: validated.websocketUrl,
-      });
+      const resolved = await this.withPreCreatedConversation(
+        this.twimlBuilder.resolveOptions(undefined, validated.twimlOptions),
+        undefined,
+        validated.to,
+        fromNumber
+      );
+      const twiml = this.twimlBuilder.buildResolved(
+        'initiateOutboundConversation',
+        resolved,
+        validated.websocketUrl
+      );
       const callParams = this.buildCallParams(validated.callOptions);
 
       // The inline TwiML handed to Twilio, useful for debugging the
