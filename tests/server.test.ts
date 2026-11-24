@@ -830,6 +830,9 @@ describe('TACServer voice TwiML', () => {
     // Use the real handleIncomingCall (no spy) with a channel configured with
     // defaultTwimlOptions. Mirror the beforeEach setup with a fresh channel.
     const cfgTac = await createTestTAC(new TACConfig(getTestConfig()));
+    vi.spyOn(cfgTac.getConversationClient()!, 'createOrReuseConversation').mockRejectedValue(
+      new Error('pre-create not mocked in this test')
+    );
     const sms = new SMSChannel(cfgTac);
     const voice = new VoiceChannel(cfgTac, {
       defaultTwimlOptions: { welcomeGreeting: 'Server greeting', voice: 'en-US-Journey-D' },
@@ -1137,6 +1140,10 @@ describe('TACServer customization', () => {
 
     const config = new TACConfig(getTestConfig());
     tac = await createTestTAC(config);
+    // POST /twiml pre-creates the voice conversation.
+    vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockRejectedValue(
+      new Error('pre-create not mocked in this test')
+    );
 
     const smsChannel = new SMSChannel(tac);
     const voiceChannel = new VoiceChannel(tac);

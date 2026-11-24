@@ -98,6 +98,7 @@ export abstract class BaseClient {
    * @param method - HTTP method (GET, POST, etc.)
    * @param data - Optional request body (will be automatically serialized to JSON)
    * @param params - Optional query string parameters
+   * @param signal - Aborts the request, including any pending retries
    * @returns Promise resolving to the response data (already parsed from JSON)
    * @throws Error on timeout, HTTP errors, or network failures
    */
@@ -105,13 +106,15 @@ export abstract class BaseClient {
     url: string,
     method: string,
     data?: unknown,
-    params?: Record<string, string>
+    params?: Record<string, string>,
+    signal?: AbortSignal
   ): Promise<TResponse> {
     const response = await this.axiosInstance.request<TResponse>({
       url,
       method,
       data,
       params,
+      ...(signal !== undefined && { signal }),
     });
 
     return response.data;

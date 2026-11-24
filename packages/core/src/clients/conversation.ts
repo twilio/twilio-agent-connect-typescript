@@ -103,6 +103,8 @@ export class ConversationClient extends BaseClient {
     }>;
     /** Conversation metadata (string values; CO allows at most 8 keys). */
     metadata?: Record<string, string>;
+    /** Aborts the request, including any pending retries. */
+    signal?: AbortSignal;
   }): Promise<ConversationResponse> {
     const url = `/v2/Conversations`;
 
@@ -123,7 +125,13 @@ export class ConversationClient extends BaseClient {
     }
 
     try {
-      const data = await this.makeRequest<ConversationResponse>(url, 'POST', requestBody);
+      const data = await this.makeRequest<ConversationResponse>(
+        url,
+        'POST',
+        requestBody,
+        undefined,
+        options?.signal
+      );
       return ConversationResponseSchema.parse(data);
     } catch (error) {
       throw new Error(
@@ -143,18 +151,21 @@ export class ConversationClient extends BaseClient {
    * @param participants - Participants to create with the conversation
    * @param metadata - Set at creation; not applied when an existing
    *   conversation is reused — the caller patches it
+   * @param options.signal - Aborts the create, including any pending retries
    */
   public async createOrReuseConversation(
     participants: Array<{
       type: 'CUSTOMER' | 'AI_AGENT' | 'HUMAN_AGENT';
       addresses: ConversationAddress[];
     }>,
-    metadata?: Record<string, string>
+    metadata?: Record<string, string>,
+    options?: { signal?: AbortSignal }
   ): Promise<{ conversation: { id: string }; reused: boolean }> {
     try {
       const conversation = await this.createConversation({
         participants,
         ...(metadata !== undefined && { metadata }),
+        ...(options?.signal !== undefined && { signal: options.signal }),
       });
       return { conversation, reused: false };
     } catch (error) {

@@ -759,9 +759,12 @@ describe('instance affinity', () => {
   });
 
   it('an outbound call pins every callback to this instance', async () => {
-    const { channel } = await affinityChannel({
+    const { tac, channel } = await affinityChannel({
       instancePublicDomain: 'pod-7.voice.svc.cluster.local',
     });
+    vi.spyOn(tac.getConversationClient()!, 'createOrReuseConversation').mockRejectedValue(
+      new Error('pre-create not mocked in this test')
+    );
     const create = vi.fn().mockResolvedValue({ sid: 'CA_out' });
     vi.spyOn(channel, 'getTwilioClientInternal').mockReturnValue({ calls: { create } } as any);
 

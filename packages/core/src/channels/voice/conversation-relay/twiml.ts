@@ -47,6 +47,7 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
       'welcomeGreeting',
       'welcomeGreetingInterruptible',
       'conversationConfiguration',
+      'conversationId',
       'language',
       'ttsLanguage',
       'transcriptionLanguage',
@@ -81,15 +82,46 @@ export class TwiMLBuilderConversationRelay extends TwiMLBuilderBase<Conversation
    *   WebSocket URL.
    */
   public build(caller: string, options?: BuildTwiMLInputs): string {
-    const merged = this.buildTwimlOptions(options?.host, options?.perCall);
+    return this.buildResolved(
+      caller,
+      this.resolveOptions(options?.host, options?.perCall),
+      options?.websocketUrl
+    );
+  }
 
-    const resolvedWebsocketUrl =
-      options?.websocketUrl ?? merged.websocketUrl ?? this.defaultWebsocketUrl();
+  /** Merge every option layer into the options the TwiML is built from. */
+  public resolveOptions(
+    host: VoiceTwiMLOptionsConversationRelay | undefined,
+    perCall: VoiceTwiMLOptionsConversationRelay | undefined
+  ): VoiceTwiMLOptionsConversationRelay {
+    return this.buildTwimlOptions(host, perCall);
+  }
+
+  /**
+   * Build the TwiML XML from options already merged by {@link resolveOptions}.
+   *
+   * `conversationConfiguration` is dropped whenever a `conversationId` is set:
+   * ConversationRelay applies the configuration's grouping rules and ignores
+   * `conversationId` when both are present. An empty `conversationId` counts
+   * as unset and is not emitted.
+   *
+   * @param websocketUrl - Dedicated per-call override; see
+   *   {@link BuildTwiMLInputs.websocketUrl}.
+   */
+  public buildResolved(
+    caller: string,
+    merged: VoiceTwiMLOptionsConversationRelay,
+    websocketUrl?: string
+  ): string {
+    const resolvedWebsocketUrl = websocketUrl ?? merged.websocketUrl ?? this.defaultWebsocketUrl();
     if (!resolvedWebsocketUrl) {
       throw this.missingWebsocketUrlError(caller);
     }
 
-    return this.generateTwiml(resolvedWebsocketUrl, merged);
+    const options = merged.conversationId
+      ? { ...merged, conversationConfiguration: undefined }
+      : { ...merged, conversationId: undefined };
+    return this.generateTwiml(resolvedWebsocketUrl, options);
   }
 
   /**
