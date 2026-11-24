@@ -2460,6 +2460,36 @@ describe('VoiceChannel', () => {
       expect(capturedSignals[0].aborted).toBe(true);
     });
 
+    it('should only treat a prompt as a turn when last is true or missing', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      const transcripts: string[] = [];
+      voiceChannel.on('prompt', (data: any) => {
+        transcripts.push(data.transcript);
+      });
+
+      const prompt = (voicePrompt: string, last?: boolean) =>
+        mockWs._emit(
+          'message',
+          Buffer.from(
+            JSON.stringify({
+              type: 'prompt',
+              voicePrompt,
+              lang: 'en-US',
+              ...(last !== undefined && { last }),
+            })
+          )
+        );
+
+      prompt('I need', false);
+      prompt('I need help with', false);
+      prompt('I need help with my order', true);
+      prompt('Thanks');
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(transcripts).toEqual(['I need help with my order', 'Thanks']);
+    });
+
     it('should cancel stream task on WebSocket disconnect', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
