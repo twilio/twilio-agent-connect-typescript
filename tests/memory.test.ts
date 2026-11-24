@@ -262,6 +262,41 @@ describe('Memory Functionality', () => {
       expect(result.communications).toHaveLength(1);
     });
 
+    it('should return Conversations API communications with null timestamps', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_null_ts',
+          conversationId: 'conv_test_123',
+          accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+          author: { address: '+15555550100', channel: 'SMS', participantId: 'part_123' },
+          content: { type: 'TEXT', text: 'Hello' },
+          recipients: [],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+
+      vi.spyOn(tac.getConversationClient(), 'listCommunications').mockResolvedValue(
+        mockCommunications
+      );
+
+      const session: ConversationSession = {
+        conversationId: 'conv_test_123',
+        profileId: undefined,
+        channel: 'sms',
+        startedAt: new Date(),
+        authorInfo: undefined,
+      };
+
+      const result = await tac.retrieveMemory(session);
+
+      expect(result.communications).toHaveLength(1);
+      expect(result.communications[0].createdAt).toBeNull();
+      expect(result.communications[0].updatedAt).toBeNull();
+    });
+
     it('should fallback to Conversations API when author_info exists but address is empty', async () => {
 
       const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
