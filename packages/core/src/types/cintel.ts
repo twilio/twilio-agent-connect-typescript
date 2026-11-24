@@ -12,17 +12,38 @@ import { z } from 'zod';
  */
 export const CintelParticipantSchema = z.object({
   type: z.string(),
-  profileId: z.string().optional(),
-  mediaParticipantId: z.string().optional(),
+  // Intelligence sends `null` for participants without a Memory profile (e.g. a human agent leg)
+  profileId: z.string().nullish(),
+  mediaParticipantId: z.string().nullish(),
 });
 
 export type CintelParticipant = z.infer<typeof CintelParticipantSchema>;
+
+/**
+ * Conversation Memory context resolved during the rule execution
+ */
+export const ResolvedMemoryContextSchema = z.object({
+  profileId: z.string().nullish(),
+  memoryStoreId: z.string().nullish(),
+});
+
+export type ResolvedMemoryContext = z.infer<typeof ResolvedMemoryContextSchema>;
+
+/**
+ * Context (Memory, Knowledge) resolved during the rule execution
+ */
+export const ResolvedContextSchema = z.object({
+  memory: ResolvedMemoryContextSchema.nullish(),
+});
+
+export type ResolvedContext = z.infer<typeof ResolvedContextSchema>;
 
 /**
  * Execution details for an operator result
  */
 export const ExecutionDetailsSchema = z.object({
   participants: z.array(CintelParticipantSchema).optional(),
+  resolvedContext: ResolvedContextSchema.nullish(),
 });
 
 export type ExecutionDetails = z.infer<typeof ExecutionDetailsSchema>;
@@ -68,6 +89,7 @@ export type IntelligenceConfiguration = z.infer<typeof IntelligenceConfiguration
 export const OperatorResultEventSchema = z.object({
   accountId: z.string(),
   conversationId: z.string(),
+  /** Legacy location; Intelligence sends the store at `operatorResults[].executionDetails.resolvedContext.memory` */
   memoryStoreId: z.string().optional(),
   intelligenceConfiguration: IntelligenceConfigurationSchema,
   operatorResults: z.array(OperatorResultSchema),

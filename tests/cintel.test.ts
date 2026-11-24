@@ -67,6 +67,29 @@ describe('Conversation Intelligence Types', () => {
       expect(result.success).toBe(true);
     });
 
+    it('should accept null participant profileId and mediaParticipantId', () => {
+      const event = {
+        accountId: 'AC123',
+        conversationId: 'conv_123',
+        intelligenceConfiguration: { id: 'LY_CONFIG_123' },
+        operatorResults: [
+          {
+            id: 'result_123',
+            operator: { id: 'LY_SUM_789' },
+            outputFormat: 'JSON',
+            result: { summaries: ['test'] },
+            dateCreated: '2024-01-15T10:00:00Z',
+            executionDetails: {
+              participants: [{ type: 'HUMAN_AGENT', profileId: null, mediaParticipantId: null }],
+              resolvedContext: { memory: null, knowledge: null },
+            },
+          },
+        ],
+      };
+
+      expect(OperatorResultEventSchema.safeParse(event).success).toBe(true);
+    });
+
     it('should reject invalid operator result event', () => {
       const invalidEvent = {
         accountId: 'AC123',
@@ -486,6 +509,61 @@ describe('OperatorResultProcessor', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('No memory store ID');
+    });
+
+    // Shape documented at https://www.twilio.com/docs/conversations/intelligence/webhooks/rule-execution
+    const documentedSummaryEvent = (memoryStoreId: string) => ({
+      accountId: 'AC123',
+      conversationId: 'conv_123',
+      intelligenceConfiguration: {
+        id: 'LY_CONFIG_123',
+      },
+      operatorResults: [
+        {
+          id: 'result_123',
+          operator: {
+            id: 'LY_SUM_789',
+          },
+          outputFormat: 'JSON',
+          result: { summaries: ['Customer asked where their order is'] },
+          dateCreated: '2024-01-15T10:00:00Z',
+          executionDetails: {
+            participants: [
+              { type: 'CUSTOMER', profileId: 'profile_123', mediaParticipantId: null },
+              { type: 'HUMAN_AGENT', profileId: null, mediaParticipantId: null },
+            ],
+            resolvedContext: {
+              memory: { profileId: 'profile_123', memoryStoreId },
+              knowledge: null,
+            },
+          },
+        },
+      ],
+    });
+
+    it('should read the memory store ID from resolvedContext.memory', async () => {
+      mockAdapter.onPost(/\/ConversationSummaries$/).reply(200, {
+        message: 'Summaries created successfully',
+      });
+
+      const result = await processor.processEvent(
+        documentedSummaryEvent('mem_service_01kbjqhhdpft0tbp21jt4ktbxg')
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(false);
+      expect(result.eventType).toBe('summary');
+      expect(result.createdCount).toBe(1);
+    });
+
+    it('should skip a resolvedContext memory store ID from a different store', async () => {
+      const result = await processor.processEvent(
+        documentedSummaryEvent('mem_service_01kbjqhhdpft0tbp21jt4ktbxz')
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(true);
+      expect(result.skipReason).toContain('different memory store');
     });
   });
 });
