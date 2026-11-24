@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   MediaStreamsOpenAICallState,
   MediaStreamsOpenAIProvider,
@@ -196,6 +196,40 @@ describe('MediaStreamsOpenAIProvider', () => {
     await expect(provider.runToolCall('CA1' as ConversationId, 'nope', '{}')).resolves.toEqual({
       error: "Unknown tool 'nope'",
     });
+  });
+
+  it('logs only the type of a tool-argument parse error, which quotes its input', async () => {
+    const tool = new TACTool('ping', 'Ping', { type: 'object', properties: {} }, () =>
+      Promise.resolve('pong')
+    );
+    const { provider } = makeProbe({ tools: [tool] });
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      await provider.runToolCall('CA1' as ConversationId, 'ping', 'hunter2 is my password');
+
+      const call = logError.mock.calls.find(c => c[1] === 'Tool failed');
+      expect(JSON.stringify(call)).toContain('SyntaxError');
+      expect(JSON.stringify(call)).not.toContain('hunter2');
+    } finally {
+      logError.mockRestore();
+    }
+  });
+
+  it('logs only the type of a model frame parse error, which quotes its input', async () => {
+    const { provider, channel } = makeProbe();
+    channel.startConversationInternal('CA1' as ConversationId);
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      await provider.handleModelMessage('CA1' as ConversationId, 'hunter2 is my password');
+
+      const call = logError.mock.calls.find(c => c[1] === 'Error handling model event');
+      expect(JSON.stringify(call)).toContain('SyntaxError');
+      expect(JSON.stringify(call)).not.toContain('hunter2');
+    } finally {
+      logError.mockRestore();
+    }
   });
 
   it('clears the state it allocated, so a subclass needs no shutdown of its own', async () => {

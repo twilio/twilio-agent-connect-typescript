@@ -11,13 +11,19 @@ import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
 import { twiMLRequestFromForm, CALL_EVENT_KINDS } from '@twilio/tac-core';
-import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
+import { TAC, VoiceChannel, MessagingChannel, createLogger } from '@twilio/tac-core';
 
 /**
  * Server configuration options
  */
 export interface TACServerConfig {
-  /** Fastify server options (ignored if `fastifyInstance` is provided) */
+  /**
+   * Fastify server options (ignored if `fastifyInstance` is provided).
+   *
+   * The default Fastify logger masks phone numbers and emails. A `logger` or
+   * `loggerInstance` set here replaces it and is not masked, unless it is
+   * `loggerInstance: createLogger()`.
+   */
   fastify?: FastifyServerOptions;
 
   /**
@@ -26,7 +32,8 @@ export interface TACServerConfig {
    * Use this to control construction-time settings (logger, `trustProxy`,
    * schema, ...) or to register your own plugins/hooks before TAC's
    * routes are set up. If provided, the `fastify` options field is
-   * ignored.
+   * ignored. TAC does not mask this instance's logs; create it with
+   * `loggerInstance: createLogger()` to mask phone numbers and emails.
    */
   fastifyInstance?: FastifyInstance;
 
@@ -206,10 +213,10 @@ export class TACServer {
     if (config.fastifyInstance) {
       this.fastify = config.fastifyInstance;
     } else {
+      const ownLogger =
+        config.fastify?.logger !== undefined || config.fastify?.loggerInstance !== undefined;
       this.fastify = Fastify({
-        logger: {
-          level: process.env.TWILIO_LOG_LEVEL || 'info',
-        },
+        ...(!ownLogger && { loggerInstance: createLogger() }),
         ...config.fastify,
       });
     }

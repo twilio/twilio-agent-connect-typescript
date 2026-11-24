@@ -188,6 +188,19 @@ Telemetry is on by default. To disable it, set the following environment variabl
 TAC_ANALYTICS_DISABLED=true
 ```
 
+## Logging
+
+TAC logs with [Pino](https://getpino.io/) and masks phone numbers and email addresses in its logs. It does not log the memory recall query, and its channel error logs leave out message text and raw payloads. Set the level with `TWILIO_LOG_LEVEL`.
+
+Masking applies to loggers from `createLogger()`, to a logger you pass as `TAC.create({ logger })` (except bindings it already has), and to `TACServer`'s default Fastify logger. It does not apply to a Fastify logger you configure yourself, through `fastify.logger` or `fastifyInstance`. To keep masking there, create the instance with `loggerInstance: createLogger()`:
+
+```typescript
+import Fastify from 'fastify';
+import { createLogger } from 'twilio-agent-connect';
+
+const fastifyInstance = Fastify({ loggerInstance: createLogger() });
+```
+
 ## Learn More
 
 **Examples & Guides:**

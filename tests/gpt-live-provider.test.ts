@@ -592,6 +592,23 @@ describe('GPTLiveProvider WebSocket bridge', () => {
     await vi.waitFor(() => expect(twilioWs.closed).toBe(true));
   });
 
+  it('logs only the type of a Twilio frame parse error, which quotes its input', async () => {
+    const { provider, channel } = makeProvider();
+    const twilioWs = new FakeSocket();
+    provider.handleWebSocket(twilioWs as never);
+
+    twilioWs.emit('message', Buffer.from('hunter2 is my password'));
+
+    await vi.waitFor(() =>
+      expect(channel.logger.error).toHaveBeenCalledWith(
+        expect.anything(),
+        'Media stream WebSocket error'
+      )
+    );
+    expect(JSON.stringify(channel.logger.error.mock.calls)).toContain('SyntaxError');
+    expect(JSON.stringify(channel.logger.error.mock.calls)).not.toContain('hunter2');
+  });
+
   it('tears down the Twilio socket when the model socket errors', async () => {
     const { provider, channel } = makeProvider();
     const modelWs = new FakeSocket();

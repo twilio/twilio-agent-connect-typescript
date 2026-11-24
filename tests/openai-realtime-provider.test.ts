@@ -843,6 +843,28 @@ describe('OpenAIRealtimeProvider audio bridge', () => {
     }
   });
 
+  it('logs only the type of a Twilio frame parse error, which quotes its input', async () => {
+    const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
+    const twilioWs = new FakeSocket();
+    provider.handleWebSocket(twilioWs as unknown as WebSocket);
+    const logError = vi.spyOn(noopLogger, 'error');
+
+    try {
+      twilioWs.emit('message', Buffer.from('hunter2 is my password'));
+
+      await vi.waitFor(() =>
+        expect(logError).toHaveBeenCalledWith(
+          expect.anything(),
+          'Unhandled error in Media Stream message handler'
+        )
+      );
+      expect(JSON.stringify(logError.mock.calls)).toContain('SyntaxError');
+      expect(JSON.stringify(logError.mock.calls)).not.toContain('hunter2');
+    } finally {
+      logError.mockRestore();
+    }
+  });
+
   it('forwards model audio back to Twilio tagged with the streamSid', async () => {
     const { provider } = makeBridge({ defaultSessionConfig: validSessionConfig });
     const modelWs = new FakeSocket();

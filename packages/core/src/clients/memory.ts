@@ -61,7 +61,8 @@ export class MemoryClient extends BaseClient {
         {
           memory_store_id: this.storeId,
           profile_id: profileId,
-          request,
+          request: { ...request, query: undefined },
+          has_query: request.query !== undefined,
         },
         'Retrieving memories'
       );

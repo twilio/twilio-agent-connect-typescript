@@ -13,6 +13,8 @@ import {
   type VoiceTwiMLOptionsMediaStreams,
 } from '../../../../types/index';
 import { ExpiringMap } from '../../../../util/expiring-map';
+import { errorLogFields } from '../../../../util/error-log-fields';
+import { redactErrorForLog } from '../../../../util/log-redaction';
 import type { VoiceChannel } from '../../channel';
 import { VoiceProvider } from '../../provider';
 import { TwiMLBuilderMediaStreams } from '../twiml';
@@ -388,7 +390,10 @@ export abstract class MediaStreamsOpenAIProvider<
       }
       await this.dispatchModelEvent(conversationId, session, event);
     } catch (err) {
-      this.logger.error({ err, conversation_id: conversationId }, 'Error handling model event');
+      this.logger.error(
+        { ...errorLogFields(redactErrorForLog(err)), conversation_id: conversationId },
+        'Error handling model event'
+      );
     }
   }
 
@@ -432,7 +437,14 @@ export abstract class MediaStreamsOpenAIProvider<
     } catch (err) {
       // Only the generic message goes back: the model may read tool output
       // aloud, so a stack trace or upstream payload must never reach the caller.
-      this.logger.error({ err, conversation_id: conversationId, tool_name: name }, 'Tool failed');
+      this.logger.error(
+        {
+          ...errorLogFields(redactErrorForLog(err)),
+          conversation_id: conversationId,
+          tool_name: name,
+        },
+        'Tool failed'
+      );
       return { error: `Tool '${name}' failed to execute.` };
     }
   }
