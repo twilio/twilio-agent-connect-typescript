@@ -409,7 +409,9 @@ describe('Memory Functionality', () => {
     });
 
     it('should return undefined when memory not configured', async () => {
-      const tac = await createTestTAC(getTestConfigWithoutMemory());
+      // Voice-only: without a conversation configuration there is no memory client.
+      const { conversationConfigurationId: _omit, ...voiceOnly } = getTestConfigWithoutMemory();
+      const tac = await createTestTAC(voiceOnly);
 
       const result = await tac.fetchProfile('profile_123');
 

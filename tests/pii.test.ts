@@ -348,6 +348,22 @@ describe('PII masking', () => {
       channel = new SMSChannel(tac);
       tac.registerChannel(channel);
       vi.spyOn(tac, 'retrieveMemory').mockResolvedValue(undefined as never);
+      vi.spyOn(tac.getConversationClient()!, 'listParticipants').mockResolvedValue([
+        {
+          id: 'PAcustomer',
+          conversationId: 'CHtest_pii',
+          accountId: 'ACtest123456789',
+          type: 'CUSTOMER',
+          addresses: [{ channel: 'SMS', address: '+15559876543' }],
+        },
+        {
+          id: 'PAagent',
+          conversationId: 'CHtest_pii',
+          accountId: 'ACtest123456789',
+          type: 'AI_AGENT',
+          addresses: [{ channel: 'SMS', address: '+15551234567' }],
+        },
+      ] as never);
     });
 
     afterEach(() => {
