@@ -409,7 +409,12 @@ export class TAC {
 
         // Auto-send if callback returned a string
         if (typeof response === 'string') {
-          if (response === '') {
+          if (data.abortSignal?.aborted) {
+            this.logger.info(
+              { conversation_id: data.conversationId },
+              'Turn was interrupted, skipping auto-send of callback response'
+            );
+          } else if (response === '') {
             this.logger.warn(
               { conversation_id: data.conversationId },
               'Callback returned empty string, skipping auto-send'
@@ -445,6 +450,8 @@ export class TAC {
   /**
    * Register callback for when messages are ready to be processed.
    * Return a string to auto-send, or null/void for manual handling.
+   * On voice, a string returned after the caller interrupted the turn
+   * (`abortSignal` aborted) is not sent.
    */
   public onMessageReady(callback: MessageReadyCallback): void {
     this.messageReadyCallback = callback;

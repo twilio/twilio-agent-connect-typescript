@@ -2460,6 +2460,47 @@ describe('VoiceChannel', () => {
       expect(capturedSignals[0].aborted).toBe(true);
     });
 
+    it('should not auto-send the reply for a prompt interrupted while its callback ran', async () => {
+      const { tac, mockWs } = await setupForInterrupt();
+
+      let releaseFirstReply!: () => void;
+      const firstReplyGate = new Promise<void>(resolve => {
+        releaseFirstReply = resolve;
+      });
+      tac.onMessageReady(async ({ message }) => {
+        if (message === 'First question') {
+          await firstReplyGate;
+          return 'Stale reply';
+        }
+        return 'Fresh reply';
+      });
+
+      const sentTokens = (): string[] =>
+        mockWs.send.mock.calls
+          .map((call: any[]) => JSON.parse(call[0] as string))
+          .filter((m: any) => m.type === 'text')
+          .map((m: any) => m.token);
+
+      const prompt = (voicePrompt: string) =>
+        mockWs._emit(
+          'message',
+          Buffer.from(JSON.stringify({ type: 'prompt', voicePrompt, lang: 'en-US', last: true }))
+        );
+
+      prompt('First question');
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({ type: 'interrupt' })));
+      prompt('Second question');
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      releaseFirstReply();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(sentTokens()).not.toContain('Stale reply');
+      expect(sentTokens()).toContain('Fresh reply');
+    });
+
     it('should cancel stream task on WebSocket disconnect', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
