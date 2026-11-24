@@ -131,6 +131,12 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
   onWebSocketDisconnected?: (data: { conversationId: ConversationId }) => void;
 }
 
+type PromptEvent = Parameters<NonNullable<VoiceChannelEvents['onPrompt']>>[0];
+type InterruptEvent = Parameters<NonNullable<VoiceChannelEvents['onInterrupt']>>[0];
+
+/** TAC's own prompt and interrupt handlers for a voice channel. */
+type TurnListeners = Pick<VoiceChannelEvents, 'onPrompt' | 'onInterrupt'>;
+
 /**
  * Voice Channel for handling voice-based conversations over a WebSocket.
  *
@@ -142,6 +148,8 @@ export interface VoiceChannelEvents extends BaseChannelEvents {
 export class VoiceChannel extends BaseChannel {
   private readonly provider: VoiceProvider;
   private readonly voiceCallbacks: VoiceChannelEvents;
+  /** TAC's turn handlers, kept apart from the slots users fill with `on('prompt' | 'interrupt')`. */
+  private tacTurnListeners: TurnListeners = {};
   private twilioClient: ReturnType<typeof Twilio> | undefined;
   private onInboundCallTwimlHandler: InboundCallTwimlHandler | undefined;
   private onCallStatusHandler: CallStatusHandler | undefined;
@@ -447,6 +455,44 @@ export class VoiceChannel extends BaseChannel {
    */
   public getVoiceCallbacks(): VoiceChannelEvents {
     return this.voiceCallbacks;
+  }
+
+  /**
+   * Install TAC's prompt and interrupt handlers. They run alongside, not
+   * instead of, handlers set with `on('prompt' | 'interrupt', ...)`.
+   *
+   * @internal
+   */
+  public setTurnListenersInternal(listeners: TurnListeners): void {
+    this.tacTurnListeners = listeners;
+  }
+
+  /**
+   * Deliver a caller turn to TAC's prompt handler and the user's. Both start
+   * together and both are awaited, so the next queued prompt waits for each;
+   * the first failure is rethrown.
+   *
+   * @internal
+   */
+  public async emitPromptInternal(data: PromptEvent): Promise<void> {
+    const handlers = [this.tacTurnListeners.onPrompt, this.voiceCallbacks.onPrompt].filter(
+      handler => handler !== undefined
+    );
+    const results = await Promise.allSettled(handlers.map(async handler => handler(data)));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
+  }
+
+  /**
+   * Deliver an interrupt to TAC's handler, then the user's.
+   *
+   * @internal
+   */
+  public emitInterruptInternal(data: InterruptEvent): void {
+    this.tacTurnListeners.onInterrupt?.(data);
+    this.voiceCallbacks.onInterrupt?.(data);
   }
 
   /**
@@ -1583,6 +1629,7 @@ export class VoiceChannel extends BaseChannel {
     this.provider.shutdown();
     this.activeConversations.clear();
     this.closedWhileLive.clear();
+    this.tacTurnListeners = {};
     super.shutdown();
   }
 }

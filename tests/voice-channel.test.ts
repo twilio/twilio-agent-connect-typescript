@@ -2544,6 +2544,122 @@ describe('VoiceChannel', () => {
     });
   });
 
+  describe('user prompt and interrupt handlers alongside TAC', () => {
+    const connectCall = async (registerUserHandlers: 'before' | 'after') => {
+      const tac = await createTestTAC({
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        authToken: 'test_token',
+        apiKey: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        apiSecret: 'test_secret',
+        phoneNumber: '+15555550100',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHhandlers_test', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          type: 'CUSTOMER',
+          profileId: 'mem_profile_test',
+          addresses: [{ channel: 'VOICE', address: '+15555550100' }],
+        },
+      ] as any);
+
+      const messageReady = vi.fn().mockResolvedValue(undefined);
+      tac.onMessageReady(messageReady);
+      const tacInterrupt = vi.fn();
+      tac.onInterrupt(tacInterrupt);
+
+      const userPrompt = vi.fn();
+      const userInterrupt = vi.fn();
+      const registerUser = () => {
+        voiceChannel.on('prompt', userPrompt);
+        voiceChannel.on('interrupt', userInterrupt);
+      };
+      if (registerUserHandlers === 'before') registerUser();
+      tac.registerChannel(voiceChannel);
+      if (registerUserHandlers === 'after') registerUser();
+
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      const mockWs = {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          (handlers[event] ??= []).push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+      };
+      const emit = async (message: unknown) => {
+        handlers.message?.forEach(h => h(Buffer.from(JSON.stringify(message))));
+        await new Promise(resolve => setTimeout(resolve, 50));
+      };
+
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      await emit({
+        type: 'setup',
+        sessionId: 'sess_handlers',
+        callSid: 'CA_handlers',
+        from: '+15555550100',
+        to: '+15555550199',
+        direction: 'inbound',
+        callType: 'PSTN',
+        callStatus: 'in-progress',
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      });
+
+      return { emit, messageReady, tacInterrupt, userPrompt, userInterrupt };
+    };
+
+    it.each(['before', 'after'] as const)(
+      'runs both the user prompt handler and onMessageReady when the user handler is set %s registration',
+      async when => {
+        const { emit, messageReady, userPrompt } = await connectCall(when);
+
+        await emit({ type: 'prompt', voicePrompt: 'Hello', last: true });
+
+        expect(userPrompt).toHaveBeenCalledOnce();
+        expect(userPrompt.mock.calls[0][0]).toMatchObject({
+          conversationId: 'CHhandlers_test',
+          transcript: 'Hello',
+        });
+        expect(messageReady).toHaveBeenCalledOnce();
+        expect(messageReady.mock.calls[0][0]).toMatchObject({
+          conversationId: 'CHhandlers_test',
+          message: 'Hello',
+        });
+        expect(messageReady.mock.calls[0][0].abortSignal).toBe(
+          userPrompt.mock.calls[0][0].abortSignal
+        );
+      }
+    );
+
+    it.each(['before', 'after'] as const)(
+      'runs both the user interrupt handler and tac.onInterrupt when the user handler is set %s registration',
+      async when => {
+        const { emit, tacInterrupt, userInterrupt, messageReady } = await connectCall(when);
+        await emit({ type: 'prompt', voicePrompt: 'Hello', last: true });
+        const turnSignal: AbortSignal = messageReady.mock.calls[0][0].abortSignal;
+
+        await emit({ type: 'interrupt', utteranceUntilInterrupt: 'Hi th' });
+
+        expect(turnSignal.aborted).toBe(true);
+        expect(userInterrupt).toHaveBeenCalledWith(
+          expect.objectContaining({
+            conversationId: 'CHhandlers_test',
+            utteranceUntilInterrupt: 'Hi th',
+          })
+        );
+        expect(tacInterrupt).toHaveBeenCalledWith(
+          expect.objectContaining({
+            conversationId: 'CHhandlers_test',
+            utteranceUntilInterrupt: 'Hi th',
+          })
+        );
+      }
+    );
+  });
+
   describe('caller address', () => {
     const connectCall = async (direction: string, participants: unknown[]) => {
       const tac = await createTestTAC({

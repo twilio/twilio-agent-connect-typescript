@@ -509,16 +509,13 @@ export class ConversationRelayProvider extends VoiceProvider {
       ? await this.channel.retrieveMemoryInternal(session, transcript)
       : undefined;
 
-    const voiceCallbacks = this.channel.getVoiceCallbacks();
-    if (voiceCallbacks.onPrompt) {
-      await voiceCallbacks.onPrompt({
-        conversationId,
-        transcript,
-        abortSignal: streamTask.controller.signal,
-        ...(userMemory !== undefined && { userMemory }),
-        ...(session !== undefined && { session }),
-      });
-    }
+    await this.channel.emitPromptInternal({
+      conversationId,
+      transcript,
+      abortSignal: streamTask.controller.signal,
+      ...(userMemory !== undefined && { userMemory }),
+      ...(session !== undefined && { session }),
+    });
   }
 
   /**
@@ -557,14 +554,11 @@ export class ConversationRelayProvider extends VoiceProvider {
       }
     }
 
-    const voiceCallbacks = this.channel.getVoiceCallbacks();
-    if (voiceCallbacks.onInterrupt) {
-      voiceCallbacks.onInterrupt({
-        conversationId,
-        utteranceUntilInterrupt,
-        durationUntilInterruptMs,
-      });
-    }
+    this.channel.emitInterruptInternal({
+      conversationId,
+      utteranceUntilInterrupt,
+      durationUntilInterruptMs,
+    });
 
     trackEvent('Voice Interrupt', {
       account_sid: this.tacConfig.accountSid,

@@ -14,6 +14,7 @@ import { MemoryClient } from '../clients/memory';
 import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
+import { VoiceChannel } from '../channels/voice/channel';
 import { Logger, createLogger } from './logger';
 import { shutdownAnalytics, trackEvent } from './analytics';
 import { maskAddress } from '../util/log-redaction';
@@ -243,71 +244,9 @@ export class TAC {
       }
     );
 
-    // Handle voice prompt events
-    channel.on(
-      'prompt',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
-      async ({
-        conversationId,
-        transcript,
-        userMemory,
-        session,
-        abortSignal,
-      }: {
-        conversationId: ConversationId;
-        transcript: string;
-        userMemory?: TACMemoryResponse;
-        session?: ConversationSession;
-        abortSignal: AbortSignal;
-      }): Promise<void> => {
-        // Use session from event if available, otherwise get from channel
-        const eventSession = session || channel.getConversationSession(conversationId);
-        if (eventSession) {
-          await this.handleMessageReady({
-            conversationId,
-            profileId: eventSession.profileId ? (eventSession.profileId as ProfileId) : undefined,
-            message: transcript,
-            author: 'user',
-            userMemory,
-            channelType: channel.channelType,
-            session: eventSession,
-            abortSignal,
-          });
-        }
-      }
-    );
-
-    // Handle voice interrupt events
-    channel.on(
-      'interrupt',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
-      async ({
-        conversationId,
-        utteranceUntilInterrupt,
-        durationUntilInterruptMs,
-      }: {
-        conversationId: ConversationId;
-        utteranceUntilInterrupt: string | undefined;
-        durationUntilInterruptMs: number | undefined;
-      }) => {
-        const session = channel.getConversationSession(conversationId);
-        if (session && this.interruptCallback) {
-          try {
-            await this.interruptCallback({
-              conversationId,
-              utteranceUntilInterrupt,
-              durationUntilInterruptMs,
-              session,
-            });
-          } catch (error) {
-            this.logger.error(
-              { err: error, conversation_id: conversationId },
-              'Interrupt callback error'
-            );
-          }
-        }
-      }
-    );
+    if (channel instanceof VoiceChannel) {
+      this.setupVoiceTurnListeners(channel);
+    }
 
     // Handle conversation ended events. Installed as the channel's forwarder so
     // the channel can tell it apart from a handler registered on it directly.
@@ -325,6 +264,54 @@ export class TAC {
         }
       }
     );
+  }
+
+  /**
+   * Route a voice channel's prompts to `onMessageReady` and its interrupts to
+   * `onInterrupt`, alongside any handlers the app set on the channel.
+   */
+  private setupVoiceTurnListeners(channel: VoiceChannel): void {
+    channel.setTurnListenersInternal({
+      onPrompt: async ({ conversationId, transcript, userMemory, session, abortSignal }) => {
+        // Use session from event if available, otherwise get from channel
+        const eventSession = session || channel.getConversationSession(conversationId);
+        if (eventSession) {
+          await this.handleMessageReady({
+            conversationId,
+            profileId: eventSession.profileId ? (eventSession.profileId as ProfileId) : undefined,
+            message: transcript,
+            author: 'user',
+            userMemory,
+            channelType: channel.channelType,
+            session: eventSession,
+            abortSignal,
+          });
+        }
+      },
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Errors are caught inside
+      onInterrupt: async ({
+        conversationId,
+        utteranceUntilInterrupt,
+        durationUntilInterruptMs,
+      }) => {
+        const session = channel.getConversationSession(conversationId);
+        if (session && this.interruptCallback) {
+          try {
+            await this.interruptCallback({
+              conversationId,
+              utteranceUntilInterrupt,
+              durationUntilInterruptMs,
+              session,
+            });
+          } catch (error) {
+            this.logger.error(
+              { err: error, conversation_id: conversationId },
+              'Interrupt callback error'
+            );
+          }
+        }
+      },
+    });
   }
 
   /**
