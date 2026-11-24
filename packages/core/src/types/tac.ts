@@ -31,7 +31,13 @@ export type TACDeliveryStatus = z.infer<typeof TACDeliveryStatusSchema>;
 /**
  * Participant type
  */
-export const TACParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT']);
+export const TACParticipantTypeSchema = z.enum([
+  'HUMAN_AGENT',
+  'CUSTOMER',
+  'AI_AGENT',
+  'AGENT',
+  'UNKNOWN',
+]);
 export type TACParticipantType = z.infer<typeof TACParticipantTypeSchema>;
 
 /**

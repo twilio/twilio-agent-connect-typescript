@@ -640,6 +640,53 @@ describe('Memory Functionality', () => {
       expect(comm.author.profileId).toBeUndefined();
     });
 
+    it('should keep observations and summaries when a participant type is UNKNOWN', () => {
+      const response = new TACMemoryResponse({
+        observations: [
+          {
+            id: 'obs_1',
+            content: 'Prefers chat',
+            createdAt: '2025-01-15T10:00:00Z',
+            occurredAt: '2025-01-15T10:00:00Z',
+          },
+        ],
+        summaries: [
+          {
+            id: 'sum_1',
+            content: 'Asked about an order',
+            createdAt: '2025-01-15T10:00:00Z',
+          },
+        ],
+        communications: [
+          {
+            id: 'mem_comm_chat',
+            author: {
+              id: 'author_chat',
+              name: 'Chat User',
+              type: 'UNKNOWN',
+              address: 'user@example.com',
+              channel: 'CHAT',
+            },
+            content: { text: 'Hi there' },
+            recipients: [
+              {
+                id: 'recipient_chat',
+                name: 'Someone',
+                type: 'UNKNOWN',
+                address: 'agent@example.com',
+                channel: 'CHAT',
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(response.observations).toHaveLength(1);
+      expect(response.summaries).toHaveLength(1);
+      expect(response.communications[0].author.type).toBe('UNKNOWN');
+      expect(response.communications[0].recipients[0].type).toBe('UNKNOWN');
+    });
+
     it('should parse TRANSCRIPTION content with nested transcription', () => {
       const response = new TACMemoryResponse([
         {
