@@ -13,6 +13,15 @@ import twilio from 'twilio';
 import { twiMLRequestFromForm, CALL_EVENT_KINDS, resolveLogLevel } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 
+/** How long shutdown waits for live calls' WebSockets to close. */
+const WEBSOCKET_DRAIN_TIMEOUT_MS = 30_000;
+/**
+ * Hard deadline after SIGINT/SIGTERM, when the shutdown plugin exits the
+ * process. It must outlast the drain, leaving time for `tac.shutdown()` and
+ * closing the server.
+ */
+const SHUTDOWN_TIMEOUT_MS = WEBSOCKET_DRAIN_TIMEOUT_MS + 15_000;
+
 /**
  * Server configuration options
  */
@@ -554,7 +563,7 @@ export class TACServer {
         await this.fastify.register(websocket);
       }
       if (!this.fastify.hasDecorator('gracefulShutdown')) {
-        await this.fastify.register(gracefulShutdown);
+        await this.fastify.register(gracefulShutdown, { timeout: SHUTDOWN_TIMEOUT_MS });
       }
 
       // Replace the default JSON parser with one that stores the raw body string,
@@ -623,7 +632,7 @@ export class TACServer {
   /**
    * Wait for all WebSocket connections to close
    */
-  private async waitForWebSocketsToClose(timeoutMs = 30000): Promise<void> {
+  private async waitForWebSocketsToClose(timeoutMs = WEBSOCKET_DRAIN_TIMEOUT_MS): Promise<void> {
     const wsServer = this.fastify.websocketServer;
     if (!wsServer || wsServer.clients.size === 0) {
       return;

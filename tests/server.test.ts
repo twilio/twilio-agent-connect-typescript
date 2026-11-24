@@ -1659,3 +1659,40 @@ describe('TACServer webhookPaths.messaging deprecation', () => {
     expect(response.status).not.toBe(404);
   });
 });
+
+describe('TACServer shutdown', () => {
+  let tac: TAC;
+  let server: TACServer | undefined;
+
+  beforeEach(async () => {
+    tac = await createTestTAC({
+      accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      authToken: 'test_token',
+      apiKey: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      apiSecret: 'test_secret',
+      phoneNumber: '+15555550100',
+      conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    });
+    tac.registerChannel(new SMSChannel(tac));
+  });
+
+  afterEach(async () => {
+    await server?.stop().catch(() => {});
+    server = undefined;
+    tac.shutdown();
+  });
+
+  it('gives the shutdown plugin more time than the WebSocket drain', async () => {
+    const gracefulShutdown = (await import('fastify-graceful-shutdown')).default;
+    server = new TACServer(tac, { port: getNextPort() });
+    const register = vi.spyOn(server.fastify, 'register');
+
+    await server.start();
+
+    const options = register.mock.calls.find(([plugin]) => plugin === gracefulShutdown)?.[1] as
+      | { timeout?: number }
+      | undefined;
+    // The drain waits up to 30 s for live calls before tac.shutdown() runs.
+    expect(options?.timeout).toBeGreaterThan(30_000);
+  });
+});
