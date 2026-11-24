@@ -445,7 +445,7 @@ describe('OperatorResultProcessor', () => {
             executionDetails: {
               participants: [
                 { type: 'CUSTOMER', profileId: 'profile_123' },
-                { type: 'AGENT', profileId: 'profile_456' },
+                { type: 'CUSTOMER', profileId: 'profile_456' },
               ],
             },
           },
@@ -455,7 +455,7 @@ describe('OperatorResultProcessor', () => {
       const result = await processor.processEvent(event);
 
       expect(result.success).toBe(true);
-      expect(result.createdCount).toBe(2); // 1 summary x 2 profiles
+      expect(result.createdCount).toBe(2); // 1 summary x 2 customer profiles
     });
 
     describe('summary result formats', () => {
@@ -530,6 +530,41 @@ describe('OperatorResultProcessor', () => {
         expect(processed.createdCount).toBe(expected.length);
         expect(postedContents()).toEqual(expected);
       });
+    });
+
+    it('should write summaries only to customer profiles', async () => {
+      mockAdapter.onPost(/\/ConversationSummaries$/).reply(200, { message: 'Summaries created' });
+
+      const event = {
+        accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        conversationId: 'conv_123',
+        memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
+        intelligenceConfiguration: { id: 'LY_CONFIG_123' },
+        operatorResults: [
+          {
+            id: 'result_123',
+            operator: { id: 'LY_SUM_789' },
+            outputFormat: 'JSON',
+            result: { summaries: ['Customer requested a refund'] },
+            dateCreated: '2024-01-15T10:00:00Z',
+            executionDetails: {
+              participants: [
+                { type: 'CUSTOMER', profileId: 'profile_customer' },
+                { type: 'AI_AGENT', profileId: 'profile_ai_agent' },
+                { type: 'HUMAN_AGENT', profileId: 'profile_human_agent' },
+              ],
+            },
+          },
+        ],
+      };
+
+      const result = await processor.processEvent(event);
+
+      expect(result.success).toBe(true);
+      expect(result.createdCount).toBe(1);
+      expect(mockAdapter.history.post.map(req => req.url)).toEqual([
+        '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/profile_customer/ConversationSummaries',
+      ]);
     });
 
     it('should handle missing memory store ID', async () => {

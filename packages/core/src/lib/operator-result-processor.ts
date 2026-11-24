@@ -9,17 +9,17 @@ import { MemoryClient } from '../clients/memory';
 import { Logger, createLogger } from './logger';
 
 /**
- * Extract profile IDs from operator result execution details
+ * Extract customer profile IDs from operator result execution details
  *
  * @param operatorResult - The operator result to extract profile IDs from
- * @returns Array of profile IDs found in participants
+ * @returns Array of profile IDs of CUSTOMER participants
  */
 function extractProfileIds(operatorResult: OperatorResult): string[] {
   const profileIds: string[] = [];
 
   if (operatorResult.executionDetails?.participants) {
     for (const participant of operatorResult.executionDetails.participants) {
-      if (participant.profileId) {
+      if (participant.profileId && participant.type === 'CUSTOMER') {
         profileIds.push(participant.profileId);
       }
     }
