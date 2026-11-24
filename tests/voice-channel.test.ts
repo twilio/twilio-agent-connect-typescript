@@ -2544,6 +2544,79 @@ describe('VoiceChannel', () => {
     });
   });
 
+  describe('caller address', () => {
+    const connectCall = async (direction: string, participants: unknown[]) => {
+      const tac = await createTestTAC({
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        authToken: 'test_token',
+        apiKey: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        apiSecret: 'test_secret',
+        phoneNumber: '+15555550100',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcaller_test', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue(
+        participants as any
+      );
+      tac.registerChannel(voiceChannel);
+
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      const mockWs = {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          (handlers[event] ??= []).push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+      };
+      const emit = (message: unknown) =>
+        handlers.message?.forEach(h => h(Buffer.from(JSON.stringify(message))));
+
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      emit({
+        type: 'setup',
+        sessionId: 'sess_caller',
+        callSid: 'CA_caller',
+        from: '+15555550100',
+        to: '+15555550199',
+        direction,
+        callType: 'PSTN',
+        callStatus: 'in-progress',
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      });
+      emit({ type: 'prompt', voicePrompt: 'Hello', last: true });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      return voiceChannel.getConversationSession('CHcaller_test' as any);
+    };
+
+    it.each([
+      ['inbound', '+15555550100'],
+      ['outbound-api', '+15555550199'],
+      ['outbound-dial', '+15555550199'],
+    ])(
+      'falls back to the %s customer address when CO has no voice customer',
+      async (direction, expected) => {
+        const session = await connectCall(direction, []);
+        expect(session?.authorInfo?.address).toBe(expected);
+      }
+    );
+
+    it('prefers the CO voice customer address', async () => {
+      const session = await connectCall('outbound-api', [
+        {
+          type: 'CUSTOMER',
+          profileId: 'mem_profile_test',
+          addresses: [{ channel: 'VOICE', address: '+15555550123' }],
+        },
+      ]);
+      expect(session?.authorInfo?.address).toBe('+15555550123');
+    });
+  });
+
   describe('ConversationRelay attribute emission', () => {
     // Exercises the merged-VoiceTwiMLOptionsConversationRelay emit path via
     // handleIncomingCall + defaultTwimlOptions. The widened options surface

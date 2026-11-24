@@ -156,14 +156,14 @@ describe('Relay-Only Mode', () => {
       };
     };
 
-    const setupMessage = (callSid: string) =>
+    const setupMessage = (callSid: string, direction = 'inbound') =>
       JSON.stringify({
         type: 'setup',
         sessionId: `sess_${callSid}`,
         callSid,
         from: '+15551112222',
         to: '+15553334444',
-        direction: 'inbound',
+        direction,
         callType: 'call',
         callStatus: 'ringing',
         accountSid: 'ACtest123456789',
@@ -196,6 +196,28 @@ describe('Relay-Only Mode', () => {
       expect(session).toBeDefined();
       expect(session?.conversationId).toBe('CA_relay_test_123');
       expect(session?.authorInfo?.address).toBe('+15551112222');
+    });
+
+    it.each([
+      ['inbound', '+15551112222'],
+      ['outbound-api', '+15553334444'],
+      ['outbound-dial', '+15553334444'],
+    ])('uses the customer address for a %s call', async (direction, expected) => {
+      const connected = new Promise<void>(resolve => {
+        voiceChannel.on('webSocketConnected', () => resolve());
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mockWs = createMockWebSocket() as any;
+      voiceChannel.handleWebSocketConnection(mockWs);
+
+      mockWs._emit('message', Buffer.from(setupMessage('CA_relay_direction', direction)));
+      mockWs._emit('message', Buffer.from(promptMessage));
+
+      await connected;
+
+      const session = voiceChannel.getConversationSession('CA_relay_direction');
+      expect(session?.authorInfo?.address).toBe(expected);
     });
 
     it('TwiML omits conversationConfiguration in relay-only mode', async () => {

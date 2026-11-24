@@ -17,6 +17,7 @@ import {
   InterruptMessage,
   ProfileId,
   PromptMessage,
+  SetupMessage,
   TextTokenMessage,
   TwilioProviderCallbackResponse,
   TwiMLRequest,
@@ -39,6 +40,14 @@ import { TwiMLBuilderConversationRelay } from './twiml';
 const POLL_ATTEMPTS = 10;
 const POLL_BASE_DELAY_MS = 250;
 const POLL_MAX_DELAY_MS = 1500;
+
+/**
+ * The customer's phone number for a call: the dialed number on outbound calls
+ * (`outbound-api`, `outbound-dial`), the caller on inbound ones.
+ */
+function customerAddressFromSetup(setup: SetupMessage): string {
+  return setup.direction.toLowerCase().startsWith('outbound') ? setup.to : setup.from;
+}
 
 /**
  * A single in-flight streaming response, with the {@link AbortController} that
@@ -127,7 +136,7 @@ export class ConversationRelayProvider extends VoiceProvider {
    */
   private async initializeOrchestratedConversation(
     callSid: string,
-    fromNumber: string | null,
+    setupCustomerAddress: string | null,
     ws: WebSocket
   ): Promise<ConversationId> {
     const conversationClient = this.channel.getConversationClientInternal();
@@ -174,7 +183,7 @@ export class ConversationRelayProvider extends VoiceProvider {
     );
     const customerAddress =
       customerParticipant?.addresses?.find(a => a.channel === 'VOICE')?.address ??
-      fromNumber ??
+      setupCustomerAddress ??
       undefined;
     const profileId: ProfileId | undefined = customerParticipant?.profileId
       ? (customerParticipant.profileId as ProfileId)
@@ -207,7 +216,7 @@ export class ConversationRelayProvider extends VoiceProvider {
   public override handleWebSocket(ws: WebSocket): void {
     let conversationId: ConversationId | null = null;
     let callSid: string | null = null;
-    let fromNumber: string | null = null;
+    let setupCustomerAddress: string | null = null;
     let initializationFailed = false;
     // Background conversation lookup started on `setup`; cleared once claimed,
     // by the first message that needs a conversation or by the close handler.
@@ -257,8 +266,8 @@ export class ConversationRelayProvider extends VoiceProvider {
           // Relay-only: conversationId === callSid.
           session.callSid = sid;
 
-          if (fromNumber) {
-            session.authorInfo = { address: fromNumber };
+          if (setupCustomerAddress) {
+            session.authorInfo = { address: setupCustomerAddress };
           }
 
           const voiceCallbacks = this.channel.getVoiceCallbacks();
@@ -270,7 +279,7 @@ export class ConversationRelayProvider extends VoiceProvider {
           // Stays visible to the close handler while awaited, so a
           // hangup mid-lookup still cleans up; cleared after so a
           // retry starts fresh and `close` uses conversationId.
-          initPromise ??= this.initializeOrchestratedConversation(sid, fromNumber, ws);
+          initPromise ??= this.initializeOrchestratedConversation(sid, setupCustomerAddress, ws);
           try {
             conversationId = await initPromise;
           } finally {
@@ -330,7 +339,7 @@ export class ConversationRelayProvider extends VoiceProvider {
           switch (message.type) {
             case 'setup':
               callSid = message.callSid;
-              fromNumber = message.from;
+              setupCustomerAddress = customerAddressFromSetup(message);
 
               // ConversationRelay creates the conversation at call-connect, so
               // start the lookup now and let it overlap the wait for the
@@ -340,7 +349,11 @@ export class ConversationRelayProvider extends VoiceProvider {
                   { call_sid: callSid },
                   'Starting background conversation initialization'
                 );
-                initPromise = this.initializeOrchestratedConversation(callSid, fromNumber, ws);
+                initPromise = this.initializeOrchestratedConversation(
+                  callSid,
+                  setupCustomerAddress,
+                  ws
+                );
                 // Marks it handled; whoever claims it still sees the rejection.
                 void initPromise.catch(() => undefined);
               }
