@@ -374,8 +374,8 @@ export class ConversationRelayProvider extends VoiceProvider {
 
               // Start initialization now so it overlaps the wait for the
               // caller's first utterance instead of delaying it. A pre-created
-              // conversation is registered by id; otherwise poll for the one
-              // ConversationRelay creates on the first communication.
+              // conversation is registered by id; otherwise poll by call SID for
+              // the call's conversation.
               if (this.channel.isOrchestratorEnabledInternal()) {
                 this.logger.debug(
                   { call_sid: callSid },
