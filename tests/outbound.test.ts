@@ -859,15 +859,20 @@ describe('Outbound Conversations', () => {
     });
 
     describe('pre-created conversation on setup', () => {
-      const setupMessage = (customParameters?: Record<string, string>): Buffer =>
+      const setupMessage = (
+        customParameters?: Record<string, string>,
+        call: { from: string; to: string; direction: string } = {
+          from: '+15559876543',
+          to: '+15551234567',
+          direction: 'inbound',
+        }
+      ): Buffer =>
         Buffer.from(
           JSON.stringify({
             type: 'setup',
             sessionId: 'sess_pre',
             callSid: 'CA_pre',
-            from: '+15559876543',
-            to: '+15551234567',
-            direction: 'inbound',
+            ...call,
             callType: 'PSTN',
             callStatus: 'ringing',
             accountSid: 'ACtest123456789',
@@ -929,6 +934,78 @@ describe('Outbound Conversations', () => {
         channel.handleWebSocketConnection(ws as never);
 
         ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(channel.getConversationSession('conv_pre')!.authorInfo?.address).toBe(
+          '+15559876543'
+        );
+        adapter.restore();
+      });
+
+      it('retries a failed registration with the pre-created id, without polling', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter
+          .onGet(/\/Participants/)
+          .replyOnce(404, { message: 'not found' })
+          .onGet(/\/Participants/)
+          .reply(200, {
+            participants: [
+              {
+                id: 'PAcust',
+                conversationId: 'conv_pre',
+                accountId: 'ACtest123456789',
+                type: 'CUSTOMER',
+                profileId: 'PFcust',
+                addresses: [{ channel: 'VOICE', address: '+15559876543' }],
+              },
+            ],
+          });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit('message', setupMessage({ tacConversationId: 'conv_pre' }));
+        ws._emit('message', promptMessage);
+        await vi.waitFor(() =>
+          expect(adapter.history.get.filter(r => /\/Participants/.test(r.url ?? ''))).toHaveLength(
+            1
+          )
+        );
+        ws._emit('message', promptMessage);
+
+        await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
+        expect(listCalls(adapter)).toBe(0);
+        adapter.restore();
+      });
+
+      it('uses the callee as the caller on an outbound call reusing a text-only conversation', async () => {
+        const tac = await createTestTAC(getTestConfig());
+        const channel = new VoiceChannel(tac);
+        const adapter = new MockAdapter((tac.getConversationClient() as any).axiosInstance);
+        adapter.onGet(/\/Participants/).reply(200, {
+          participants: [
+            {
+              id: 'PAsms',
+              conversationId: 'conv_pre',
+              accountId: 'ACtest123456789',
+              type: 'CUSTOMER',
+              profileId: 'PFcust',
+              addresses: [{ channel: 'SMS', address: '+15559876543' }],
+            },
+          ],
+        });
+        const ws = createMockWebSocket();
+        channel.handleWebSocketConnection(ws as never);
+
+        ws._emit(
+          'message',
+          setupMessage(
+            { tacConversationId: 'conv_pre' },
+            { from: '+15551234567', to: '+15559876543', direction: 'outbound' }
+          )
+        );
         ws._emit('message', promptMessage);
 
         await vi.waitFor(() => expect(channel.isConversationActive('conv_pre')).toBe(true));
