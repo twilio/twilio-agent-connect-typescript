@@ -10,7 +10,7 @@ import gracefulShutdown from 'fastify-graceful-shutdown';
 import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
-import { twiMLRequestFromForm, CALL_EVENT_KINDS } from '@twilio/tac-core';
+import { twiMLRequestFromForm, CALL_EVENT_KINDS, resolveLogLevel } from '@twilio/tac-core';
 import { TAC, VoiceChannel, MessagingChannel } from '@twilio/tac-core';
 
 /**
@@ -208,7 +208,7 @@ export class TACServer {
     } else {
       this.fastify = Fastify({
         logger: {
-          level: process.env.TWILIO_LOG_LEVEL || 'info',
+          level: resolveLogLevel(process.env.TWILIO_LOG_LEVEL),
         },
         ...config.fastify,
       });
