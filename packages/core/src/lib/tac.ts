@@ -14,6 +14,7 @@ import { MemoryClient } from '../clients/memory';
 import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
+import { MessagingChannel } from '../channels/messaging';
 import { VoiceChannel } from '../channels/voice/channel';
 import { Logger, createLogger } from './logger';
 import { shutdownAnalytics, trackEvent } from './analytics';
@@ -228,21 +229,14 @@ export class TAC {
       this.logger.error({ err: error, ...context }, 'Channel error');
     });
 
-    // Handle message received events for SMS channels
-    channel.on(
-      'messageReceived',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
-      async (data: {
-        conversationId: ConversationId;
-        profileId: ProfileId | undefined;
-        message: string;
-        author: string;
-        userMemory: TACMemoryResponse | undefined;
-        session?: ConversationSession;
-      }): Promise<void> => {
-        await this.handleMessageReady({ ...data, channelType: channel.channelType });
-      }
-    );
+    if (channel instanceof MessagingChannel) {
+      channel.setMessageReceivedListenerInternal(
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
+        async (data): Promise<void> => {
+          await this.handleMessageReady({ ...data, channelType: channel.channelType });
+        }
+      );
+    }
 
     if (channel instanceof VoiceChannel) {
       this.setupVoiceTurnListeners(channel);

@@ -455,6 +455,45 @@ describe('SMS Channel', () => {
     });
   });
 
+  describe('user messageReceived handler alongside TAC', () => {
+    const inbound = {
+      eventType: 'COMMUNICATION_CREATED',
+      data: {
+        conversationId: 'CHtest123456789',
+        content: { type: 'TEXT', text: 'Hello world' },
+        author: { address: '+15559876543', channel: 'SMS' },
+      },
+    };
+
+    it.each(['before', 'after'] as const)(
+      'runs both the user handler and onMessageReady when the user handler is set %s registration',
+      async order => {
+        const messageReady = vi.fn();
+        const userHandler = vi.fn();
+        tac.onMessageReady(messageReady);
+
+        if (order === 'before') {
+          channel.on('messageReceived', userHandler);
+          tac.registerChannel(channel);
+        } else {
+          tac.registerChannel(channel);
+          channel.on('messageReceived', userHandler);
+        }
+
+        await channel.processWebhook(inbound);
+        await vi.waitFor(() => expect(messageReady).toHaveBeenCalledTimes(1));
+
+        expect(messageReady).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId: 'CHtest123456789', message: 'Hello world' })
+        );
+        expect(userHandler).toHaveBeenCalledTimes(1);
+        expect(userHandler).toHaveBeenCalledWith(
+          expect.objectContaining({ conversationId: 'CHtest123456789', message: 'Hello world' })
+        );
+      }
+    );
+  });
+
   describe('conversation ended callback', () => {
     it('should fire onConversationEnded callback with a session rebuilt from participants', async () => {
       const captured: ConversationSession[] = [];
