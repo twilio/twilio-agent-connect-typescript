@@ -34,11 +34,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** A real twilio-node client whose requests go to the unreachable origin. */
+/**
+ * A real twilio-node client whose requests go to the unreachable origin. They
+ * use axios's http adapter, not the suite's blocking one, so they fail the way
+ * a real network error does.
+ */
 function unreachableTwilioClient(): ReturnType<typeof Twilio> {
   const client = Twilio(API_KEY, API_SECRET, { accountSid: 'ACtest123456789' });
   client.httpClient.axios.interceptors.request.use(config => ({
     ...config,
+    adapter: 'http',
     url: config.url?.replace(/^https:\/\/[^/]+/, unreachableOrigin),
   }));
   return client;

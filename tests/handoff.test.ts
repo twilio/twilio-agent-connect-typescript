@@ -479,8 +479,10 @@ describe('handoff failure logging', () => {
 
   it('logs only the message, code and status of a failed Studio request', async () => {
     const realPost = axios.post.bind(axios);
+    // The local server stands in for Studio, so this request skips the suite's
+    // blocking adapter.
     vi.spyOn(axios, 'post').mockImplementation((_url, data, config) =>
-      realPost(serverUrl, data, config)
+      realPost(serverUrl, data, { ...config, adapter: 'http' })
     );
 
     const tac = await createTestTAC(getTestConfig());
