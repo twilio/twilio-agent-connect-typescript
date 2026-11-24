@@ -760,14 +760,18 @@ export class TAC {
               });
 
       const [memoryResponse] = await Promise.all([
-        this.memoryClient.retrieveMemories(profileId, {
-          conversationId,
-          query,
-          observationsLimit: this.config.memoryConfig.observationsLimit,
-          summariesLimit: this.config.memoryConfig.summariesLimit,
-          communicationsLimit: this.config.memoryConfig.communicationsLimit,
-          relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
-        }),
+        this.memoryClient.retrieveMemories(
+          profileId,
+          {
+            conversationId,
+            query,
+            observationsLimit: this.config.memoryConfig.observationsLimit,
+            summariesLimit: this.config.memoryConfig.summariesLimit,
+            communicationsLimit: this.config.memoryConfig.communicationsLimit,
+            relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+          },
+          { throwOnError: true }
+        ),
         profileFetch,
       ]);
       return new TACMemoryResponse(memoryResponse);

@@ -10,6 +10,7 @@ import {
   MemoryCommunication,
 } from '@twilio/tac-core';
 import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
+import MockAdapter from 'axios-mock-adapter';
 
 describe('Memory Functionality', () => {
   const getTestConfigWithoutMemory = () => ({
@@ -74,7 +75,8 @@ describe('Memory Functionality', () => {
           summariesLimit: 5,
           communicationsLimit: 0,
           relevanceThreshold: 0.0,
-        }
+        },
+        { throwOnError: true }
       );
     });
 
@@ -109,7 +111,7 @@ describe('Memory Functionality', () => {
         summariesLimit: 5,
         communicationsLimit: 0,
         relevanceThreshold: 0.0,
-      });
+      }, { throwOnError: true });
     });
 
     it('should auto-lookup profile when missing', async () => {
@@ -171,7 +173,8 @@ describe('Memory Functionality', () => {
           summariesLimit: 5,
           communicationsLimit: 0,
           relevanceThreshold: 0.0,
-        }
+        },
+        { throwOnError: true }
       );
 
       // Result is wrapped in TACMemoryResponse
@@ -224,7 +227,8 @@ describe('Memory Functionality', () => {
           summariesLimit: 5,
           communicationsLimit: 0,
           relevanceThreshold: 0.0,
-        }
+        },
+        { throwOnError: true }
       );
     });
 
@@ -374,6 +378,45 @@ describe('Memory Functionality', () => {
 
       expect(result).toBeInstanceOf(TACMemoryResponse);
       expect(result.communications).toHaveLength(1);
+    });
+
+    it('should fallback to Conversations API when the Recall request fails', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(stubProfile);
+      const mockAdapter = new MockAdapter((memoryClient as any).axiosInstance);
+      mockAdapter.onPost(/\/Recall$/).reply(500, { message: 'Internal error' });
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_fallback',
+          conversationId: 'conv_test_123',
+          accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+          author: { address: '+15555550100', channel: 'SMS', participantId: 'part_123' },
+          content: { type: 'TEXT', text: 'Hello' },
+          recipients: [],
+        },
+      ];
+      const listCommunications = vi
+        .spyOn(tac.getConversationClient(), 'listCommunications')
+        .mockResolvedValue(mockCommunications);
+
+      const session: ConversationSession = {
+        conversationId: 'conv_test_123',
+        profileId: 'mem_profile_existing',
+        channel: 'sms',
+        startedAt: new Date(),
+      };
+
+      try {
+        const result = await tac.retrieveMemory(session, 'test query');
+
+        expect(listCommunications).toHaveBeenCalledWith('conv_test_123');
+        expect(result.hasMemoryFeatures).toBe(false);
+        expect(result.communications.map(c => c.id)).toEqual(['comm_fallback']);
+      } finally {
+        mockAdapter.restore();
+      }
     });
 
     it('should fallback to Conversations API on profile lookup errors', async () => {
