@@ -65,7 +65,7 @@ docs/                    # TypeDoc output (gitignored, published to gh-pages by 
 - **Prettier**: single quotes, trailing commas (es5), 100 char width, no parens on single arrow params.
 - **Zod 4** for config and API response validation (`z.infer<typeof Schema>`). Tool parameters are plain JSON Schema.
 - **Naming**: PascalCase classes, camelCase functions/variables.
-- **Logging**: Pino with child loggers tagged `{ component }`. The logger scrubs PII, and `TWILIO_LOG_LEVEL` sets the level.
+- **Logging**: Pino with child loggers tagged `{ component }`. The logger scrubs PII, and `TWILIO_LOG_LEVEL` sets the level. Log a caught error with `errorLogFields(err)` (`util/error-log-fields.ts`) where it may be an axios error, so only its message, code and status are logged.
 
 ## Dependencies
 

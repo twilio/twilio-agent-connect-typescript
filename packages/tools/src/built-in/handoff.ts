@@ -12,6 +12,7 @@ import {
   HandoffPayload,
   PendingHandoffData,
   TAC,
+  errorLogFields,
   studioExecutionsUrl,
   studioVoiceHandoffUrl,
 } from '@twilio/tac-core';
@@ -277,7 +278,7 @@ export function createStudioHandoffTool(
               ? err.message
               : String(err);
         tac.logger.error(
-          { err, conversation_id: session.conversationId },
+          { ...errorLogFields(err), conversation_id: session.conversationId },
           'Failed to deliver handoff payload'
         );
         return {

@@ -39,6 +39,7 @@ import type { StreamTask } from './conversation-relay/provider';
 import type { VoiceProvider } from './provider';
 import { VoiceProviderConfig } from './provider';
 import { elapsedMs, parseIso8601 } from '../../util/timestamps';
+import { errorLogFields } from '../../util/error-log-fields';
 
 /**
  * Channel name Conversation Orchestrator uses for voice participants. Not the
@@ -1343,7 +1344,7 @@ export class VoiceChannel extends BaseChannel {
       await client.calls(callSid).update({ status: 'completed' });
     } catch (error) {
       hungUp = false;
-      this.logger.error({ err: error, call_sid: callSid }, 'Failed to hang up call');
+      this.logger.error({ ...errorLogFields(error), call_sid: callSid }, 'Failed to hang up call');
     }
 
     const session = this.getConversationSessionByCallSid(callSid);
