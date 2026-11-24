@@ -288,10 +288,13 @@ export class TACServer {
     const url = this.getWebhookUrl(request);
     const authToken = this.tac.getConfig().authToken;
 
+    const rawBody = (request as FastifyRequest & { rawBody?: string }).rawBody;
     let isValid: boolean;
-    if (request.url.includes('bodySHA256=')) {
-      const body = (request as FastifyRequest & { rawBody?: string }).rawBody ?? '';
-      isValid = twilio.validateRequestWithBody(authToken, signature, url, body);
+    if (rawBody !== undefined) {
+      // Twilio signs JSON bodies through a bodySHA256 query parameter; without it the body is unsigned.
+      isValid =
+        request.url.includes('bodySHA256=') &&
+        twilio.validateRequestWithBody(authToken, signature, url, rawBody);
     } else {
       const params = (request.body as Record<string, string>) || {};
       isValid = twilio.validateRequest(authToken, signature, url, params);
