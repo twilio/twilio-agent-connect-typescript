@@ -1,8 +1,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Writable } from 'node:stream';
+import { types } from 'node:util';
+import Fastify from 'fastify';
 import pino from 'pino';
 import MockAdapter from 'axios-mock-adapter';
-import { TAC, TACConfig, TACConfigData, VoiceChannel, MemoryClient } from '@twilio/tac-core';
+import {
+  TAC,
+  TACConfig,
+  TACConfigData,
+  VoiceChannel,
+  MemoryClient,
+  createLogger,
+} from '@twilio/tac-core';
 import { TACServer } from '@twilio/tac-server';
 import { createTestTAC } from './helpers/tac';
 
@@ -176,6 +185,71 @@ describe('logging hygiene', () => {
     expect(requestLog).toBeDefined();
     expect(requestLog).toContain('"url":"/log-test/+1***8888/u***@example.com"');
     expect(output()).not.toContain(CUSTOMER);
+    expect(output()).not.toContain('user@example.com');
+  });
+
+  it('does not scrub arguments of a disabled level on an app-supplied logger', async () => {
+    const { stream } = captureStream();
+    const tac = await TAC.create({
+      config: getTestConfig(),
+      logger: pino({ level: 'info' }, stream),
+    });
+    let read = false;
+    const fields = {
+      get to(): string {
+        read = true;
+        return CUSTOMER;
+      },
+    };
+
+    tac.logger.debug(fields, 'disabled');
+
+    expect(read).toBe(false);
+  });
+
+  it('does not wrap a createLogger() logger, which already scrubs', () => {
+    const config = new TACConfig(getTestConfig());
+
+    const client = new MemoryClient(config, 'mem_service_test', createLogger().child({ c: 1 }));
+
+    expect(types.isProxy((client as any).logger)).toBe(false);
+  });
+
+  it('accepts fastify.loggerInstance: createLogger() and masks its request URLs', async () => {
+    const tac = await createTestTAC(getTestConfig());
+    const server = new TACServer(tac, { fastify: { loggerInstance: createLogger() } });
+    const { stream, output } = captureStream();
+    (server.fastify.log as any)[pino.symbols.streamSym] = stream;
+    server.fastify.get('/log-test/:phone', async () => 'ok');
+
+    await server.fastify.inject({
+      method: 'GET',
+      url: `/log-test/${CUSTOMER}?email=user@example.com`,
+    });
+    await server.fastify.close();
+
+    expect(output()).toContain('"url":"/log-test/+1***8888"');
+    expect(output()).not.toContain(CUSTOMER);
+    expect(output()).not.toContain('user@example.com');
+  });
+
+  it('masks request URLs on an app Fastify instance built with createLogger()', async () => {
+    const tac = await createTestTAC(getTestConfig());
+    const server = new TACServer(tac, {
+      fastifyInstance: Fastify({ loggerInstance: createLogger() }),
+    });
+    const { stream, output } = captureStream();
+    (server.fastify.log as any)[pino.symbols.streamSym] = stream;
+    server.fastify.get('/log-test/:phone', async () => 'ok');
+
+    await server.fastify.inject({
+      method: 'GET',
+      url: `/log-test/${CUSTOMER}?email=user@example.com&From=%2B15559998888`,
+    });
+    await server.fastify.close();
+
+    expect(output()).toContain('"url":"/log-test/+1***8888"');
+    expect(output()).not.toContain('15559998888');
     expect(output()).not.toContain('user@example.com');
   });
 });

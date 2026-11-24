@@ -15,7 +15,11 @@ import {
   type InitiateVoiceConversationOptionsGPTLive,
 } from '../../../../types/index';
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
-import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
+import {
+  maskPhone,
+  redactErrorForLog,
+  redactTwimlParameters,
+} from '../../../../util/log-redaction';
 import { errorLogFields } from '../../../../util/error-log-fields';
 import { trackEvent } from '../../../../lib/analytics';
 import type { GPTLiveProviderConfig } from './config';
@@ -328,7 +332,10 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         // Python breaks its read loop on any exception and cleans up in the
         // `finally`; closing here reaches the same end through the `close`
         // handler below, rather than holding the caller on a line to nothing.
-        this.logger.error({ err, conversation_id: conversationId }, 'Media stream WebSocket error');
+        this.logger.error(
+          { ...errorLogFields(redactErrorForLog(err)), conversation_id: conversationId },
+          'Media stream WebSocket error'
+        );
         ws.close();
       });
     });

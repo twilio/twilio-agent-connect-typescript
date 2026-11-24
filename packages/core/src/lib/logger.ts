@@ -1,5 +1,5 @@
 import pino from 'pino';
-import { scrubObject } from '../util/log-redaction';
+import { scrubObject, scrubPii } from '../util/log-redaction';
 
 /**
  * Logger type that can be either Pino logger or Fastify's logger
@@ -8,13 +8,29 @@ export type Logger = pino.Logger;
 
 const scrubArg = (arg: unknown): unknown => scrubObject(arg);
 
-/**
- * Pino `logMethod` hook that masks phone numbers and emails in log arguments.
- *
- * @internal
- */
-export function scrubLogMethod(this: pino.Logger, args: unknown[], method: pino.LogFn): void {
+function scrubLogMethod(this: pino.Logger, args: unknown[], method: pino.LogFn): void {
   return method.apply(this, args.map(scrubArg) as Parameters<pino.LogFn>);
+}
+
+interface LoggedRequest {
+  method?: string;
+  url?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  host?: string;
+  ip?: string;
+  socket?: { remotePort?: number };
+}
+
+/** Fastify's default `req` serializer, without the query string and with addresses masked. */
+function serializeRequest(req: LoggedRequest): Record<string, unknown> {
+  return {
+    method: req.method,
+    url: scrubPii((req.url ?? '').split('?')[0] ?? ''),
+    version: req.headers?.['accept-version'],
+    host: req.host,
+    remoteAddress: req.ip,
+    remotePort: req.socket?.remotePort,
+  };
 }
 
 const LOG_METHODS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'fatal']);
@@ -28,12 +44,17 @@ const scrubbingLoggers = new WeakSet<object>();
  */
 export function withScrubbing(logger: Logger): Logger {
   if (scrubbingLoggers.has(logger)) return logger;
+  const hooks = (logger as unknown as Record<symbol, pino.LoggerOptions['hooks']>)[
+    pino.symbols.hooksSym
+  ];
+  if (hooks?.logMethod === scrubLogMethod) return logger;
   const wrapped = new Proxy(logger, {
     get(target, prop): unknown {
       const value: unknown = Reflect.get(target, prop, target);
       if (typeof value !== 'function') return value;
       const fn = value as (...args: unknown[]) => unknown;
       if (typeof prop === 'string' && LOG_METHODS.has(prop)) {
+        if (!target.isLevelEnabled(prop)) return value;
         return (...args: unknown[]): unknown => fn.apply(target, args.map(scrubArg));
       }
       if (prop === 'child') {
@@ -54,5 +75,6 @@ export function createLogger(options?: { level?: string; name?: string }): Logge
     level,
     ...(options?.name && { name: options.name }),
     hooks: { logMethod: scrubLogMethod },
+    serializers: { req: serializeRequest },
   });
 }

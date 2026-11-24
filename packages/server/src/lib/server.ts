@@ -11,19 +11,7 @@ import type { WebSocket } from 'ws';
 import twilio from 'twilio';
 
 import { twiMLRequestFromForm, CALL_EVENT_KINDS } from '@twilio/tac-core';
-import { TAC, VoiceChannel, MessagingChannel, scrubLogMethod, scrubPii } from '@twilio/tac-core';
-
-/** Fastify's default `req` serializer, without the query string and with addresses masked. */
-function serializeRequest(req: FastifyRequest): Record<string, unknown> {
-  return {
-    method: req.method,
-    url: scrubPii(req.url.split('?')[0] ?? ''),
-    version: req.headers['accept-version'],
-    host: req.host,
-    remoteAddress: req.ip,
-    remotePort: req.socket?.remotePort,
-  };
-}
+import { TAC, VoiceChannel, MessagingChannel, createLogger } from '@twilio/tac-core';
 
 /**
  * Server configuration options
@@ -225,12 +213,10 @@ export class TACServer {
     if (config.fastifyInstance) {
       this.fastify = config.fastifyInstance;
     } else {
+      const ownLogger =
+        config.fastify?.logger !== undefined || config.fastify?.loggerInstance !== undefined;
       this.fastify = Fastify({
-        logger: {
-          level: process.env.TWILIO_LOG_LEVEL || 'info',
-          hooks: { logMethod: scrubLogMethod },
-          serializers: { req: serializeRequest },
-        },
+        ...(!ownLogger && { loggerInstance: createLogger() }),
         ...config.fastify,
       });
     }

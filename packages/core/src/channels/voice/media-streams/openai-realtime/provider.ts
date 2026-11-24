@@ -10,7 +10,11 @@ import {
   type InitiateVoiceConversationOptionsOpenAIRealtime,
 } from '../../../../types/index';
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
-import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
+import {
+  maskPhone,
+  redactErrorForLog,
+  redactTwimlParameters,
+} from '../../../../util/log-redaction';
 import { errorLogFields } from '../../../../util/error-log-fields';
 import type { VoiceChannel } from '../../channel';
 import { trackEvent } from '../../../../lib/analytics';
@@ -314,7 +318,7 @@ export class OpenAIRealtimeProvider extends MediaStreamsOpenAIProvider<CallState
         }
       })().catch((err: unknown) => {
         this.logger.error(
-          { err, conversation_id: conversationId },
+          { ...errorLogFields(redactErrorForLog(err)), conversation_id: conversationId },
           'Unhandled error in Media Stream message handler'
         );
       });

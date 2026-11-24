@@ -118,9 +118,9 @@ export function redactErrorContext(context?: Record<string, unknown>): Record<st
 }
 
 /**
- * Prepare a channel error for logging. A `SyntaxError` from `JSON.parse`
+ * Prepare a caught error for logging. A `SyntaxError` from `JSON.parse`
  * quotes the input it failed on, so only its type is logged.
  */
-export function redactErrorForLog(error: Error): Error | { type: string } {
+export function redactErrorForLog(error: unknown): unknown {
   return error instanceof SyntaxError ? { type: error.name } : error;
 }
