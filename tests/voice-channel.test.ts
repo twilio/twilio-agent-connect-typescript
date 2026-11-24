@@ -2460,6 +2460,77 @@ describe('VoiceChannel', () => {
       expect(capturedSignals[0].aborted).toBe(true);
     });
 
+    it('should not auto-send the reply for a prompt interrupted while its callback ran', async () => {
+      const { tac, mockWs } = await setupForInterrupt();
+
+      let releaseFirstReply!: () => void;
+      const firstReplyGate = new Promise<void>(resolve => {
+        releaseFirstReply = resolve;
+      });
+      tac.onMessageReady(async ({ message }) => {
+        if (message === 'First question') {
+          await firstReplyGate;
+          return 'Stale reply';
+        }
+        return 'Fresh reply';
+      });
+
+      const sentTokens = (): string[] =>
+        mockWs.send.mock.calls
+          .map((call: any[]) => JSON.parse(call[0] as string))
+          .filter((m: any) => m.type === 'text')
+          .map((m: any) => m.token);
+
+      const prompt = (voicePrompt: string) =>
+        mockWs._emit(
+          'message',
+          Buffer.from(JSON.stringify({ type: 'prompt', voicePrompt, lang: 'en-US', last: true }))
+        );
+
+      prompt('First question');
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      mockWs._emit('message', Buffer.from(JSON.stringify({ type: 'interrupt' })));
+      prompt('Second question');
+      await new Promise(resolve => setTimeout(resolve, 20));
+
+      releaseFirstReply();
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(sentTokens()).not.toContain('Stale reply');
+      expect(sentTokens()).toContain('Fresh reply');
+    });
+
+    it('should only treat a prompt as a turn when last is true or missing', async () => {
+      const { voiceChannel, mockWs } = await setupForInterrupt();
+
+      const transcripts: string[] = [];
+      voiceChannel.on('prompt', (data: any) => {
+        transcripts.push(data.transcript);
+      });
+
+      const prompt = (voicePrompt: string, last?: boolean) =>
+        mockWs._emit(
+          'message',
+          Buffer.from(
+            JSON.stringify({
+              type: 'prompt',
+              voicePrompt,
+              lang: 'en-US',
+              ...(last !== undefined && { last }),
+            })
+          )
+        );
+
+      prompt('I need', false);
+      prompt('I need help with', false);
+      prompt('I need help with my order', true);
+      prompt('Thanks');
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(transcripts).toEqual(['I need help with my order', 'Thanks']);
+    });
+
     it('should cancel stream task on WebSocket disconnect', async () => {
       const { voiceChannel, mockWs } = await setupForInterrupt();
 
@@ -2470,6 +2541,195 @@ describe('VoiceChannel', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
 
       expect(voiceChannel.hasActiveStreamTask('CHinterrupt_test' as any)).toBe(false);
+    });
+  });
+
+  describe('user prompt and interrupt handlers alongside TAC', () => {
+    const connectCall = async (registerUserHandlers: 'before' | 'after') => {
+      const tac = await createTestTAC({
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        authToken: 'test_token',
+        apiKey: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        apiSecret: 'test_secret',
+        phoneNumber: '+15555550100',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHhandlers_test', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue([
+        {
+          type: 'CUSTOMER',
+          profileId: 'mem_profile_test',
+          addresses: [{ channel: 'VOICE', address: '+15555550100' }],
+        },
+      ] as any);
+
+      const messageReady = vi.fn().mockResolvedValue(undefined);
+      tac.onMessageReady(messageReady);
+      const tacInterrupt = vi.fn();
+      tac.onInterrupt(tacInterrupt);
+
+      const userPrompt = vi.fn();
+      const userInterrupt = vi.fn();
+      const registerUser = () => {
+        voiceChannel.on('prompt', userPrompt);
+        voiceChannel.on('interrupt', userInterrupt);
+      };
+      if (registerUserHandlers === 'before') registerUser();
+      tac.registerChannel(voiceChannel);
+      if (registerUserHandlers === 'after') registerUser();
+
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      const mockWs = {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          (handlers[event] ??= []).push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+      };
+      const emit = async (message: unknown) => {
+        handlers.message?.forEach(h => h(Buffer.from(JSON.stringify(message))));
+        await new Promise(resolve => setTimeout(resolve, 50));
+      };
+
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      await emit({
+        type: 'setup',
+        sessionId: 'sess_handlers',
+        callSid: 'CA_handlers',
+        from: '+15555550100',
+        to: '+15555550199',
+        direction: 'inbound',
+        callType: 'PSTN',
+        callStatus: 'in-progress',
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      });
+
+      return { emit, messageReady, tacInterrupt, userPrompt, userInterrupt };
+    };
+
+    it.each(['before', 'after'] as const)(
+      'runs both the user prompt handler and onMessageReady when the user handler is set %s registration',
+      async when => {
+        const { emit, messageReady, userPrompt } = await connectCall(when);
+
+        await emit({ type: 'prompt', voicePrompt: 'Hello', last: true });
+
+        expect(userPrompt).toHaveBeenCalledOnce();
+        expect(userPrompt.mock.calls[0][0]).toMatchObject({
+          conversationId: 'CHhandlers_test',
+          transcript: 'Hello',
+        });
+        expect(messageReady).toHaveBeenCalledOnce();
+        expect(messageReady.mock.calls[0][0]).toMatchObject({
+          conversationId: 'CHhandlers_test',
+          message: 'Hello',
+        });
+        expect(messageReady.mock.calls[0][0].abortSignal).toBe(
+          userPrompt.mock.calls[0][0].abortSignal
+        );
+      }
+    );
+
+    it.each(['before', 'after'] as const)(
+      'runs both the user interrupt handler and tac.onInterrupt when the user handler is set %s registration',
+      async when => {
+        const { emit, tacInterrupt, userInterrupt, messageReady } = await connectCall(when);
+        await emit({ type: 'prompt', voicePrompt: 'Hello', last: true });
+        const turnSignal: AbortSignal = messageReady.mock.calls[0][0].abortSignal;
+
+        await emit({ type: 'interrupt', utteranceUntilInterrupt: 'Hi th' });
+
+        expect(turnSignal.aborted).toBe(true);
+        expect(userInterrupt).toHaveBeenCalledWith(
+          expect.objectContaining({
+            conversationId: 'CHhandlers_test',
+            utteranceUntilInterrupt: 'Hi th',
+          })
+        );
+        expect(tacInterrupt).toHaveBeenCalledWith(
+          expect.objectContaining({
+            conversationId: 'CHhandlers_test',
+            utteranceUntilInterrupt: 'Hi th',
+          })
+        );
+      }
+    );
+  });
+
+  describe('caller address', () => {
+    const connectCall = async (direction: string, participants: unknown[]) => {
+      const tac = await createTestTAC({
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        authToken: 'test_token',
+        apiKey: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        apiSecret: 'test_secret',
+        phoneNumber: '+15555550100',
+        conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+      });
+      const voiceChannel = new VoiceChannel(tac);
+      vi.spyOn(tac.getConversationClient(), 'listConversations').mockResolvedValue([
+        { id: 'CHcaller_test', status: 'ACTIVE' },
+      ] as any);
+      vi.spyOn(tac.getConversationClient(), 'listParticipants').mockResolvedValue(
+        participants as any
+      );
+      tac.registerChannel(voiceChannel);
+
+      const handlers: Record<string, ((...args: any[]) => void)[]> = {};
+      const mockWs = {
+        on: vi.fn((event: string, handler: (...args: any[]) => void) => {
+          (handlers[event] ??= []).push(handler);
+        }),
+        send: vi.fn(),
+        close: vi.fn(),
+        readyState: 1,
+      };
+      const emit = (message: unknown) =>
+        handlers.message?.forEach(h => h(Buffer.from(JSON.stringify(message))));
+
+      voiceChannel.handleWebSocketConnection(mockWs as any);
+      emit({
+        type: 'setup',
+        sessionId: 'sess_caller',
+        callSid: 'CA_caller',
+        from: '+15555550100',
+        to: '+15555550199',
+        direction,
+        callType: 'PSTN',
+        callStatus: 'in-progress',
+        accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      });
+      emit({ type: 'prompt', voicePrompt: 'Hello', last: true });
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      return voiceChannel.getConversationSession('CHcaller_test' as any);
+    };
+
+    it.each([
+      ['inbound', '+15555550100'],
+      ['outbound-api', '+15555550199'],
+      ['outbound-dial', '+15555550199'],
+    ])(
+      'falls back to the %s customer address when CO has no voice customer',
+      async (direction, expected) => {
+        const session = await connectCall(direction, []);
+        expect(session?.authorInfo?.address).toBe(expected);
+      }
+    );
+
+    it('prefers the CO voice customer address', async () => {
+      const session = await connectCall('outbound-api', [
+        {
+          type: 'CUSTOMER',
+          profileId: 'mem_profile_test',
+          addresses: [{ channel: 'VOICE', address: '+15555550123' }],
+        },
+      ]);
+      expect(session?.authorInfo?.address).toBe('+15555550123');
     });
   });
 

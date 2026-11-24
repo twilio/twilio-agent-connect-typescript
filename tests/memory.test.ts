@@ -10,6 +10,7 @@ import {
   MemoryCommunication,
 } from '@twilio/tac-core';
 import { createTestTAC, createTestTACWithMemory } from './helpers/tac';
+import MockAdapter from 'axios-mock-adapter';
 
 describe('Memory Functionality', () => {
   const getTestConfigWithoutMemory = () => ({
@@ -74,7 +75,8 @@ describe('Memory Functionality', () => {
           summariesLimit: 5,
           communicationsLimit: 0,
           relevanceThreshold: 0.0,
-        }
+        },
+        { throwOnError: true }
       );
     });
 
@@ -109,7 +111,7 @@ describe('Memory Functionality', () => {
         summariesLimit: 5,
         communicationsLimit: 0,
         relevanceThreshold: 0.0,
-      });
+      }, { throwOnError: true });
     });
 
     it('should auto-lookup profile when missing', async () => {
@@ -171,7 +173,8 @@ describe('Memory Functionality', () => {
           summariesLimit: 5,
           communicationsLimit: 0,
           relevanceThreshold: 0.0,
-        }
+        },
+        { throwOnError: true }
       );
 
       // Result is wrapped in TACMemoryResponse
@@ -224,7 +227,8 @@ describe('Memory Functionality', () => {
           summariesLimit: 5,
           communicationsLimit: 0,
           relevanceThreshold: 0.0,
-        }
+        },
+        { throwOnError: true }
       );
     });
 
@@ -260,6 +264,41 @@ describe('Memory Functionality', () => {
 
       expect(result).toBeInstanceOf(TACMemoryResponse);
       expect(result.communications).toHaveLength(1);
+    });
+
+    it('should return Conversations API communications with null timestamps', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_null_ts',
+          conversationId: 'conv_test_123',
+          accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+          author: { address: '+15555550100', channel: 'SMS', participantId: 'part_123' },
+          content: { type: 'TEXT', text: 'Hello' },
+          recipients: [],
+          createdAt: null,
+          updatedAt: null,
+        },
+      ];
+
+      vi.spyOn(tac.getConversationClient(), 'listCommunications').mockResolvedValue(
+        mockCommunications
+      );
+
+      const session: ConversationSession = {
+        conversationId: 'conv_test_123',
+        profileId: undefined,
+        channel: 'sms',
+        startedAt: new Date(),
+        authorInfo: undefined,
+      };
+
+      const result = await tac.retrieveMemory(session);
+
+      expect(result.communications).toHaveLength(1);
+      expect(result.communications[0].createdAt).toBeNull();
+      expect(result.communications[0].updatedAt).toBeNull();
     });
 
     it('should fallback to Conversations API when author_info exists but address is empty', async () => {
@@ -339,6 +378,45 @@ describe('Memory Functionality', () => {
 
       expect(result).toBeInstanceOf(TACMemoryResponse);
       expect(result.communications).toHaveLength(1);
+    });
+
+    it('should fallback to Conversations API when the Recall request fails', async () => {
+      const tac = await createTestTACWithMemory(getTestConfigWithoutMemory());
+      const memoryClient = tac.getMemoryClient()!;
+      vi.spyOn(memoryClient, 'getProfile').mockResolvedValue(stubProfile);
+      const mockAdapter = new MockAdapter((memoryClient as any).axiosInstance);
+      mockAdapter.onPost(/\/Recall$/).reply(500, { message: 'Internal error' });
+
+      const mockCommunications: Communication[] = [
+        {
+          id: 'comm_fallback',
+          conversationId: 'conv_test_123',
+          accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+          author: { address: '+15555550100', channel: 'SMS', participantId: 'part_123' },
+          content: { type: 'TEXT', text: 'Hello' },
+          recipients: [],
+        },
+      ];
+      const listCommunications = vi
+        .spyOn(tac.getConversationClient(), 'listCommunications')
+        .mockResolvedValue(mockCommunications);
+
+      const session: ConversationSession = {
+        conversationId: 'conv_test_123',
+        profileId: 'mem_profile_existing',
+        channel: 'sms',
+        startedAt: new Date(),
+      };
+
+      try {
+        const result = await tac.retrieveMemory(session, 'test query');
+
+        expect(listCommunications).toHaveBeenCalledWith('conv_test_123');
+        expect(result.hasMemoryFeatures).toBe(false);
+        expect(result.communications.map(c => c.id)).toEqual(['comm_fallback']);
+      } finally {
+        mockAdapter.restore();
+      }
     });
 
     it('should fallback to Conversations API on profile lookup errors', async () => {
@@ -638,6 +716,53 @@ describe('Memory Functionality', () => {
       expect(comm.author.name).toBeUndefined();
       expect(comm.author.type).toBeUndefined();
       expect(comm.author.profileId).toBeUndefined();
+    });
+
+    it('should keep observations and summaries when a participant type is UNKNOWN', () => {
+      const response = new TACMemoryResponse({
+        observations: [
+          {
+            id: 'obs_1',
+            content: 'Prefers chat',
+            createdAt: '2025-01-15T10:00:00Z',
+            occurredAt: '2025-01-15T10:00:00Z',
+          },
+        ],
+        summaries: [
+          {
+            id: 'sum_1',
+            content: 'Asked about an order',
+            createdAt: '2025-01-15T10:00:00Z',
+          },
+        ],
+        communications: [
+          {
+            id: 'mem_comm_chat',
+            author: {
+              id: 'author_chat',
+              name: 'Chat User',
+              type: 'UNKNOWN',
+              address: 'user@example.com',
+              channel: 'CHAT',
+            },
+            content: { text: 'Hi there' },
+            recipients: [
+              {
+                id: 'recipient_chat',
+                name: 'Someone',
+                type: 'UNKNOWN',
+                address: 'agent@example.com',
+                channel: 'CHAT',
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(response.observations).toHaveLength(1);
+      expect(response.summaries).toHaveLength(1);
+      expect(response.communications[0].author.type).toBe('UNKNOWN');
+      expect(response.communications[0].recipients[0].type).toBe('UNKNOWN');
     });
 
     it('should parse TRANSCRIPTION content with nested transcription', () => {

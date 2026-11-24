@@ -19,7 +19,7 @@ export type {
 export { TACConfig } from './lib/config';
 
 // Logger
-export { createLogger } from './lib/logger';
+export { createLogger, resolveLogLevel } from './lib/logger';
 export type { Logger } from './lib/logger';
 
 // Analytics

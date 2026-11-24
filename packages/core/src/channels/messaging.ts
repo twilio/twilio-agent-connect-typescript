@@ -74,6 +74,8 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
   }) => void;
 }
 
+type MessageReceivedListener = NonNullable<MessagingChannelEvents['onMessageReceived']>;
+
 /**
  * Abstract Messaging Channel base class for SMS and Chat channels
  *
@@ -109,6 +111,8 @@ export interface MessagingChannelEvents extends BaseChannelEvents {
 export abstract class MessagingChannel extends BaseChannel {
   protected override readonly conversationClient: ConversationClient;
   protected readonly messagingCallbacks: MessagingChannelEvents;
+  /** TAC's inbound-message handler, kept apart from the slot users fill with `on('messageReceived')`. */
+  private tacMessageReceivedListener: MessageReceivedListener | undefined;
 
   /**
    * Controls whether reconciliation promotes an UNKNOWN customer-side
@@ -509,6 +513,15 @@ export abstract class MessagingChannel extends BaseChannel {
   }
 
   /**
+   * Install TAC's inbound-message handler. It runs alongside, not instead of, a
+   * handler set with `on('messageReceived', ...)`.
+   * @internal
+   */
+  public setMessageReceivedListenerInternal(listener: MessageReceivedListener): void {
+    this.tacMessageReceivedListener = listener;
+  }
+
+  /**
    * Register event callbacks (override for messaging-specific events)
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic event callback needs to accept any args
@@ -768,17 +781,23 @@ export abstract class MessagingChannel extends BaseChannel {
     // Retrieve user memory if enabled via memoryMode
     const userMemory = await this.retrieveMemoryIfEnabled(session, message);
 
-    // Invoke message received callback with memory context
-    if (this.messagingCallbacks.onMessageReceived) {
+    const handlers = [
+      this.tacMessageReceivedListener,
+      this.messagingCallbacks.onMessageReceived,
+    ].filter(handler => handler !== undefined);
+    if (handlers.length > 0) {
       this.logger.debug({ conversation_id: conversationId }, 'Invoking message received callback');
-      this.messagingCallbacks.onMessageReceived({
+      const event = {
         conversationId,
         profileId: session.profileId as ProfileId | undefined,
         message,
         author,
         userMemory,
         session,
-      });
+      };
+      for (const handler of handlers) {
+        handler(event);
+      }
     }
 
     trackEvent('Message Received', {

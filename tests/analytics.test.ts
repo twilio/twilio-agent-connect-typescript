@@ -103,6 +103,36 @@ describe('analytics', () => {
     expect(mockCloseAndFlush).toHaveBeenCalledWith({ timeout: 5000 });
   });
 
+  it('TAC.shutdown resolves only after the analytics flush completes', async () => {
+    const tac = await createTestTAC({
+      accountSid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      authToken: 'test_token',
+      apiKey: 'SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      apiSecret: 'test_secret',
+      phoneNumber: '+15555550100',
+      conversationConfigurationId: 'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd',
+    });
+    trackEvent('Websocket Connected', { account_sid: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' });
+
+    let finishFlush!: () => void;
+    mockCloseAndFlush.mockImplementationOnce(
+      () => new Promise<void>(resolve => (finishFlush = resolve))
+    );
+
+    let shutdownDone = false;
+    const shutdown = Promise.resolve(tac.shutdown()).then(() => {
+      shutdownDone = true;
+    });
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    expect(mockCloseAndFlush).toHaveBeenCalled();
+    expect(shutdownDone).toBe(false);
+
+    finishFlush();
+    await shutdown;
+    expect(shutdownDone).toBe(true);
+  });
+
   it('shutdownAnalytics is a no-op when no client exists', async () => {
     await shutdownAnalytics();
     expect(mockCloseAndFlush).not.toHaveBeenCalled();

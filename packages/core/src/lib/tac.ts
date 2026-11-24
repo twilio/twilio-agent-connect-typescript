@@ -14,6 +14,8 @@ import { MemoryClient } from '../clients/memory';
 import { ConversationClient } from '../clients/conversation';
 import { KnowledgeClient } from '../clients/knowledge';
 import { BaseChannel } from '../channels/base';
+import { MessagingChannel } from '../channels/messaging';
+import { VoiceChannel } from '../channels/voice/channel';
 import { Logger, createLogger } from './logger';
 import { shutdownAnalytics, trackEvent } from './analytics';
 import { maskAddress } from '../util/log-redaction';
@@ -223,95 +225,22 @@ export class TAC {
    * Set up event listeners for a channel
    */
   private setupChannelEventListeners(channel: BaseChannel): void {
-    // Handle channel errors directly
-    channel.on(
-      'error',
-      ({ error, context }: { error: Error; context?: Record<string, unknown> }) => {
-        this.logger.error({ err: error, ...context }, 'Channel error');
-      }
-    );
+    channel.setErrorListenerInternal(({ error, context }) => {
+      this.logger.error({ err: error, ...context }, 'Channel error');
+    });
 
-    // Handle message received events for SMS channels
-    channel.on(
-      'messageReceived',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
-      async (data: {
-        conversationId: ConversationId;
-        profileId: ProfileId | undefined;
-        message: string;
-        author: string;
-        userMemory: TACMemoryResponse | undefined;
-        session?: ConversationSession;
-      }): Promise<void> => {
-        await this.handleMessageReady({ ...data, channelType: channel.channelType });
-      }
-    );
-
-    // Handle voice prompt events
-    channel.on(
-      'prompt',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
-      async ({
-        conversationId,
-        transcript,
-        userMemory,
-        session,
-        abortSignal,
-      }: {
-        conversationId: ConversationId;
-        transcript: string;
-        userMemory?: TACMemoryResponse;
-        session?: ConversationSession;
-        abortSignal: AbortSignal;
-      }): Promise<void> => {
-        // Use session from event if available, otherwise get from channel
-        const eventSession = session || channel.getConversationSession(conversationId);
-        if (eventSession) {
-          await this.handleMessageReady({
-            conversationId,
-            profileId: eventSession.profileId ? (eventSession.profileId as ProfileId) : undefined,
-            message: transcript,
-            author: 'user',
-            userMemory,
-            channelType: channel.channelType,
-            session: eventSession,
-            abortSignal,
-          });
+    if (channel instanceof MessagingChannel) {
+      channel.setMessageReceivedListenerInternal(
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async callback
+        async (data): Promise<void> => {
+          await this.handleMessageReady({ ...data, channelType: channel.channelType });
         }
-      }
-    );
+      );
+    }
 
-    // Handle voice interrupt events
-    channel.on(
-      'interrupt',
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Intentionally async event handler
-      async ({
-        conversationId,
-        utteranceUntilInterrupt,
-        durationUntilInterruptMs,
-      }: {
-        conversationId: ConversationId;
-        utteranceUntilInterrupt: string | undefined;
-        durationUntilInterruptMs: number | undefined;
-      }) => {
-        const session = channel.getConversationSession(conversationId);
-        if (session && this.interruptCallback) {
-          try {
-            await this.interruptCallback({
-              conversationId,
-              utteranceUntilInterrupt,
-              durationUntilInterruptMs,
-              session,
-            });
-          } catch (error) {
-            this.logger.error(
-              { err: error, conversation_id: conversationId },
-              'Interrupt callback error'
-            );
-          }
-        }
-      }
-    );
+    if (channel instanceof VoiceChannel) {
+      this.setupVoiceTurnListeners(channel);
+    }
 
     // Handle conversation ended events. Installed as the channel's forwarder so
     // the channel can tell it apart from a handler registered on it directly.
@@ -329,6 +258,54 @@ export class TAC {
         }
       }
     );
+  }
+
+  /**
+   * Route a voice channel's prompts to `onMessageReady` and its interrupts to
+   * `onInterrupt`, alongside any handlers the app set on the channel.
+   */
+  private setupVoiceTurnListeners(channel: VoiceChannel): void {
+    channel.setTurnListenersInternal({
+      onPrompt: async ({ conversationId, transcript, userMemory, session, abortSignal }) => {
+        // Use session from event if available, otherwise get from channel
+        const eventSession = session || channel.getConversationSession(conversationId);
+        if (eventSession) {
+          await this.handleMessageReady({
+            conversationId,
+            profileId: eventSession.profileId ? (eventSession.profileId as ProfileId) : undefined,
+            message: transcript,
+            author: 'user',
+            userMemory,
+            channelType: channel.channelType,
+            session: eventSession,
+            abortSignal,
+          });
+        }
+      },
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- Errors are caught inside
+      onInterrupt: async ({
+        conversationId,
+        utteranceUntilInterrupt,
+        durationUntilInterruptMs,
+      }) => {
+        const session = channel.getConversationSession(conversationId);
+        if (session && this.interruptCallback) {
+          try {
+            await this.interruptCallback({
+              conversationId,
+              utteranceUntilInterrupt,
+              durationUntilInterruptMs,
+              session,
+            });
+          } catch (error) {
+            this.logger.error(
+              { err: error, conversation_id: conversationId },
+              'Interrupt callback error'
+            );
+          }
+        }
+      },
+    });
   }
 
   /**
@@ -409,7 +386,12 @@ export class TAC {
 
         // Auto-send if callback returned a string
         if (typeof response === 'string') {
-          if (response === '') {
+          if (data.abortSignal?.aborted) {
+            this.logger.info(
+              { conversation_id: data.conversationId },
+              'Turn was interrupted, skipping auto-send of callback response'
+            );
+          } else if (response === '') {
             this.logger.warn(
               { conversation_id: data.conversationId },
               'Callback returned empty string, skipping auto-send'
@@ -445,6 +427,8 @@ export class TAC {
   /**
    * Register callback for when messages are ready to be processed.
    * Return a string to auto-send, or null/void for manual handling.
+   * On voice, a string returned after the caller interrupted the turn
+   * (`abortSignal` aborted) is not sent.
    */
   public onMessageReady(callback: MessageReadyCallback): void {
     this.messageReadyCallback = callback;
@@ -760,14 +744,18 @@ export class TAC {
               });
 
       const [memoryResponse] = await Promise.all([
-        this.memoryClient.retrieveMemories(profileId, {
-          conversationId,
-          query,
-          observationsLimit: this.config.memoryConfig.observationsLimit,
-          summariesLimit: this.config.memoryConfig.summariesLimit,
-          communicationsLimit: this.config.memoryConfig.communicationsLimit,
-          relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
-        }),
+        this.memoryClient.retrieveMemories(
+          profileId,
+          {
+            conversationId,
+            query,
+            observationsLimit: this.config.memoryConfig.observationsLimit,
+            summariesLimit: this.config.memoryConfig.summariesLimit,
+            communicationsLimit: this.config.memoryConfig.communicationsLimit,
+            relevanceThreshold: this.config.memoryConfig.relevanceThreshold,
+          },
+          { throwOnError: true }
+        ),
         profileFetch,
       ]);
       return new TACMemoryResponse(memoryResponse);
@@ -821,16 +809,19 @@ export class TAC {
   }
 
   /**
-   * Shutdown TAC and cleanup resources
+   * Shutdown TAC and cleanup resources.
+   *
+   * Channels are shut down synchronously; the returned promise resolves once
+   * pending analytics events have been flushed (bounded by a 5 s timeout).
    */
-  public shutdown(): void {
+  public async shutdown(): Promise<void> {
     for (const channel of this.channels.values()) {
       this.logger.debug({ channel: channel.channelType }, 'Shutting down channel');
       channel.shutdown();
     }
 
     this.channels.clear();
-    shutdownAnalytics().catch(() => {});
+    await shutdownAnalytics().catch(() => {});
     this.logger.info('TAC shutdown complete');
   }
 }

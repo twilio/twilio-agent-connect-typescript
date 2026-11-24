@@ -48,11 +48,14 @@ export class MemoryClient extends BaseClient {
    *
    * @param profileId - The profile ID to retrieve memories for
    * @param request - Optional request parameters for filtering results
+   * @param options - `throwOnError: true` rejects when the request fails or the
+   *   response is malformed, instead of resolving with an empty response
    * @returns Promise containing memory retrieval response
    */
   public async retrieveMemories(
     profileId: string,
-    request: Partial<MemoryRetrievalRequest> = {}
+    request: Partial<MemoryRetrievalRequest> = {},
+    options: { throwOnError?: boolean } = {}
   ): Promise<MemoryRetrievalResponse> {
     try {
       const url = `/v1/Stores/${this.storeId}/Profiles/${profileId}/Recall`;
@@ -104,6 +107,9 @@ export class MemoryClient extends BaseClient {
           },
           'Invalid memory response format'
         );
+        if (options.throwOnError) {
+          throw new Error('Invalid memory response format');
+        }
         return EMPTY_MEMORY_RESPONSE;
       }
 
@@ -144,6 +150,9 @@ export class MemoryClient extends BaseClient {
 
       return { observations, summaries, communications };
     } catch (error) {
+      if (options.throwOnError) {
+        throw error;
+      }
       this.logger.warn(
         {
           error: error instanceof Error ? error.message : String(error),

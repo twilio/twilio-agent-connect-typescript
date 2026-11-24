@@ -36,6 +36,8 @@ describe('TACConfig', () => {
       TWILIO_MEMORY_SUMMARIES_LIMIT: process.env.TWILIO_MEMORY_SUMMARIES_LIMIT,
       TWILIO_MEMORY_COMMUNICATIONS_LIMIT: process.env.TWILIO_MEMORY_COMMUNICATIONS_LIMIT,
       TWILIO_MEMORY_RELEVANCE_THRESHOLD: process.env.TWILIO_MEMORY_RELEVANCE_THRESHOLD,
+      TWILIO_TAC_CI_CONFIGURATION_ID: process.env.TWILIO_TAC_CI_CONFIGURATION_ID,
+      TWILIO_TAC_CI_SUMMARY_OPERATOR_SID: process.env.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID,
     };
   });
 
@@ -169,6 +171,23 @@ describe('TACConfig', () => {
       expect(config.conversationConfigurationId).toBe(
         'conv_configuration_01kbjqhn79f0fvwfsxqzd5nqhd'
       );
+    });
+
+    it.each([
+      ['TWILIO_REGION', 'region'],
+      ['TWILIO_RCS_SENDER_ID', 'rcsSenderId'],
+      ['TWILIO_STUDIO_HANDOFF_FLOW_SID', 'studioHandoffFlowSid'],
+      ['TWILIO_VOICE_PUBLIC_DOMAIN', 'voicePublicDomain'],
+      ['TWILIO_INSTANCE_PUBLIC_DOMAIN', 'instancePublicDomain'],
+      ['TWILIO_TAC_CI_CONFIGURATION_ID', 'cintelConfigurationId'],
+      ['TWILIO_TAC_CI_SUMMARY_OPERATOR_SID', 'cintelSummaryOperatorSid'],
+    ] as const)('should treat an empty %s as unset', (envVar, field) => {
+      setRequiredEnvVars();
+      process.env[envVar] = '';
+
+      const config = TACConfig.fromEnv();
+
+      expect(config[field]).toBeUndefined();
     });
 
     it('should include optional voicePublicDomain when set', () => {

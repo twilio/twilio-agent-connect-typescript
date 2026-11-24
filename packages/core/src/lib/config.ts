@@ -273,7 +273,7 @@ export class TACConfig {
       apiSecret: process.env[EnvironmentVariables.TWILIO_API_SECRET]!,
       phoneNumber: process.env[EnvironmentVariables.TWILIO_PHONE_NUMBER] || undefined,
       phoneNumbers: splitCsvEnv(process.env[EnvironmentVariables.TWILIO_PHONE_NUMBERS]),
-      rcsSenderId: process.env[EnvironmentVariables.TWILIO_RCS_SENDER_ID],
+      rcsSenderId: process.env[EnvironmentVariables.TWILIO_RCS_SENDER_ID] || undefined,
       rcsSenderIds: splitCsvEnv(process.env[EnvironmentVariables.TWILIO_RCS_SENDER_IDS]),
       whatsappNumber: process.env[EnvironmentVariables.TWILIO_WHATSAPP_NUMBER] || undefined,
       whatsappNumbers: splitCsvEnv(process.env[EnvironmentVariables.TWILIO_WHATSAPP_NUMBERS]),
@@ -310,18 +310,21 @@ export class TACConfig {
       },
       conversationConfigurationId:
         process.env[EnvironmentVariables.TWILIO_CONVERSATION_CONFIGURATION_ID] || undefined,
-      voicePublicDomain: process.env[EnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN],
-      instancePublicDomain: process.env[EnvironmentVariables.TWILIO_INSTANCE_PUBLIC_DOMAIN],
+      voicePublicDomain: process.env[EnvironmentVariables.TWILIO_VOICE_PUBLIC_DOMAIN] || undefined,
+      instancePublicDomain:
+        process.env[EnvironmentVariables.TWILIO_INSTANCE_PUBLIC_DOMAIN] || undefined,
       voiceWebsocketPath:
         process.env[EnvironmentVariables.TWILIO_VOICE_WEBSOCKET_PATH] || undefined,
       voiceActionPath: process.env[EnvironmentVariables.TWILIO_VOICE_ACTION_PATH] || undefined,
       voiceCallEventPath:
         process.env[EnvironmentVariables.TWILIO_VOICE_CALL_EVENT_PATH] || undefined,
-      cintelConfigurationId: process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID],
+      cintelConfigurationId:
+        process.env[EnvironmentVariables.TWILIO_TAC_CI_CONFIGURATION_ID] || undefined,
       cintelSummaryOperatorSid:
-        process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID],
-      region: process.env[EnvironmentVariables.TWILIO_REGION],
-      studioHandoffFlowSid: process.env[EnvironmentVariables.TWILIO_STUDIO_HANDOFF_FLOW_SID],
+        process.env[EnvironmentVariables.TWILIO_TAC_CI_SUMMARY_OPERATOR_SID] || undefined,
+      region: process.env[EnvironmentVariables.TWILIO_REGION] || undefined,
+      studioHandoffFlowSid:
+        process.env[EnvironmentVariables.TWILIO_STUDIO_HANDOFF_FLOW_SID] || undefined,
     };
 
     return new TACConfig(rawConfig);

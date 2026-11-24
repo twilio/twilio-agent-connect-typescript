@@ -9,17 +9,17 @@ import { MemoryClient } from '../clients/memory';
 import { Logger, createLogger } from './logger';
 
 /**
- * Extract profile IDs from operator result execution details
+ * Extract customer profile IDs from operator result execution details
  *
  * @param operatorResult - The operator result to extract profile IDs from
- * @returns Array of profile IDs found in participants
+ * @returns Array of profile IDs of CUSTOMER participants
  */
 function extractProfileIds(operatorResult: OperatorResult): string[] {
   const profileIds: string[] = [];
 
   if (operatorResult.executionDetails?.participants) {
     for (const participant of operatorResult.executionDetails.participants) {
-      if (participant.profileId) {
+      if (participant.profileId && participant.type === 'CUSTOMER') {
         profileIds.push(participant.profileId);
       }
     }
@@ -28,8 +28,34 @@ function extractProfileIds(operatorResult: OperatorResult): string[] {
   return profileIds;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isEmpty(value: unknown): boolean {
+  if (value === null || value === undefined || value === false || value === 0) {
+    return true;
+  }
+  if (typeof value === 'string') {
+    return value.trim() === '';
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  return isRecord(value) && Object.keys(value).length === 0;
+}
+
+function stringify(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function contentOf(value: unknown): string | undefined {
+  return isEmpty(value) ? undefined : stringify(value);
+}
+
 /**
- * Generate content string from operator result
+ * Generate content string from operator result, unwrapping the result shape
+ * that each output format uses.
  *
  * @param operatorResult - The operator result to generate content from
  * @returns Content string or undefined if result is empty
@@ -37,42 +63,75 @@ function extractProfileIds(operatorResult: OperatorResult): string[] {
 function generateContent(operatorResult: OperatorResult): string | undefined {
   const result = operatorResult.result;
 
-  if (result === null || result === undefined) {
-    return undefined;
+  switch (operatorResult.outputFormat.toUpperCase()) {
+    case 'JSON':
+      if (isRecord(result)) {
+        if ('payload' in result) {
+          return contentOf(result.payload);
+        }
+        const nested = result['com.twilio.cai.intelligence.JSONResult'];
+        if (isRecord(nested) && 'payload' in nested) {
+          return contentOf(nested.payload);
+        }
+      }
+      return contentOf(result);
+    case 'CLASSIFICATION':
+      if (isRecord(result) && 'label' in result) {
+        return contentOf(result.label);
+      }
+      return contentOf(result);
+    case 'EXTRACTION':
+      if (isRecord(result) && 'entities' in result) {
+        return contentOf(result.entities);
+      }
+      return contentOf(result);
+    case 'TEXT':
+    case 'GENERATION':
+      if (isRecord(result) && 'result' in result) {
+        return contentOf(result.result);
+      }
+      return contentOf(result);
+    default:
+      return contentOf(result);
   }
-
-  if (typeof result === 'string') {
-    return result.trim() || undefined;
-  }
-
-  // For objects/arrays, stringify them
-  const jsonString = JSON.stringify(result);
-  return jsonString === '{}' || jsonString === '[]' ? undefined : jsonString;
 }
 
 /**
- * Parse summaries content from JSON result
+ * Parse summaries from operator result content.
  *
- * Expects format: { "summaries": ["summary1", "summary2", ...] }
+ * Supported formats:
+ * 1. `{ "summaries": [{ "summary": "..." }, ...] }` (or a list of strings)
+ * 2. `{ "summary": "..." }`
+ * 3. Anything else: the raw content is a single summary
  *
- * @param jsonContent - JSON string to parse
+ * @param content - Operator result content
  * @returns Array of summary strings
  */
-function parseSummariesContent(jsonContent: string): string[] {
+function parseSummariesContent(content: string): string[] {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(jsonContent) as unknown;
+    parsed = JSON.parse(content);
+  } catch {
+    parsed = undefined;
+  }
 
-    if (typeof parsed === 'object' && parsed !== null && 'summaries' in parsed) {
-      const summaries = (parsed as { summaries: unknown }).summaries;
-      if (Array.isArray(summaries)) {
-        return summaries.filter((s): s is string => typeof s === 'string' && s.trim() !== '');
+  if (isRecord(parsed)) {
+    if (Array.isArray(parsed.summaries)) {
+      const summaries = (parsed.summaries as unknown[])
+        .map(item => (isRecord(item) ? item.summary : item))
+        .filter(summary => !isEmpty(summary))
+        .map(stringify);
+      if (summaries.length > 0) {
+        return summaries;
       }
     }
 
-    return [];
-  } catch {
-    return [];
+    if (!isEmpty(parsed.summary)) {
+      return [stringify(parsed.summary)];
+    }
   }
+
+  return content.trim() ? [content] : [];
 }
 
 /**

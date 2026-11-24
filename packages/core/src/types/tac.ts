@@ -31,7 +31,13 @@ export type TACDeliveryStatus = z.infer<typeof TACDeliveryStatusSchema>;
 /**
  * Participant type
  */
-export const TACParticipantTypeSchema = z.enum(['HUMAN_AGENT', 'CUSTOMER', 'AI_AGENT', 'AGENT']);
+export const TACParticipantTypeSchema = z.enum([
+  'HUMAN_AGENT',
+  'CUSTOMER',
+  'AI_AGENT',
+  'AGENT',
+  'UNKNOWN',
+]);
 export type TACParticipantType = z.infer<typeof TACParticipantTypeSchema>;
 
 /**
@@ -84,8 +90,8 @@ export const TACCommunicationSchema = z.object({
   content: TACCommunicationContentSchema,
   recipients: z.array(TACCommunicationAuthorSchema).default([]),
   channelId: z.string().nullable().optional(),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
 
   // Conversation Orchestrator-only fields
   conversationId: z.string().optional(),

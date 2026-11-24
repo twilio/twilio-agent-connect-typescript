@@ -445,7 +445,7 @@ describe('OperatorResultProcessor', () => {
             executionDetails: {
               participants: [
                 { type: 'CUSTOMER', profileId: 'profile_123' },
-                { type: 'AGENT', profileId: 'profile_456' },
+                { type: 'CUSTOMER', profileId: 'profile_456' },
               ],
             },
           },
@@ -455,7 +455,116 @@ describe('OperatorResultProcessor', () => {
       const result = await processor.processEvent(event);
 
       expect(result.success).toBe(true);
-      expect(result.createdCount).toBe(2); // 1 summary x 2 profiles
+      expect(result.createdCount).toBe(2); // 1 summary x 2 customer profiles
+    });
+
+    describe('summary result formats', () => {
+      const summaryEvent = (outputFormat: string, result: unknown) => ({
+        accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        conversationId: 'conv_123',
+        memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
+        intelligenceConfiguration: { id: 'LY_CONFIG_123' },
+        operatorResults: [
+          {
+            id: 'result_123',
+            operator: { id: 'LY_SUM_789' },
+            outputFormat,
+            result,
+            dateCreated: '2024-01-15T10:00:00Z',
+            executionDetails: {
+              participants: [{ type: 'CUSTOMER', profileId: 'profile_123' }],
+            },
+          },
+        ],
+      });
+
+      const postedContents = (): string[] =>
+        mockAdapter.history.post.flatMap(
+          req =>
+            (JSON.parse(req.data as string) as { summaries: Array<{ content: string }> }).summaries
+        ).map(s => s.content);
+
+      beforeEach(() => {
+        mockAdapter.onPost(/\/ConversationSummaries$/).reply(200, { message: 'ok' });
+      });
+
+      it.each([
+        [
+          'payload with summary objects',
+          'JSON',
+          { payload: { summaries: [{ summary: 'First' }, { summary: 'Second' }] } },
+          ['First', 'Second'],
+        ],
+        [
+          'payload as a JSON string',
+          'JSON',
+          { payload: '{"summaries":[{"summary":"From string"}]}' },
+          ['From string'],
+        ],
+        [
+          'nested JSONResult union payload',
+          'JSON',
+          { 'com.twilio.cai.intelligence.JSONResult': { payload: { summary: 'Nested' } } },
+          ['Nested'],
+        ],
+        ['a single summary object', 'JSON', { summary: 'Only one' }, ['Only one']],
+        ['a list of summary strings', 'JSON', { summaries: ['Plain', 'List'] }, ['Plain', 'List']],
+        ['plain text', 'TEXT', 'Customer asked about billing', ['Customer asked about billing']],
+        [
+          'a generation result wrapper',
+          'GENERATION',
+          { result: 'Generated summary' },
+          ['Generated summary'],
+        ],
+        [
+          'unrecognized JSON as raw text',
+          'JSON',
+          { payload: { notes: 'Something else' } },
+          ['{"notes":"Something else"}'],
+        ],
+      ])('should create summaries from %s', async (_name, outputFormat, result, expected) => {
+        const processed = await processor.processEvent(summaryEvent(outputFormat, result));
+
+        expect(processed.success).toBe(true);
+        expect(processed.skipped).toBe(false);
+        expect(processed.createdCount).toBe(expected.length);
+        expect(postedContents()).toEqual(expected);
+      });
+    });
+
+    it('should write summaries only to customer profiles', async () => {
+      mockAdapter.onPost(/\/ConversationSummaries$/).reply(200, { message: 'Summaries created' });
+
+      const event = {
+        accountId: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        conversationId: 'conv_123',
+        memoryStoreId: 'mem_service_01kbjqhhdpft0tbp21jt4ktbxg',
+        intelligenceConfiguration: { id: 'LY_CONFIG_123' },
+        operatorResults: [
+          {
+            id: 'result_123',
+            operator: { id: 'LY_SUM_789' },
+            outputFormat: 'JSON',
+            result: { summaries: ['Customer requested a refund'] },
+            dateCreated: '2024-01-15T10:00:00Z',
+            executionDetails: {
+              participants: [
+                { type: 'CUSTOMER', profileId: 'profile_customer' },
+                { type: 'AI_AGENT', profileId: 'profile_ai_agent' },
+                { type: 'HUMAN_AGENT', profileId: 'profile_human_agent' },
+              ],
+            },
+          },
+        ],
+      };
+
+      const result = await processor.processEvent(event);
+
+      expect(result.success).toBe(true);
+      expect(result.createdCount).toBe(1);
+      expect(mockAdapter.history.post.map(req => req.url)).toEqual([
+        '/v1/Stores/mem_service_01kbjqhhdpft0tbp21jt4ktbxg/Profiles/profile_customer/ConversationSummaries',
+      ]);
     });
 
     it('should handle missing memory store ID', async () => {
