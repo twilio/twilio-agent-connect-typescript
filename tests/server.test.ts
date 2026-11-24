@@ -1695,4 +1695,38 @@ describe('TACServer shutdown', () => {
     // The drain waits up to 30 s for live calls before tac.shutdown() runs.
     expect(options?.timeout).toBeGreaterThan(30_000);
   });
+
+  it('stop() drains WebSockets and shuts TAC down before closing the server', async () => {
+    server = new TACServer(tac, { port: getNextPort() });
+    await server.start();
+
+    const calls: string[] = [];
+    vi.spyOn(server as any, 'waitForWebSocketsToClose').mockImplementation(async () => {
+      calls.push('drain');
+    });
+    const tacShutdown = vi.spyOn(tac, 'shutdown').mockImplementation(async () => {
+      calls.push('tac.shutdown');
+    });
+    const close = server.fastify.close.bind(server.fastify);
+    vi.spyOn(server.fastify, 'close').mockImplementation((() => {
+      calls.push('close');
+      return close();
+    }) as any);
+
+    await server.stop();
+
+    expect(calls).toEqual(['drain', 'tac.shutdown', 'close']);
+    tacShutdown.mockRestore();
+  });
+
+  it('shuts TAC down once when stop() and a shutdown signal both fire', async () => {
+    server = new TACServer(tac, { port: getNextPort() });
+    await server.start();
+    const tacShutdown = vi.spyOn(tac, 'shutdown');
+
+    await Promise.all([(server as any).drainAndShutdownTac(), server.stop()]);
+    await server.stop();
+
+    expect(tacShutdown).toHaveBeenCalledTimes(1);
+  });
 });

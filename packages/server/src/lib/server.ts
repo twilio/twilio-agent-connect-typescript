@@ -133,6 +133,8 @@ export class TACServer {
   >;
   /** All enabled messaging channels */
   private readonly messagingChannels: MessagingChannel[];
+  /** Shared by the signal handler and `stop()`, so the drain and TAC shutdown run once. */
+  private drainAndShutdownPromise: Promise<void> | undefined;
   /** Voice channel instance */
   private readonly voiceChannel: VoiceChannel | undefined;
   /** All channels that need webhook processing (voice + messaging) */
@@ -590,12 +592,7 @@ export class TACServer {
       // Configure graceful shutdown to wait for WebSocket connections
       this.fastify.gracefulShutdown(async (signal: string) => {
         this.fastify.log.info({ signal }, 'Received shutdown signal');
-
-        // Wait for WebSocket connections to close naturally
-        await this.waitForWebSocketsToClose();
-
-        // Shutdown TAC (cleans up channel state)
-        this.tac.shutdown();
+        await this.drainAndShutdownTac();
       });
 
       // Start Fastify server
@@ -644,6 +641,7 @@ export class TACServer {
     );
 
     const startTime = Date.now();
+    let lastProgressLog = startTime;
 
     return new Promise<void>(resolve => {
       const checkInterval = setInterval(() => {
@@ -667,19 +665,36 @@ export class TACServer {
           return;
         }
 
-        this.fastify.log.info(
-          { remaining_websockets: clientCount },
-          'Waiting for WebSockets to close...'
-        );
-      }, 5000);
+        if (Date.now() - lastProgressLog >= 5000) {
+          lastProgressLog = Date.now();
+          this.fastify.log.info(
+            { remaining_websockets: clientCount },
+            'Waiting for WebSockets to close...'
+          );
+        }
+      }, 100);
     });
   }
 
   /**
-   * Stop the server gracefully
+   * Wait for live calls' WebSockets to close, then shut TAC down.
+   */
+  private drainAndShutdownTac(): Promise<void> {
+    this.drainAndShutdownPromise ??= (async (): Promise<void> => {
+      await this.waitForWebSocketsToClose();
+      await this.tac.shutdown();
+    })();
+    return this.drainAndShutdownPromise;
+  }
+
+  /**
+   * Stop the server gracefully: wait up to 30 s for live calls' WebSockets to
+   * close, shut TAC down, then close the server. Safe to call more than once,
+   * and alongside the SIGINT/SIGTERM handler.
    */
   public async stop(): Promise<void> {
     try {
+      await this.drainAndShutdownTac();
       await this.fastify.close();
       this.fastify.log.info('TAC Server stopped');
     } catch (error) {

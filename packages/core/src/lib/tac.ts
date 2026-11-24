@@ -828,16 +828,19 @@ export class TAC {
   }
 
   /**
-   * Shutdown TAC and cleanup resources
+   * Shutdown TAC and cleanup resources.
+   *
+   * Channels are shut down synchronously; the returned promise resolves once
+   * pending analytics events have been flushed (bounded by a 5 s timeout).
    */
-  public shutdown(): void {
+  public async shutdown(): Promise<void> {
     for (const channel of this.channels.values()) {
       this.logger.debug({ channel: channel.channelType }, 'Shutting down channel');
       channel.shutdown();
     }
 
     this.channels.clear();
-    shutdownAnalytics().catch(() => {});
+    await shutdownAnalytics().catch(() => {});
     this.logger.info('TAC shutdown complete');
   }
 }
