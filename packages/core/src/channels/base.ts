@@ -18,6 +18,7 @@ import type { TAC } from '../lib/tac';
 import { TACMemoryResponse } from '../lib/tac-memory-response';
 import { resolveOutboundSender } from '../util/outbound-sender';
 import { redactErrorForLog } from '../util/log-redaction';
+import { errorLogFields } from '../util/error-log-fields';
 
 /**
  * Base channel event callbacks
@@ -308,7 +309,7 @@ export abstract class BaseChannel {
    * Handle errors with proper context
    */
   protected handleError(error: Error, context?: Record<string, unknown>): void {
-    this.logger.error({ err: redactErrorForLog(error) }, 'Channel error');
+    this.logger.error(errorLogFields(redactErrorForLog(error)), 'Channel error');
 
     if (this.callbacks.onError) {
       if (context) {

@@ -16,6 +16,7 @@ import {
 } from '../../../../types/index';
 import type { InitiateVoiceConversationResult } from '../../../../types/conversation';
 import { maskPhone, redactTwimlParameters } from '../../../../util/log-redaction';
+import { errorLogFields } from '../../../../util/error-log-fields';
 import { trackEvent } from '../../../../lib/analytics';
 import type { GPTLiveProviderConfig } from './config';
 import { CallState } from './state';
@@ -235,7 +236,7 @@ export class GPTLiveProvider extends MediaStreamsOpenAIProvider<CallState> {
         this.pendingSessionConfigs.delete(sessionConfigToken);
       }
       this.logger.error(
-        { err: error, to: maskPhone(validated.to) },
+        { ...errorLogFields(error), to: maskPhone(validated.to) },
         'Failed to initiate outbound call'
       );
       // Deliberately not routed through `channel.handleErrorInternal`, unlike

@@ -108,6 +108,9 @@ export {
   redactTwimlParameters,
 } from './util/log-redaction';
 
+// Error log fields helper
+export { errorLogFields } from './util/error-log-fields';
+
 // Studio handoff URL helpers
 export { studioExecutionsUrl, studioVoiceHandoffUrl } from './util/handoff-urls';
 

@@ -19,6 +19,7 @@ import { shutdownAnalytics, trackEvent } from './analytics';
 import { maskAddress, redactErrorContext, redactErrorForLog } from '../util/log-redaction';
 import { OperatorResultProcessor } from './operator-result-processor';
 import { ExpiringMap } from '../util/expiring-map';
+import { errorLogFields } from '../util/error-log-fields';
 
 /**
  * How long a participant lookup is shared between the channels handling one CO
@@ -235,7 +236,7 @@ export class TAC {
       'error',
       ({ error, context }: { error: Error; context?: Record<string, unknown> }) => {
         this.logger.error(
-          { err: redactErrorForLog(error), ...redactErrorContext(context) },
+          { ...errorLogFields(redactErrorForLog(error)), ...redactErrorContext(context) },
           'Channel error'
         );
       }
