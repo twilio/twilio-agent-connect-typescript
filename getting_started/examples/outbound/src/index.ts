@@ -70,7 +70,9 @@ if (!to || !channel) {
 }
 
 if (channel !== 'sms' && channel !== 'rcs' && channel !== 'whatsapp' && channel !== 'voice') {
-  console.error(`Invalid channel "${channel}". Must be "sms", "rcs", "whatsapp", or "voice".`);
+  console.error(
+    `Invalid channel "${String(channel)}". Must be "sms", "rcs", "whatsapp", or "voice".`
+  );
   process.exit(1);
 }
 

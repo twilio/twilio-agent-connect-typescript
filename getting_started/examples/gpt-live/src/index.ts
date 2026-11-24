@@ -135,10 +135,12 @@ const voiceChannel = new VoiceChannel(
 // this callback completes, so it is the last point the transcript is reachable.
 // The GPT-Live session id goes with it — that's the identifier OpenAI support
 // asks for when you report a bad call.
-tac.onConversationEnded(async ({ session }) => {
+tac.onConversationEnded(({ session }) => {
   const transcript = (session.metadata.transcript ?? []) as { role: string; text: string }[];
   const sessionId = session.metadata[GPT_LIVE_SESSION_ID_METADATA_KEY];
-  console.log(`Call ${session.conversationId} ended (GPT-Live session ${sessionId}). Transcript:`);
+  console.log(
+    `Call ${session.conversationId} ended (GPT-Live session ${String(sessionId)}). Transcript:`
+  );
   for (const turn of transcript) {
     console.log(`  ${turn.role}: ${turn.text}`);
   }

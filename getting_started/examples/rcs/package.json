@@ -10,13 +10,13 @@
   },
   "dependencies": {
     "twilio-agent-connect": "file:../../..",
-    "dotenv": "^16.4.5",
-    "@openai/agents": "^0.8.5"
+    "dotenv": "^16.4.7",
+    "@openai/agents": "^0.8.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
+    "@types/node": "^22.0.0",
     "pino-pretty": "^13.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.0.0"
   }
 }

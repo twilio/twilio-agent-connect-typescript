@@ -49,7 +49,10 @@ import {
   TWILIO_AUDIO_FORMAT_FOR_REALTIME,
   defineTool,
 } from 'twilio-agent-connect';
-import type { TwiMLRequest } from 'twilio-agent-connect';
+import type {
+  InitiateVoiceConversationOptionsOpenAIRealtime,
+  TwiMLRequest,
+} from 'twilio-agent-connect';
 
 config({ path: '../.env' });
 
@@ -100,14 +103,14 @@ const DEFAULT_SESSION_CONFIG: Record<string, unknown> = {
 };
 
 /** Per-call override for inbound calls. `null` falls back to DEFAULT_SESSION_CONFIG. */
-async function customizeSessionConfig(req: TwiMLRequest): Promise<Record<string, unknown> | null> {
+function customizeSessionConfig(req: TwiMLRequest): Promise<Record<string, unknown> | null> {
   if (req.callerCountry === 'US') {
-    return {
+    return Promise.resolve({
       ...DEFAULT_SESSION_CONFIG,
       instructions: '你是一个友好的语音助手。请用中文回答。',
-    };
+    });
   }
-  return null;
+  return Promise.resolve(null);
 }
 
 const voiceChannel = new VoiceChannel(
@@ -142,12 +145,13 @@ await server.start();
 if (args.to) {
   // Per-outbound-call sessionConfig override — a direct value, since outbound
   // has no webhook to hang a customizer off of.
-  const result = await voiceChannel.initiateOutboundConversation({
+  const outboundOptions: InitiateVoiceConversationOptionsOpenAIRealtime = {
     to: args.to,
     sessionConfig: {
       ...DEFAULT_SESSION_CONFIG,
       instructions: 'Tu es un assistant vocal amical. Réponds en français.',
     },
-  });
+  };
+  const result = await voiceChannel.initiateOutboundConversation(outboundOptions);
   console.log(`Call placed to ${args.to} (SID: ${result.callSid})`);
 }

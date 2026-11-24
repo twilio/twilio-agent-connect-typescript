@@ -54,10 +54,10 @@ tac.onMessageReady(async ({ conversationId, message, abortSignal }) => {
 
   const streamedResult = await run(agent, conversationHistory[convId], {
     stream: true,
-    signal: abortSignal,
+    ...(abortSignal && { signal: abortSignal }),
   });
 
-  async function* tokenStream() {
+  async function* tokenStream(): AsyncGenerator<string> {
     for await (const chunk of streamedResult.toTextStream()) {
       yield chunk;
     }
@@ -75,6 +75,7 @@ tac.onMessageReady(async ({ conversationId, message, abortSignal }) => {
     conversationHistory[convId].push({
       type: 'message',
       role: 'assistant',
+      status: 'completed',
       content: [{ type: 'output_text', text: fullResponse }],
     });
   }
@@ -91,6 +92,7 @@ tac.onInterrupt(({ conversationId, utteranceUntilInterrupt }) => {
       history[i] = {
         type: 'message',
         role: 'assistant',
+        status: 'completed',
         content: [{ type: 'output_text', text: utteranceUntilInterrupt }],
       };
       history.splice(i + 1);
@@ -100,7 +102,7 @@ tac.onInterrupt(({ conversationId, utteranceUntilInterrupt }) => {
 });
 
 tac.onConversationEnded(({ session }) => {
-  const convId = session.conversationId as string;
+  const convId = session.conversationId;
   delete conversationHistory[convId];
   console.log(`Conversation ${convId} ended, history cleaned up`);
 });

@@ -32,24 +32,30 @@ config({ path: '../.env' });
 
 const tac = await TAC.create({ config: TACConfig.fromEnv() });
 
-tac.onMessageReady(async ({ message }) => `You said: ${message}`);
+tac.onMessageReady(({ message }) => `You said: ${message}`);
 
 /**
  * Per-call overrides for inbound calls. Only the fields you set here override
  * the channel default; the rest fall through.
  */
-async function customizeTwiml(req: TwiMLRequest): Promise<VoiceTwiMLOptionsConversationRelay> {
+function customizeTwiml(req: TwiMLRequest): Promise<VoiceTwiMLOptionsConversationRelay> {
   if (req.callerCountry === 'MX') {
-    return { language: 'es-MX', welcomeGreeting: '¡Hola! ¿En qué puedo ayudarte?' };
+    return Promise.resolve({
+      language: 'es-MX',
+      welcomeGreeting: '¡Hola! ¿En qué puedo ayudarte?',
+    });
   }
   if (req.callerCountry === 'FR') {
-    return { language: 'fr-FR', welcomeGreeting: 'Bonjour ! Comment puis-je vous aider ?' };
+    return Promise.resolve({
+      language: 'fr-FR',
+      welcomeGreeting: 'Bonjour ! Comment puis-je vous aider ?',
+    });
   }
   // `websocketUrl` is a normal per-call field too: an affinity-routed host can
   // append a per-call token to the upgrade URL. Leave it unset to fall back to
   // the URL derived from TACConfig.voicePublicDomain + voiceWebsocketPath.
   // return { websocketUrl: `wss://${host}/ws?agent_session_id=${req.callSid}` };
-  return {}; // fall through to defaultTwimlOptions
+  return Promise.resolve({}); // fall through to defaultTwimlOptions
 }
 
 const voiceChannel = new VoiceChannel(tac, {
