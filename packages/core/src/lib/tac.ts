@@ -223,13 +223,9 @@ export class TAC {
    * Set up event listeners for a channel
    */
   private setupChannelEventListeners(channel: BaseChannel): void {
-    // Handle channel errors directly
-    channel.on(
-      'error',
-      ({ error, context }: { error: Error; context?: Record<string, unknown> }) => {
-        this.logger.error({ err: error, ...context }, 'Channel error');
-      }
-    );
+    channel.setErrorListenerInternal(({ error, context }) => {
+      this.logger.error({ err: error, ...context }, 'Channel error');
+    });
 
     // Handle message received events for SMS channels
     channel.on(

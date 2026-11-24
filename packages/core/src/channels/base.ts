@@ -68,6 +68,8 @@ export abstract class BaseChannel {
   protected readonly callbacks: BaseChannelEvents;
   /** TAC's forwarder to `tac.onConversationEnded`, while it fills the slot. */
   private tacConversationEndedForwarder: BaseChannelEvents['onConversationEnded'];
+  /** TAC's error listener, kept apart from the `onError` slot users fill with `on('error')`. */
+  private tacErrorListener: BaseChannelEvents['onError'];
   protected readonly memoryMode: MemoryMode;
   private readonly processedWebhookTokens: Set<string>;
   private readonly maxTrackedTokens: number;
@@ -282,6 +284,16 @@ export abstract class BaseChannel {
   }
 
   /**
+   * Install TAC's error listener. It receives every error alongside, not
+   * instead of, a handler set with `channel.on('error', ...)`.
+   *
+   * @internal
+   */
+  public setErrorListenerInternal(listener: NonNullable<BaseChannelEvents['onError']>): void {
+    this.tacErrorListener = listener;
+  }
+
+  /**
    * Fire `onConversationEnded` for a session, swallowing handler errors.
    *
    * A developer callback throwing must not abort the channel's own cleanup or
@@ -308,6 +320,10 @@ export abstract class BaseChannel {
    */
   protected handleError(error: Error, context?: Record<string, unknown>): void {
     this.logger.error({ err: error }, 'Channel error');
+
+    if (this.tacErrorListener) {
+      this.tacErrorListener(context ? { error, context } : { error });
+    }
 
     if (this.callbacks.onError) {
       if (context) {
@@ -539,5 +555,6 @@ export abstract class BaseChannel {
     delete this.callbacks.onConversationEnded;
     delete this.callbacks.onError;
     this.tacConversationEndedForwarder = undefined;
+    this.tacErrorListener = undefined;
   }
 }

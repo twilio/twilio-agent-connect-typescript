@@ -162,6 +162,40 @@ describe('TAC Core', () => {
       expect(onError).toHaveBeenCalledWith({ error: expect.any(Error) });
     });
 
+    it('should keep an error handler set before registration and still route errors to TAC', async () => {
+      const tac = await createTestTAC(getTestConfig());
+      const channel = new SMSChannel(tac);
+      const onError = vi.fn();
+      const tacErrorSpy = vi.spyOn(tac.logger, 'error');
+
+      channel.on('error', onError);
+      tac.registerChannel(channel);
+
+      const error = new Error('boom');
+      (channel as any).handleError(error, { to: '+15555550100' });
+
+      expect(onError).toHaveBeenCalledWith({ error, context: { to: '+15555550100' } });
+      expect(tacErrorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: error }),
+        'Channel error'
+      );
+    });
+
+    it('should keep an error handler set before TACServer registers the channel', async () => {
+      const { TACServer } = await import('@twilio/tac-server');
+      const tac = await createTestTAC(getTestConfig());
+      const channel = new SMSChannel(tac);
+      const onError = vi.fn();
+      channel.on('error', onError);
+
+      new TACServer(tac, { messagingChannels: [channel] });
+
+      const error = new Error('boom');
+      (channel as any).handleError(error);
+
+      expect(onError).toHaveBeenCalledWith({ error });
+    });
+
     it('should shut down the previous channel when a different instance replaces it', async () => {
       const tac = await createTestTAC(getTestConfig());
       const first = new SMSChannel(tac);
