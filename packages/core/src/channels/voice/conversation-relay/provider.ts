@@ -360,6 +360,10 @@ export class ConversationRelayProvider extends VoiceProvider {
               break;
 
             case 'prompt':
+              // A partial prompt (last: false) isn't a turn.
+              if (message.last === false) {
+                break;
+              }
               await ensureConversation();
 
               if (conversationId) {
