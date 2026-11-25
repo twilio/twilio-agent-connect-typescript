@@ -387,7 +387,8 @@ export const VoiceTwiMLOptionsConversationRelaySchema = VoiceTwiMLOptionsBase.ex
   eotThreshold: z.number().optional(),
   /**
    * Send unfinalized prompts and eager end-of-turn events (last=false). Only
-   * applies with Deepgram + flux speech model.
+   * applies with Deepgram + flux speech model. TAC ignores these partial
+   * prompts: only the complete prompt reaches `onMessageReady`.
    */
   partialPrompts: z.boolean().optional(),
   /**

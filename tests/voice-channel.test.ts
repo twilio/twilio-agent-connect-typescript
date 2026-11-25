@@ -2461,11 +2461,12 @@ describe('VoiceChannel', () => {
     });
 
     it('should only treat a prompt as a turn when last is true or missing', async () => {
-      const { voiceChannel, mockWs } = await setupForInterrupt();
+      const { tac, mockWs } = await setupForInterrupt();
 
-      const transcripts: string[] = [];
-      voiceChannel.on('prompt', (data: any) => {
-        transcripts.push(data.transcript);
+      const messages: string[] = [];
+      tac.onMessageReady(async ({ message }) => {
+        messages.push(message);
+        return undefined;
       });
 
       const prompt = (voicePrompt: string, last?: boolean) =>
@@ -2487,7 +2488,7 @@ describe('VoiceChannel', () => {
       prompt('Thanks');
       await new Promise(resolve => setTimeout(resolve, 50));
 
-      expect(transcripts).toEqual(['I need help with my order', 'Thanks']);
+      expect(messages).toEqual(['I need help with my order', 'Thanks']);
     });
 
     it('should cancel stream task on WebSocket disconnect', async () => {

@@ -360,9 +360,7 @@ export class ConversationRelayProvider extends VoiceProvider {
               break;
 
             case 'prompt':
-              // With partialPrompts enabled, ConversationRelay streams the
-              // caller's speech as it is recognized; only the last message
-              // completes the turn.
+              // A partial prompt (last: false) isn't a turn.
               if (message.last === false) {
                 break;
               }
